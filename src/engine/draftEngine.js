@@ -1,8 +1,7 @@
-// LoL Esports Manager — Tournament Pick/Ban Draft Engine
-import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier, getTierBonus } from '../data/champions.js';
+// LoL Esports Manager v2.0 — Fearless Draft + Counter Matchups + Mastery Draft Engine
+import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier, getTierBonus, getMatchupAdvantage } from '../data/champions.js';
 import { ROLES } from '../data/teamsAndPlayers.js';
 
-// Official 20-step Pro Tournament Draft Order
 export const DRAFT_STEPS = [
   // Ban Phase 1
   { side: 'blue', type: 'ban', label: 'Mavi Yasaklama 1' },
@@ -30,20 +29,21 @@ export const DRAFT_STEPS = [
   { side: 'red', type: 'pick', label: 'Kırmızı Seçim 5' },
 ];
 
-export function createDraftState(blueTeam, redTeam, blueRoster, redRoster, patch, userSide) {
+export function createDraftState(blueTeam, redTeam, blueRoster, redRoster, patch, userSide, fearlessLocked = new Set()) {
   return {
     stepIndex: 0,
     blueTeam,
     redTeam,
-    blueRoster, // array of 5 players ordered by ROLES
+    blueRoster,
     redRoster,
     patch,
-    userSide, // 'blue' | 'red' | null
+    userSide,
     blueBans: [],
     redBans: [],
-    bluePicks: {}, // { TOP: champId, JGL: champId, ... }
+    bluePicks: {},
     redPicks: {},
-    usedChamps: new Set(),
+    fearlessLocked: new Set(fearlessLocked),
+    usedChamps: new Set(fearlessLocked),
     finished: false,
   };
 }
@@ -54,7 +54,6 @@ export function getMissingRoles(picksObj) {
 
 export function assignRoleForChamp(champ, picksObj) {
   const missing = getMissingRoles(picksObj);
-  // Prefer champion's primary role if still open
   for (const r of champ.roles) {
     if (missing.includes(r)) return r;
   }
@@ -103,17 +102,16 @@ export function chooseAIDraftAction(draft) {
     let bestScore = -999;
 
     for (const c of available) {
-      // Only target roles opponent still needs
       const fitsOpp = c.roles.some(r => oppMissing.includes(r));
       if (!fitsOpp) continue;
 
       const tier = getChampionMetaTier(c, draft.patch);
       let score = getTierBonus(tier) * 3 + Math.random() * 4;
 
-      // Target opponent signature champions heavily
       for (const p of oppRoster) {
-        if (oppMissing.includes(p.role) && p.sigChamps.includes(c.id)) {
-          score += 7 + (p.ovr - 75) * 0.25;
+        if (oppMissing.includes(p.role)) {
+          if (p.sigChamps.includes(c.id)) score += 7 + (p.ovr - 75) * 0.25;
+          if ((p.mastery?.[c.id] || 0) >= 4) score += 4;
         }
       }
 
@@ -125,7 +123,6 @@ export function chooseAIDraftAction(draft) {
     return { champId: best || available[0].id, role: null };
   } else {
     const missing = getMissingRoles(ownPicks);
-    // Check current team composition needs
     const pickedChamps = Object.values(ownPicks).map(id => CHAMPION_MAP[id]);
     const hasTank = pickedChamps.some(c => c.dmg === 'Tank');
     const apCount = pickedChamps.filter(c => c.dmg === 'AP').length;
@@ -137,16 +134,16 @@ export function chooseAIDraftAction(draft) {
 
     for (const role of missing) {
       const player = ownRoster.find(p => p.role === role);
+      const oppLaneChamp = oppPicks[role];
       for (const c of available) {
         if (!c.roles.includes(role)) continue;
         const tier = getChampionMetaTier(c, draft.patch);
         let score = getTierBonus(tier) * 3.2 + Math.random() * 3.5;
 
-        // Primary role bonus
         if (c.roles[0] === role) score += 2.5;
-        // Player signature champion bonus
-        if (player && player.sigChamps.includes(c.id)) score += 7.5;
-        // Composition balance bonuses
+        if (player && player.sigChamps.includes(c.id)) score += 7.0;
+        if (player && player.mastery?.[c.id]) score += Math.min(5, player.mastery[c.id] * 1.2);
+        if (oppLaneChamp) score += getMatchupAdvantage(c.id, oppLaneChamp) * 2.2;
         if (!hasTank && c.dmg === 'Tank' && (role === 'TOP' || role === 'JGL' || role === 'SUP')) score += 3.5;
         if (apCount === 0 && c.dmg === 'AP' && (role === 'MID' || role === 'TOP' || role === 'JGL')) score += 2.5;
         if (adCount === 0 && c.dmg === 'AD' && (role === 'BOT' || role === 'TOP' || role === 'JGL')) score += 2.5;
@@ -176,21 +173,22 @@ export function autoCompleteDraft(draft) {
   return draft;
 }
 
-export function analyzeDraftSide(picksObj, roster, patch) {
+export function analyzeDraftSide(picksObj, roster, patch, oppPicksObj = {}) {
   const entries = ROLES.map(role => ({
     role,
     champ: picksObj[role] ? CHAMPION_MAP[picksObj[role]] : null,
+    oppChampId: oppPicksObj[role] || null,
     player: roster.find(p => p.role === role),
   })).filter(e => e.champ);
 
   if (entries.length === 0) {
-    return { early: 0, mid: 0, late: 0, engage: 0, sigCount: 0, metaBonus: 0, score: 0, warnings: [] };
+    return { early: 0, mid: 0, late: 0, engage: 0, sigCount: 0, counterEdge: 0, metaBonus: 0, score: 0, warnings: [] };
   }
 
-  let early = 0, mid = 0, late = 0, engage = 0, sigCount = 0, metaBonus = 0;
+  let early = 0, mid = 0, late = 0, engage = 0, sigCount = 0, metaBonus = 0, counterEdge = 0;
   let ad = 0, ap = 0, tank = 0;
 
-  for (const { champ, player } of entries) {
+  for (const { champ, oppChampId, player } of entries) {
     early += champ.early;
     mid += champ.mid;
     late += champ.late;
@@ -198,6 +196,7 @@ export function analyzeDraftSide(picksObj, roster, patch) {
     const tier = getChampionMetaTier(champ, patch);
     metaBonus += getTierBonus(tier);
     if (player && player.sigChamps.includes(champ.id)) sigCount++;
+    if (oppChampId) counterEdge += getMatchupAdvantage(champ.id, oppChampId);
     if (champ.dmg === 'AD') ad++;
     if (champ.dmg === 'AP') ap++;
     if (champ.dmg === 'Tank') tank++;
@@ -214,10 +213,11 @@ export function analyzeDraftSide(picksObj, roster, patch) {
   }
 
   const score = Math.round(
-    (early / n) * 3.2 * patch.earlyWeight +
-    (mid / n) * 3.4 * patch.midWeight +
-    (late / n) * 3.4 * patch.lateWeight +
-    sigCount * 2.4 +
+    (early / n) * 3.1 * patch.earlyWeight +
+    (mid / n) * 3.3 * patch.midWeight +
+    (late / n) * 3.3 * patch.lateWeight +
+    sigCount * 2.3 +
+    counterEdge * 1.1 +
     metaBonus * 0.7 +
     compPenalty
   );
@@ -228,6 +228,7 @@ export function analyzeDraftSide(picksObj, roster, patch) {
     late: +(late / n).toFixed(1),
     engage: +(engage / n).toFixed(1),
     sigCount,
+    counterEdge: +counterEdge.toFixed(1),
     metaBonus: +metaBonus.toFixed(1),
     score: Math.max(40, Math.min(99, score)),
     warnings,

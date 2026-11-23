@@ -1,30 +1,32 @@
-// LoL Esports Manager — Career State, Calendar, Tournaments (Split, Playoffs, MSI, Worlds), Transfers & Economy
+// LoL Esports Manager v2.0 — Career Engine (7 Regions, 16-Team Swiss Worlds, Drama Events, Challenger Scouting, AI Bids, Language Barrier & Awards)
 import { PATCHES } from '../data/champions.js';
 import {
-  ROLES, REGIONS, createInitialDatabase, calcOVR, calcMarketValue, calcWeeklySalary, generateRegenPlayer
+  ROLES, REGIONS, REGION_LANG, getRivalryName,
+  createInitialDatabase, calcOVR, calcMarketValue, calcWeeklySalary,
+  generateRegenPlayer, generateChallengerProspects
 } from '../data/teamsAndPlayers.js';
 import { quickSimulateGame, applyMatchOutcomeToPlayers } from './matchEngine.js';
 
-export const SAVE_KEY = 'lol_esports_manager_save_v1';
+export const SAVE_KEY = 'lol_esports_manager_save_v2';
 
 export const SPONSORS = [
-  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 45000, bonus: 150000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti haftalık gelir, düşük baskı.' },
-  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 70000, bonus: 350000, goal: 'Bölge Finali Oyna', minPrestige: 78, desc: 'Yüksek haftalık gelir ve final primi.' },
-  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 105000, bonus: 750000, goal: 'MSI veya Worlds Kupası', minPrestige: 86, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
+  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 55000, bonus: 180000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti haftalık gelir, düşük baskı.' },
+  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 85000, bonus: 400000, goal: 'Bölge Finali Oyna', minPrestige: 76, desc: 'Yüksek haftalık gelir ve final primi.' },
+  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 125000, bonus: 850000, goal: 'MSI veya Worlds Kupası', minPrestige: 85, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
 ];
 
 export const FACILITY_INFO = {
   gamingHouse: { name: 'Gaming House', desc: 'Oyuncu yorgunluğunu azaltır ve toparlanmayı hızlandırır.', costs: [0, 350000, 750000, 1400000] },
-  analystDesk: { name: 'Analist Ekibi', desc: 'Maç içi performans ve draft analiz bonusu verir.', costs: [0, 400000, 850000, 1600000] },
+  analystDesk: { name: 'Analist Ekibi', desc: 'Maç içi performans, draft analizi ve Sv.3\'te ücretsiz Challenger scouting verir.', costs: [0, 400000, 850000, 1600000] },
   youthAcademy: { name: 'Gençlik Akademisi', desc: 'Daha yüksek potansiyelli genç yetenekler üretir.', costs: [0, 300000, 650000, 1200000] },
-  psychologist: { name: 'Spor Psikoloğu', desc: 'Moral düşüşlerini önler ve baskı altında clutch bonusu sağlar.', costs: [0, 280000, 600000, 1100000] },
+  psychologist: { name: 'Spor Psikoloğu', desc: 'Moral düşüşlerini önler ve dil/uyum sürecini hızlandırır.', costs: [0, 280000, 600000, 1100000] },
 };
 
 export const TRAINING_MODES = [
   { id: 'balanced', name: 'Dengeli Antrenman', desc: 'Tüm özelliklerde dengeli gelişim, normal yorgunluk.' },
   { id: 'mechanics', name: 'SoloQ & Mekanik', desc: 'Mekanik ve Koridor odaklı (+yüksek yorgunluk).' },
   { id: 'macro', name: 'VOD & Makro Analiz', desc: 'Makro, Takım Savaşı ve Sinerji odaklı.' },
-  { id: 'pool', name: 'Şampiyon Havuzu', desc: 'Şampiyon havuzunu genişletir, yama uyumunu artırır.' },
+  { id: 'pool', name: 'Şampiyon Havuzu', desc: 'Şampiyon havuzunu genişletir, Fearless Draft\'a hazırlar.' },
   { id: 'rest', name: 'Dinlenme & Moral', desc: 'Yorgunluğu hızla düşürür, morali yükseltir.' },
 ];
 
@@ -57,7 +59,6 @@ export function getTeamWeeklyWages(state, teamId) {
   return state.players.filter(p => p.teamId === teamId).reduce((s, p) => s + p.salary, 0);
 }
 
-// Generate 7-round Round-Robin schedule for 8 teams
 function generateRoundRobin(teamIds) {
   const arr = [...teamIds];
   const n = arr.length;
@@ -72,6 +73,7 @@ function generateRoundRobin(teamIds) {
         blueId: round % 2 === 0 ? t1 : t2,
         redId: round % 2 === 0 ? t2 : t1,
         bestOf: 3,
+        fearless: true,
         blueScore: 0,
         redScore: 0,
         played: false,
@@ -79,7 +81,6 @@ function generateRoundRobin(teamIds) {
       });
     }
     weeks.push(matches);
-    // Rotate all except index 0
     arr.splice(1, 0, arr.pop());
   }
   return weeks;
@@ -92,11 +93,7 @@ function createRegionalSchedules(teams) {
     const rTeams = teams.filter(t => t.region === reg.id);
     schedules[reg.id] = generateRoundRobin(rTeams.map(t => t.id));
     standings[reg.id] = rTeams.map(t => ({
-      teamId: t.id,
-      wins: 0,
-      losses: 0,
-      gameWins: 0,
-      gameLosses: 0,
+      teamId: t.id, wins: 0, losses: 0, gameWins: 0, gameLosses: 0,
     }));
   }
   return { schedules, standings };
@@ -117,23 +114,20 @@ export function addInboxMessage(state, { title, sender, category, body }) {
   state.inbox.unshift({
     id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     date: `Sezon ${state.season} — ${getPhaseLabel(state.phase)} H${state.week}`,
-    title,
-    sender,
-    category, // 'NEWS' | 'BOARD' | 'PATCH' | 'TRANSFER' | 'TOURNAMENT'
-    body,
-    read: false,
+    title, sender, category, body, read: false,
   });
-  if (state.inbox.length > 60) state.inbox.pop();
+  if (state.inbox.length > 70) state.inbox.pop();
 }
 
 export function getPhaseLabel(phase) {
   const map = {
     SPRING_SPLIT: 'Bahar Mevsimi',
     SPRING_PLAYOFFS: 'Bahar Playoff',
-    MSI: 'MSI 2026',
+    MSI: 'MSI Uluslararası',
     SUMMER_SPLIT: 'Yaz Mevsimi',
     SUMMER_PLAYOFFS: 'Yaz Playoff',
-    WORLDS: 'WORLDS Şampiyonası',
+    WORLDS_SWISS: 'WORLDS İsviçre Aşaması',
+    WORLDS_KNOCKOUT: 'WORLDS Eleme Aşaması',
     OFFSEASON: 'Sezon Arası & Transfer',
   };
   return map[phase] || phase;
@@ -148,17 +142,23 @@ export function createNewCareer(userTeamId) {
   const state = {
     season: 2026,
     phase: 'SPRING_SPLIT',
-    week: 1, // 1..7 for split, 1..2 for playoffs, 1..3 for MSI/Worlds
+    week: 1,
     patchIndex: 0,
+    fearlessEnabled: true,
     userTeamId,
     teams,
     players,
     schedules,
     standings,
-    bracket: null, // active playoff / MSI / Worlds bracket
+    swiss: null,     // 16-team Worlds Swiss Stage state
+    bracket: null,   // Playoffs / MSI / Worlds Knockout
+    challengerPool: generateChallengerProspects(),
+    incomingOffers: [],
+    pendingEvent: null,
     scrimDoneThisWeek: false,
     academyPromotedThisSplit: false,
-    history: [], // past champions & user finishes
+    history: [],
+    awards: [],
     inbox: [],
   };
 
@@ -166,7 +166,7 @@ export function createNewCareer(userTeamId) {
     title: `${userTeam.name} Yönetim Kurulu'na Hoş Geldin!`,
     sender: 'Yönetim Kurulu',
     category: 'BOARD',
-    body: `${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. İlk hedefimiz ${userTeam.region} Bahar Mevsimi'nde ilk 4'e girip Playoff oynamak ve ardından MSI & Worlds kupalarını kaldırmak!`,
+    body: `${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. Fearless Draft aktif! Hedefimiz ${userTeam.region} şampiyonluğu, MSI ve 16 takımlı Worlds kupası!`,
   });
 
   const p0 = PATCHES[0];
@@ -184,7 +184,6 @@ export function getCurrentPatch(state) {
   return PATCHES[state.patchIndex % PATCHES.length];
 }
 
-// Get user's next unplayed match in the current week/round
 export function getUserNextMatch(state) {
   const uid = state.userTeamId;
   const userTeam = state.teams.find(t => t.id === uid);
@@ -192,6 +191,10 @@ export function getUserNextMatch(state) {
   if (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') {
     const regMatches = state.schedules[userTeam.region]?.[state.week - 1] || [];
     return regMatches.find(m => !m.played && (m.blueId === uid || m.redId === uid)) || null;
+  }
+
+  if (state.phase === 'WORLDS_SWISS' && state.swiss) {
+    return state.swiss.currentMatches.find(m => !m.played && (m.blueId === uid || m.redId === uid)) || null;
   }
 
   if (state.bracket) {
@@ -203,12 +206,17 @@ export function getUserNextMatch(state) {
   return null;
 }
 
-// Record a finished series result (either from live play or quick sim)
 export function recordSeriesResult(state, match, blueScore, redScore) {
   match.blueScore = blueScore;
   match.redScore = redScore;
   match.played = true;
   match.winnerId = blueScore > redScore ? match.blueId : match.redId;
+
+  // Derby fanbase bonus
+  if (getRivalryName(match.blueId, match.redId)) {
+    const winTeam = state.teams.find(t => t.id === match.winnerId);
+    if (winTeam) winTeam.fanbase = Math.min(100, winTeam.fanbase + 1);
+  }
 
   if (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') {
     const blueTeam = state.teams.find(t => t.id === match.blueId);
@@ -223,6 +231,17 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
       if (match.winnerId === match.blueId) { bRow.wins++; rRow.losses++; }
       else { rRow.wins++; bRow.losses++; }
     }
+  } else if (state.phase === 'WORLDS_SWISS' && state.swiss) {
+    const bRow = state.swiss.teams.find(t => t.teamId === match.blueId);
+    const rRow = state.swiss.teams.find(t => t.teamId === match.redId);
+    if (bRow && rRow) {
+      if (match.winnerId === match.blueId) { bRow.wins++; rRow.losses++; }
+      else { rRow.wins++; bRow.losses++; }
+      if (bRow.wins >= 3) bRow.status = 'QUALIFIED';
+      if (bRow.losses >= 3) bRow.status = 'ELIMINATED';
+      if (rRow.wins >= 3) rRow.status = 'QUALIFIED';
+      if (rRow.losses >= 3) rRow.status = 'ELIMINATED';
+    }
   }
 }
 
@@ -233,31 +252,184 @@ export function quickSimSeries(state, match) {
   const redRoster = getTeamRoster(state, match.redId);
   const patch = getCurrentPatch(state);
   const needed = Math.ceil(match.bestOf / 2);
+  const highStakes = state.phase !== 'SPRING_SPLIT' && state.phase !== 'SUMMER_SPLIT' || !!getRivalryName(match.blueId, match.redId);
+  const fearlessLocked = new Set();
 
   let bScore = 0, rScore = 0;
   while (bScore < needed && rScore < needed) {
-    const m = quickSimulateGame(blueTeam, redTeam, blueRoster, redRoster, patch);
+    const { match: m, draft } = quickSimulateGame(blueTeam, redTeam, blueRoster, redRoster, patch, state.fearlessEnabled ? fearlessLocked : new Set(), highStakes);
     applyMatchOutcomeToPlayers(m);
+    if (state.fearlessEnabled) {
+      Object.values(draft.bluePicks).forEach(id => fearlessLocked.add(id));
+      Object.values(draft.redPicks).forEach(id => fearlessLocked.add(id));
+    }
     if (m.winner === 'blue') bScore++;
     else rScore++;
   }
   recordSeriesResult(state, match, bScore, rScore);
 }
 
-// Weekly tick: training, salaries, sponsor income
+// ==================== DRAMA & PRESS CONFERENCE EVENTS ====================
+function maybeTriggerDramaEvent(state) {
+  if (state.pendingEvent || Math.random() > 0.42) return;
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const roster = getTeamRoster(state, team.id);
+  const p1 = roster[Math.floor(Math.random() * roster.length)];
+  const p2 = roster.find(p => p.id !== p1.id) || p1;
+
+  const templates = [
+    {
+      title: '🎥 Gece Yarısı Yayın Krizi',
+      desc: `${p1.name}, önemli maç haftasında sabah 4'e kadar SoloQ yayını yaptığı için antrenmana uykusuz geldi. Nasıl tepki vereceksin?`,
+      choices: [
+        { label: 'Para Cezası & Disiplin (Form +2, Moral -8, Bütçe +$15K)', effect: () => { p1.form = Math.min(99, p1.form + 2); p1.morale = Math.max(30, p1.morale - 8); team.budget += 15000; } },
+        { label: 'Birebir Uyarı Konuşması (Yorgunluk -5, Moral -2)', effect: () => { p1.fatigue = Math.max(0, p1.fatigue - 5); p1.morale = Math.max(30, p1.morale - 2); } },
+        { label: 'Görmezden Gel (Taraftar +2, Yorgunluk +8)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 2); p1.fatigue = Math.min(100, p1.fatigue + 8); } },
+      ],
+    },
+    {
+      title: '💥 Scrim Sonrası Tartışma',
+      desc: `Scrim değerlendirmesinde ${p1.name} ve ${p2.name} harita çağrısı yüzünden sertçe tartıştı. Takım atmosferi gergin!`,
+      choices: [
+        { label: 'Takım Yemeği Düzenle (-$20K, Sinerji +5, Moral +6)', effect: () => { team.budget -= 20000; team.synergy = Math.min(100, team.synergy + 5); roster.forEach(p => { p.morale = Math.min(100, p.morale + 6); }); } },
+        { label: `${p1.name}'ı Haklı Bul (${p1.name} Moral +6, ${p2.name} Moral -7)`, effect: () => { p1.morale = Math.min(100, p1.morale + 6); p2.morale = Math.max(30, p2.morale - 7); } },
+        { label: 'Profesyonel Kalın Deyip Kapat (Sinerji -2)', effect: () => { team.synergy = Math.max(40, team.synergy - 2); } },
+      ],
+    },
+    {
+      title: '🎙️ Basın Toplantısı & Trash Talk',
+      desc: `Rakip koç, röportajda ${team.name} için "Sadece şansla kazanıyorlar, bizi asla yenemezler" dedi. Mikrofon sende!`,
+      choices: [
+        { label: 'Sert Trash Talk Yap (Taraftar +3, Takım Moral +5)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 3); roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); }); } },
+        { label: 'Vadi\'de Cevap Vereceğiz (Sinerji +3, Form +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 3); roster.forEach(p => { p.form = Math.min(99, p.form + 2); }); } },
+      ],
+    },
+    {
+      title: '📸 Sponsor Reklam Çekimi',
+      desc: `Ana sponsorunuz hafta ortasında tam günlük reklam çekimi talep ediyor. Kabul ederseniz nakit prim var ama antrenman aksayacak.`,
+      choices: [
+        { label: 'Çekimi Kabul Et (Bütçe +$85K, Yorgunluk +9)', effect: () => { team.budget += 85000; roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 9); }); } },
+        { label: 'Reddet & Antrenmana Odaklan (Form +3, Sinerji +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 2); roster.forEach(p => { p.form = Math.min(99, p.form + 3); }); } },
+      ],
+    },
+  ];
+
+  const chosen = templates[Math.floor(Math.random() * templates.length)];
+  state.pendingEvent = {
+    title: chosen.title,
+    desc: chosen.desc,
+    choices: chosen.choices.map((c, idx) => ({ idx, label: c.label })),
+    _effects: chosen.choices.map(c => c.effect),
+  };
+}
+
+export function resolveDramaEvent(state, choiceIdx) {
+  if (!state.pendingEvent) return;
+  const fn = state.pendingEvent._effects?.[choiceIdx];
+  if (fn) fn();
+  const title = state.pendingEvent.title;
+  const chosenLbl = state.pendingEvent.choices[choiceIdx]?.label || '';
+  state.pendingEvent = null;
+  addInboxMessage(state, {
+    title: `Karar Verildi: ${title}`,
+    sender: 'Kulüp Yönetimi',
+    category: 'NEWS',
+    body: `Seçimin: "${chosenLbl}" uygulandı.`,
+  });
+}
+
+// ==================== AI INCOMING TRANSFER BIDS ====================
+function maybeGenerateIncomingOffer(state) {
+  if (state.incomingOffers.length >= 2 || Math.random() > 0.28) return;
+  const userPlayers = state.players.filter(p => p.teamId === state.userTeamId);
+  if (userPlayers.length === 0) return;
+  const target = userPlayers[Math.floor(Math.random() * userPlayers.length)];
+  const buyers = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= target.marketValue * 0.9);
+  if (buyers.length === 0) return;
+  const buyer = buyers[Math.floor(Math.random() * buyers.length)];
+  const offerAmount = Math.round((target.marketValue * (1.05 + Math.random() * 0.35)) / 5000) * 5000;
+
+  state.incomingOffers.push({
+    id: `off_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+    buyerTeamId: buyer.id,
+    buyerName: buyer.name,
+    buyerTag: buyer.tag,
+    playerId: target.id,
+    playerName: target.name,
+    playerRole: target.role,
+    playerOvr: target.ovr,
+    amount: offerAmount,
+  });
+
+  addInboxMessage(state, {
+    title: `💰 Transfer Teklifi: ${buyer.name} → ${target.name}`,
+    sender: buyer.name,
+    category: 'TRANSFER',
+    body: `${buyer.name} kulübü, ${target.name} (${target.role}, OVR ${target.ovr}) için ${formatMoney(offerAmount)} bonservis teklif etti! Genel Bakış veya Transfer ekranından kabul/reddedebilirsin.`,
+  });
+}
+
+export function respondIncomingOffer(state, offerId, accept) {
+  const idx = state.incomingOffers.findIndex(o => o.id === offerId);
+  if (idx === -1) return { ok: false, reason: 'Teklif bulunamadı.' };
+  const off = state.incomingOffers[idx];
+  state.incomingOffers.splice(idx, 1);
+
+  if (!accept) return { ok: true, reason: `${off.buyerName} kulübünün ${off.playerName} teklifi reddedildi.` };
+
+  const p = state.players.find(x => x.id === off.playerId);
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const buyer = state.teams.find(t => t.id === off.buyerTeamId);
+  if (!p || p.teamId !== userTeam.id) return { ok: false, reason: 'Oyuncu artık kadroda değil.' };
+
+  const sameRoleCount = state.players.filter(x => x.teamId === userTeam.id && x.role === p.role).length;
+  if (sameRoleCount <= 1) {
+    state.incomingOffers.push(off);
+    return { ok: false, reason: `${p.role} rolünde başka oyuncun yok! Önce yedek almadan satamazsın.` };
+  }
+
+  userTeam.budget += off.amount;
+  buyer.budget = Math.max(200000, buyer.budget - off.amount);
+  p.teamId = buyer.id;
+  p.isStarter = true;
+  p.contractYears = 2;
+
+  const sub = state.players.find(x => x.teamId === userTeam.id && x.role === p.role);
+  if (sub) sub.isStarter = true;
+
+  addInboxMessage(state, {
+    title: `Satış Tamamlandı: ${p.name} → ${buyer.name}`,
+    sender: 'Sportif Direktör',
+    category: 'TRANSFER',
+    body: `${p.name}, ${formatMoney(off.amount)} bonservis karşılığında ${buyer.name} kulübüne satıldı!`,
+  });
+  return { ok: true, reason: `${p.name} ${formatMoney(off.amount)} karşılığında satıldı!` };
+}
+
+// ==================== WEEKLY TICK ====================
 function runWeeklyClubTick(state) {
   state.scrimDoneThisWeek = false;
   for (const team of state.teams) {
     const wages = getTeamWeeklyWages(state, team.id);
-    const fanIncome = team.fanbase * 950;
-    const sponsorIncome = team.sponsor ? team.sponsor.weekly : 30000;
+    const roster = state.players.filter(p => p.teamId === team.id);
+    const streamerBonus = roster.filter(p => p.trait === 'Streamer').length * 18000;
+    const fanIncome = team.fanbase * 950 + streamerBonus;
+    const sponsorIncome = team.sponsor ? team.sponsor.weekly : 35000;
     team.budget += (fanIncome + sponsorIncome - wages);
 
-    // Training effect on players
     const focus = team.trainingFocus || 'balanced';
-    const roster = state.players.filter(p => p.teamId === team.id);
     for (const p of roster) {
-      const growthChance = p.ovr < p.pot ? (p.age <= 21 ? 0.35 : p.age <= 24 ? 0.22 : 0.10) : 0.03;
+      // Language adaptation decay
+      if (p.importWeeksLeft > 0) {
+        p.importWeeksLeft = Math.max(0, p.importWeeksLeft - (team.facilities.psychologist >= 2 ? 2 : 1));
+      }
+      // Ego players dislike being benched
+      if (p.trait === 'Ego' && !p.isStarter) {
+        p.morale = Math.max(25, p.morale - 6);
+      }
+
+      const grinderMult = p.trait === 'Grinder' ? 1.4 : 1.0;
+      const growthChance = (p.ovr < p.pot ? (p.age <= 21 ? 0.35 : p.age <= 24 ? 0.22 : 0.10) : 0.03) * grinderMult;
       const psychBonus = (team.facilities.psychologist - 1) * 1.5;
 
       if (focus === 'rest') {
@@ -282,6 +454,39 @@ function runWeeklyClubTick(state) {
   }
 }
 
+// ==================== SEASON AWARDS ====================
+function awardSplitHonors(state, splitName) {
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const regTeams = new Set(state.teams.filter(t => t.region === userTeam.region).map(t => t.id));
+  const regPlayers = state.players.filter(p => regTeams.has(p.teamId) && p.stats.games > 0);
+  if (regPlayers.length === 0) return;
+
+  const scoreP = (p) => p.stats.mvps * 12 + (p.stats.kills * 2 + p.stats.assists - p.stats.deaths * 1.5) / Math.max(1, p.stats.games) + p.ovr * 0.25;
+  const mvp = [...regPlayers].sort((a, b) => scoreP(b) - scoreP(a))[0];
+  const rookies = regPlayers.filter(p => p.age <= 20);
+  const rookie = rookies.length ? [...rookies].sort((a, b) => scoreP(b) - scoreP(a))[0] : null;
+  const allPro = ROLES.map(role => {
+    const cands = regPlayers.filter(p => p.role === role).sort((a, b) => scoreP(b) - scoreP(a));
+    return cands[0] ? `${role}: ${cands[0].name}` : '';
+  }).filter(Boolean);
+
+  state.awards.unshift({
+    season: state.season,
+    split: `${userTeam.region} ${splitName}`,
+    mvp: `${mvp.name} (${state.teams.find(t => t.id === mvp.teamId)?.tag})`,
+    rookie: rookie ? `${rookie.name} (${state.teams.find(t => t.id === rookie.teamId)?.tag})` : '-',
+    allPro: allPro.join(' • '),
+  });
+
+  addInboxMessage(state, {
+    title: `🏅 ${userTeam.region} ${splitName} Sezon Ödülleri Açıklandı!`,
+    sender: 'Lig Komitesi',
+    category: 'NEWS',
+    body: `Mevsim MVP'si: ${mvp.name} | Yılın Çaylağı: ${rookie ? rookie.name : '-'} | All-Pro 1. Takım: ${allPro.join(', ')}`,
+  });
+}
+
+// ==================== BRACKETS & 16-TEAM WORLDS SWISS STAGE ====================
 function createRegionalPlayoffsBracket(state, title) {
   const rounds = [
     { name: 'Yarı Finaller', matches: [] },
@@ -297,23 +502,18 @@ function createRegionalPlayoffsBracket(state, title) {
   return { title, type: 'REGIONAL_PLAYOFFS', currentRound: 0, rounds };
 }
 
-function createInternationalBracket(state, title, type) {
-  // Top 2 from each region (8 teams total)
-  const seeds = {};
-  for (const reg of REGIONS) {
-    const sorted = getSortedStandings(state, reg.id);
-    seeds[reg.id] = [sorted[0].teamId, sorted[1].teamId];
-  }
-  // Cross-region Quarterfinals (1st seed vs 2nd seed from another region)
+function createMSIBracket(state, champByRegion) {
+  // 8 Teams: All 7 Regional Champions + LCK #2
+  const lck2 = getSortedStandings(state, 'LCK')[1]?.teamId;
   const qf = [
-    { id: `${type}_qf1`, blueId: seeds.LCK[0], redId: seeds.LCS[1], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
-    { id: `${type}_qf2`, blueId: seeds.LPL[0], redId: seeds.LEC[1], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
-    { id: `${type}_qf3`, blueId: seeds.LEC[0], redId: seeds.LPL[1], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
-    { id: `${type}_qf4`, blueId: seeds.LCS[0], redId: seeds.LCK[1], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'MSI_qf1', blueId: champByRegion.LCK, redId: champByRegion.LCO, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'MSI_qf2', blueId: champByRegion.LPL, redId: champByRegion.TCL, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'MSI_qf3', blueId: champByRegion.LEC, redId: champByRegion.CBLOL, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'MSI_qf4', blueId: champByRegion.LCS, redId: lck2, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
   ];
   return {
-    title,
-    type,
+    title: `MSI ${state.season} (7 Bölge Şampiyonu + LCK #2)`,
+    type: 'MSI',
     currentRound: 0,
     rounds: [
       { name: 'Çeyrek Finaller', matches: qf },
@@ -323,28 +523,106 @@ function createInternationalBracket(state, title, type) {
   };
 }
 
-// Simulate remaining AI matches in current week/round and advance calendar
+function createWorldsSwissStage(state) {
+  // 16 Teams: Top 3 LCK/LPL/LEC/LCS (12) + TCL #1 + CBLOL #1, #2 + LCO #1
+  const picks = [
+    ...getSortedStandings(state, 'LCK').slice(0, 3),
+    ...getSortedStandings(state, 'LPL').slice(0, 3),
+    ...getSortedStandings(state, 'LEC').slice(0, 3),
+    ...getSortedStandings(state, 'LCS').slice(0, 3),
+    ...getSortedStandings(state, 'TCL').slice(0, 1),
+    ...getSortedStandings(state, 'CBLOL').slice(0, 2),
+    ...getSortedStandings(state, 'LCO').slice(0, 1),
+  ];
+
+  const swissTeams = picks.map(r => ({
+    teamId: r.teamId,
+    wins: 0,
+    losses: 0,
+    status: 'ACTIVE', // ACTIVE | QUALIFIED | ELIMINATED
+  }));
+
+  const swiss = {
+    round: 1,
+    teams: swissTeams,
+    currentMatches: [],
+    pastRounds: [],
+  };
+  pairSwissRound(swiss);
+  return swiss;
+}
+
+function pairSwissRound(swiss) {
+  const active = swiss.teams.filter(t => t.status === 'ACTIVE');
+  // Group by W-L record
+  const buckets = {};
+  for (const t of active) {
+    const key = `${t.wins}-${t.losses}`;
+    if (!buckets[key]) buckets[key] = [];
+    buckets[key].push(t);
+  }
+
+  const matches = [];
+  let leftovers = [];
+  const keys = Object.keys(buckets).sort((a, b) => Number(b.split('-')[0]) - Number(a.split('-')[0]));
+
+  for (const key of keys) {
+    const group = [...buckets[key]].sort(() => Math.random() - 0.5);
+    if (leftovers.length) group.unshift(leftovers.pop());
+    while (group.length >= 2) {
+      const a = group.shift();
+      const b = group.shift();
+      const isDecider = a.wins === 2 || a.losses === 2 || b.wins === 2 || b.losses === 2;
+      matches.push({
+        id: `sw_r${swiss.round}_${a.teamId}_${b.teamId}`,
+        recordLabel: key,
+        blueId: a.teamId,
+        redId: b.teamId,
+        bestOf: isDecider ? 3 : 1,
+        blueScore: 0, redScore: 0, played: false, winnerId: null,
+      });
+    }
+    if (group.length === 1) leftovers.push(group[0]);
+  }
+  swiss.currentMatches = matches;
+}
+
+function createWorldsKnockoutBracket(state, qualifiedTeamIds) {
+  const shuffled = [...qualifiedTeamIds].sort((a, b) => getTeamOVR(state, b) - getTeamOVR(state, a));
+  const qf = [
+    { id: 'WORLDS_qf1', blueId: shuffled[0], redId: shuffled[7], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'WORLDS_qf2', blueId: shuffled[3], redId: shuffled[4], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'WORLDS_qf3', blueId: shuffled[1], redId: shuffled[6], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+    { id: 'WORLDS_qf4', blueId: shuffled[2], redId: shuffled[5], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+  ];
+  return {
+    title: `WORLDS ${state.season} Eleme Aşaması`,
+    type: 'WORLDS',
+    currentRound: 0,
+    rounds: [
+      { name: 'Çeyrek Finaller', matches: qf },
+      { name: 'Yarı Finaller', matches: [] },
+      { name: 'WORLDS BÜYÜK FİNAL', matches: [] },
+    ],
+  };
+}
+
+// ==================== ADVANCE CALENDAR ====================
 export function advanceWeekOrRound(state) {
-  // 1. Simulate any remaining unplayed matches this week/round
+  // 1. Splits
   if (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') {
     for (const reg of REGIONS) {
       const weekMatches = state.schedules[reg.id][state.week - 1] || [];
-      for (const m of weekMatches) {
-        if (!m.played) quickSimSeries(state, m);
-      }
+      for (const m of weekMatches) if (!m.played) quickSimSeries(state, m);
     }
     runWeeklyClubTick(state);
+    maybeTriggerDramaEvent(state);
+    maybeGenerateIncomingOffer(state);
 
-    // Mid-split Patch Drop on week 4
     if (state.week === 4) {
       state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
       const np = getCurrentPatch(state);
-      addInboxMessage(state, {
-        title: `Yeni Yama ${np.version}: ${np.name}`,
-        sender: 'Riot Denge Ekibi',
-        category: 'PATCH',
-        body: np.desc,
-      });
+      addInboxMessage(state, { title: `Yeni Yama ${np.version}: ${np.name}`, sender: 'Riot Denge Ekibi', category: 'PATCH', body: np.desc });
     }
 
     if (state.week < 7) {
@@ -352,40 +630,56 @@ export function advanceWeekOrRound(state) {
       return;
     }
 
-    // End of Split -> Move to Playoffs
     if (state.phase === 'SPRING_SPLIT') {
+      awardSplitHonors(state, 'Bahar');
       state.phase = 'SPRING_PLAYOFFS';
       state.week = 1;
       state.bracket = createRegionalPlayoffsBracket(state, `Sezon ${state.season} Bahar Playoffları`);
-      addInboxMessage(state, {
-        title: 'Bahar Playoffları Başlıyor!',
-        sender: 'Lig Komitesi',
-        category: 'TOURNAMENT',
-        body: 'Normal sezon tamamlandı! Her bölgenin ilk 4 takımı BO5 formatında şampiyonluk ve MSI bileti için mücadele edecek.',
-      });
+      addInboxMessage(state, { title: 'Bahar Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: '7 bölgede ilk 4 takımlar BO5 Playoff ve MSI bileti için sahneye çıkıyor!' });
     } else {
+      awardSplitHonors(state, 'Yaz');
       state.phase = 'SUMMER_PLAYOFFS';
       state.week = 1;
       state.bracket = createRegionalPlayoffsBracket(state, `Sezon ${state.season} Yaz Playoffları`);
-      addInboxMessage(state, {
-        title: 'Yaz Playoffları Başlıyor!',
-        sender: 'Lig Komitesi',
-        category: 'TOURNAMENT',
-        body: 'Yaz Mevsimi tamamlandı! Her bölgenin en iyi 2 takımı Worlds biletini kapacak.',
-      });
+      addInboxMessage(state, { title: 'Yaz Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: 'Yaz Mevsimi bitti! Şimdi 16 takımlı Worlds İsviçre Aşaması öncesi bölge finalleri!' });
     }
     return;
   }
 
-  // 2. Bracket Phases (Playoffs, MSI, Worlds)
-  if (state.bracket) {
-    const round = state.bracket.rounds[state.bracket.currentRound];
-    for (const m of round.matches) {
-      if (!m.played) quickSimSeries(state, m);
-    }
+  // 2. Worlds 16-Team Swiss Stage
+  if (state.phase === 'WORLDS_SWISS' && state.swiss) {
+    for (const m of state.swiss.currentMatches) if (!m.played) quickSimSeries(state, m);
+    state.swiss.pastRounds.push({ round: state.swiss.round, matches: state.swiss.currentMatches });
     runWeeklyClubTick(state);
 
-    // Advance to next round in bracket if not final
+    const activeLeft = state.swiss.teams.filter(t => t.status === 'ACTIVE');
+    if (activeLeft.length > 0 && state.swiss.round < 5) {
+      state.swiss.round++;
+      state.week = state.swiss.round;
+      pairSwissRound(state.swiss);
+      return;
+    }
+
+    // Swiss Finished -> Top 8 to Knockout!
+    const qualified = state.swiss.teams.filter(t => t.status === 'QUALIFIED').map(t => t.teamId);
+    state.phase = 'WORLDS_KNOCKOUT';
+    state.week = 1;
+    state.bracket = createWorldsKnockoutBracket(state, qualified);
+    addInboxMessage(state, {
+      title: `WORLDS ${state.season} Çeyrek Finalleri Belli Oldu!`,
+      sender: 'Riot Esports',
+      category: 'TOURNAMENT',
+      body: `İsviçre Aşaması'ndan çıkan 8 dev takım şimdi BO5 Eleme Aşaması'nda Sihirdar Kupası için mücadele ediyor!`,
+    });
+    return;
+  }
+
+  // 3. Bracket Phases (Playoffs, MSI, Worlds Knockout)
+  if (state.bracket) {
+    const round = state.bracket.rounds[state.bracket.currentRound];
+    for (const m of round.matches) if (!m.played) quickSimSeries(state, m);
+    runWeeklyClubTick(state);
+
     if (state.bracket.currentRound < state.bracket.rounds.length - 1) {
       const nextIdx = state.bracket.currentRound + 1;
       const nextMatches = [];
@@ -393,10 +687,8 @@ export function advanceWeekOrRound(state) {
         for (const reg of REGIONS) {
           const sfs = round.matches.filter(m => m.region === reg.id);
           nextMatches.push({
-            id: `po_${reg.id}_fin`,
-            region: reg.id,
-            blueId: sfs[0].winnerId,
-            redId: sfs[1].winnerId,
+            id: `po_${reg.id}_fin`, region: reg.id,
+            blueId: sfs[0].winnerId, redId: sfs[1].winnerId,
             bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null,
           });
         }
@@ -404,8 +696,7 @@ export function advanceWeekOrRound(state) {
         for (let i = 0; i < round.matches.length; i += 2) {
           nextMatches.push({
             id: `${state.bracket.type}_r${nextIdx}_${i}`,
-            blueId: round.matches[i].winnerId,
-            redId: round.matches[i + 1].winnerId,
+            blueId: round.matches[i].winnerId, redId: round.matches[i + 1].winnerId,
             bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null,
           });
         }
@@ -416,12 +707,11 @@ export function advanceWeekOrRound(state) {
       return;
     }
 
-    // Bracket Finished! Award trophies & prize money, transition to next phase
     finishBracketAndTransition(state);
     return;
   }
 
-  // 3. Off-season -> Start Next Season
+  // 4. Off-Season -> Next Season
   if (state.phase === 'OFFSEASON') {
     startNewSeason(state);
   }
@@ -432,21 +722,23 @@ function finishBracketAndTransition(state) {
 
   if (state.phase === 'SPRING_PLAYOFFS') {
     const champs = [];
+    const champByRegion = {};
     for (const fm of finalMatches) {
       const champ = state.teams.find(t => t.id === fm.winnerId);
       champ.budget += 300000;
       champ.trophies.push(`${state.season} ${fm.region} Bahar`);
       champs.push(`${fm.region}: ${champ.tag}`);
+      champByRegion[fm.region] = champ.id;
     }
     addInboxMessage(state, {
       title: 'Bahar Şampiyonları Belli Oldu — MSI Başlıyor!',
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `Bölge Şampiyonları: ${champs.join(' • ')}. Şimdi 4 bölgenin en iyi 2 takımı MSI kupası için karşı karşıya geliyor!`,
+      body: `Bölge Şampiyonları: ${champs.join(' • ')}. Şimdi 7 bölgenin şampiyonu + LCK #2 MSI kupası için karşı karşıya!`,
     });
     state.phase = 'MSI';
     state.week = 1;
-    state.bracket = createInternationalBracket(state, `MSI ${state.season}`, 'MSI');
+    state.bracket = createMSIBracket(state, champByRegion);
     return;
   }
 
@@ -457,7 +749,6 @@ function finishBracketAndTransition(state) {
     msiWinner.trophies.push(`MSI ${state.season}`);
     state.history.push({ season: state.season, event: 'MSI', winner: msiWinner.name, tag: msiWinner.tag });
 
-    // New Patch + Reset schedules for Summer Split
     state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
     const { schedules, standings } = createRegionalSchedules(state.teams);
     state.schedules = schedules;
@@ -466,12 +757,13 @@ function finishBracketAndTransition(state) {
     state.phase = 'SUMMER_SPLIT';
     state.week = 1;
     state.academyPromotedThisSplit = false;
+    state.challengerPool = generateChallengerProspects();
 
     addInboxMessage(state, {
       title: `MSI ${state.season} Şampiyonu: ${msiWinner.name}!`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${msiWinner.name} uluslararası sahnede kupayı kaldırdı! Yeni Yama ${getCurrentPatch(state).version} ile birlikte Yaz Mevsimi başlıyor.`,
+      body: `${msiWinner.name} MSI kupasını kaldırdı! Yeni Yama ${getCurrentPatch(state).version} ve taze SoloQ Challenger genç yetenekleriyle Yaz Mevsimi başlıyor.`,
     });
     return;
   }
@@ -484,34 +776,33 @@ function finishBracketAndTransition(state) {
       champ.trophies.push(`${state.season} ${fm.region} Yaz`);
       champs.push(`${fm.region}: ${champ.tag}`);
     }
-    state.patchIndex = 4; // Worlds Balanced Meta
-    state.phase = 'WORLDS';
+    state.patchIndex = 4;
+    state.bracket = null;
+    state.phase = 'WORLDS_SWISS';
     state.week = 1;
-    state.bracket = createInternationalBracket(state, `WORLDS ${state.season}`, 'WORLDS');
+    state.swiss = createWorldsSwissStage(state);
 
     addInboxMessage(state, {
-      title: `WORLDS ${state.season} BAŞLIYOR!`,
+      title: `🌍 WORLDS ${state.season} — 16 TAKIMLI İSVİÇRE AŞAMASI BAŞLIYOR!`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `Yaz Şampiyonları: ${champs.join(' • ')}. Sihirdar Kupası için 8 dev takım Worlds Çeyrek Finalleri'nde!`,
+      body: `Yaz Şampiyonları: ${champs.join(' • ')}. 3 galibiyet alan Çeyrek Final'e çıkar, 3 mağlubiyet alan elenir!`,
     });
     return;
   }
 
-  if (state.phase === 'WORLDS') {
+  if (state.phase === 'WORLDS_KNOCKOUT') {
     const worldsWinner = state.teams.find(t => t.id === finalMatches[0].winnerId);
     worldsWinner.budget += 1500000;
     worldsWinner.prestige = Math.min(99, worldsWinner.prestige + 3);
     worldsWinner.trophies.push(`WORLDS ${state.season}`);
     state.history.push({ season: state.season, event: 'WORLDS', winner: worldsWinner.name, tag: worldsWinner.tag });
 
-    // Sponsor bonus check for user
     const userTeam = state.teams.find(t => t.id === state.userTeamId);
-    if (userTeam.sponsor && worldsWinner.id === userTeam.id) {
-      userTeam.budget += userTeam.sponsor.bonus;
-    }
+    if (userTeam.sponsor && worldsWinner.id === userTeam.id) userTeam.budget += userTeam.sponsor.bonus;
 
     state.bracket = null;
+    state.swiss = null;
     state.phase = 'OFFSEASON';
     state.week = 1;
     runOffSeasonProgression(state);
@@ -520,13 +811,12 @@ function finishBracketAndTransition(state) {
       title: `🏆 WORLDS ${state.season} ŞAMPİYONU: ${worldsWinner.name}!`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${worldsWinner.name} Sihirdar Kupası'nı kazandı! Sezon arası transfer dönemi açıldı. Oyuncular yaşlandı, kontratı bitenler serbest kaldı ve yeni akademi yetenekleri piyasaya çıktı. Hazır olduğunda yeni sezona geçebilirsin.`,
+      body: `${worldsWinner.name} Sihirdar Kupası'nı kazandı! Sezon arası transfer dönemi açıldı, AI takımları transfer hamlelerini yapıyor ve yeni Challenger yetenekleri ortaya çıktı.`,
     });
   }
 }
 
 function runOffSeasonProgression(state) {
-  // Age players, update attributes, expire contracts
   for (const p of state.players) {
     p.age++;
     p.fatigue = 5;
@@ -544,36 +834,41 @@ function runOffSeasonProgression(state) {
     if (p.teamId) {
       p.contractYears--;
       if (p.contractYears <= 0 && p.teamId !== state.userTeamId) {
-        // AI auto-renews 75% of starters, releases 25%
-        if (Math.random() < 0.75) p.contractYears = 2;
+        if (Math.random() < 0.72) p.contractYears = 2;
         else { p.teamId = null; p.isStarter = false; }
       }
     }
   }
 
-  // Generate 10 fresh young regens into Free Agency
-  for (let i = 0; i < 10; i++) {
+  // Generate fresh regens + refresh Challenger pool
+  for (let i = 0; i < 14; i++) {
     const reg = REGIONS[i % REGIONS.length].id;
-    const role = ROLES[i % ROLES.length];
-    state.players.push(generateRegenPlayer(role, reg, 2, null));
+    state.players.push(generateRegenPlayer(ROLES[i % ROLES.length], reg, 2, null));
   }
+  state.challengerPool = generateChallengerProspects();
 
-  // Ensure every AI team has 5 starters
+  // AI-to-AI Off-Season Transfers!
+  const aiMoves = [];
   for (const team of state.teams) {
     if (team.id === state.userTeamId) continue;
     for (const role of ROLES) {
       const has = state.players.some(p => p.teamId === team.id && p.role === role);
       if (!has) {
-        const fa = state.players
-          .filter(p => p.teamId === null && p.role === role)
-          .sort((a, b) => b.ovr - a.ovr)[0];
+        const fa = state.players.filter(p => p.teamId === null && p.role === role).sort((a, b) => b.ovr - a.ovr)[0];
         if (fa) {
-          fa.teamId = team.id;
-          fa.isStarter = true;
-          fa.contractYears = 2;
+          fa.teamId = team.id; fa.isStarter = true; fa.contractYears = 2;
+          if (aiMoves.length < 5) aiMoves.push(`${team.tag} → ${fa.name} (${fa.role}, ${fa.ovr})`);
         }
       }
     }
+  }
+  if (aiMoves.length) {
+    addInboxMessage(state, {
+      title: '📰 Sezon Arası Transfer Özeti',
+      sender: 'Esports Insider',
+      category: 'TRANSFER',
+      body: `Öne çıkan AI transferleri: ${aiMoves.join(' • ')}`,
+    });
   }
 }
 
@@ -587,40 +882,75 @@ export function startNewSeason(state) {
   state.schedules = schedules;
   state.standings = standings;
   state.bracket = null;
+  state.swiss = null;
 
   addInboxMessage(state, {
     title: `Sezon ${state.season} Başladı!`,
     sender: 'Lig Komitesi',
     category: 'NEWS',
-    body: `Yeni sezon fikstürü çekildi. Tüm takımlara Bahar Mevsimi'nde başarılar!`,
+    body: `7 bölgede yeni sezon fikstürü çekildi. Bahar Mevsimi'nde başarılar!`,
   });
 }
 
-// ==================== CLUB & TRANSFER ACTIONS ====================
+// ==================== TRANSFERS, CHALLENGER SCOUTING & CLUB ====================
+export function scoutChallengerProspect(state, prospectId) {
+  const p = state.challengerPool.find(x => x.id === prospectId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  if (p.scouted) return { ok: false, reason: 'Bu oyuncu zaten scoutlandı.' };
+  const cost = team.facilities.analystDesk >= 3 ? 0 : 15000;
+  if (team.budget < cost) return { ok: false, reason: `Scout raporu için ${formatMoney(cost)} gerekli.` };
+  team.budget -= cost;
+  p.scouted = true;
+  return { ok: true, reason: `${p.name} scoutlandı! Gerçek Potansiyel: ${p.pot} (${p.trait})` };
+}
+
+export function signChallengerProspect(state, prospectId) {
+  const idx = state.challengerPool.findIndex(x => x.id === prospectId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (idx === -1) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  const p = state.challengerPool[idx];
+  if (team.budget < p.signingFee) return { ok: false, reason: `İmza bedeli için ${formatMoney(p.signingFee)} gerekli.` };
+
+  team.budget -= p.signingFee;
+  state.challengerPool.splice(idx, 1);
+  p.teamId = team.id;
+  p.contractYears = 3;
+  p.isStarter = false;
+  p.scouted = true;
+  if (p.lang !== REGION_LANG[team.region]) p.importWeeksLeft = 5;
+  state.players.push(p);
+
+  addInboxMessage(state, {
+    title: `🌟 Challenger Wonderkid İmzası: ${p.name}!`,
+    sender: 'Scouting Ekibi',
+    category: 'TRANSFER',
+    body: `${p.server} Challenger (${p.lp} LP) yeteneği ${p.name} (${p.age} yaş, ${p.role}, OVR ${p.ovr}/POT ${p.pot}) ${formatMoney(p.signingFee)} bedelle kadromuza katıldı!`,
+  });
+  return { ok: true, reason: `${p.name} kadroya katıldı!` };
+}
 
 export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSalary, contractYears) {
   const player = state.players.find(p => p.id === playerId);
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   if (!player || !userTeam) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  if (offeredBuyout > userTeam.budget) return { ok: false, reason: 'Yeterli transfer bütçen yok.' };
 
-  if (offeredBuyout > userTeam.budget) {
-    return { ok: false, reason: 'Yeterli transfer bütçen yok.' };
-  }
+  const applyImportCheck = () => {
+    if (player.lang && player.lang !== REGION_LANG[userTeam.region]) {
+      player.importWeeksLeft = 5;
+    } else {
+      player.importWeeksLeft = 0;
+    }
+  };
 
-  // If contracted to another team, check buyout
   if (player.teamId && player.teamId !== userTeam.id) {
     const sellingTeam = state.teams.find(t => t.id === player.teamId);
     const minBuyout = Math.round(player.marketValue * (player.isStarter ? 1.15 : 0.85));
-    if (offeredBuyout < minBuyout) {
-      return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu (En az ~${formatMoney(minBuyout)} istiyorlar).` };
-    }
-    // Check player interest (salary + prestige)
+    if (offeredBuyout < minBuyout) return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu (En az ~${formatMoney(minBuyout)} istiyorlar).` };
     const minSalary = Math.round(player.salary * (userTeam.prestige >= sellingTeam.prestige ? 1.0 : 1.2));
-    if (offeredSalary < minSalary) {
-      return { ok: false, reason: `${player.name}, haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
-    }
+    if (offeredSalary < minSalary) return { ok: false, reason: `${player.name}, haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
 
-    // Complete transfer! Replace selling team's gap if needed
     const oldTeamId = player.teamId;
     userTeam.budget -= offeredBuyout;
     sellingTeam.budget += offeredBuyout;
@@ -629,43 +959,39 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     player.contractYears = contractYears;
     player.isStarter = false;
     player.morale = 88;
+    applyImportCheck();
     userTeam.synergy = Math.max(45, userTeam.synergy - 4);
 
-    // Ensure selling team still has someone in that role
     const sellingHasRole = state.players.some(p => p.teamId === oldTeamId && p.role === player.role);
     if (!sellingHasRole) {
       const replacement = state.players.filter(p => p.teamId === null && p.role === player.role).sort((a, b) => b.ovr - a.ovr)[0]
         || generateRegenPlayer(player.role, sellingTeam.region, sellingTeam.facilities.youthAcademy, oldTeamId);
       if (!state.players.includes(replacement)) state.players.push(replacement);
-      replacement.teamId = oldTeamId;
-      replacement.isStarter = true;
-      replacement.contractYears = 2;
+      replacement.teamId = oldTeamId; replacement.isStarter = true; replacement.contractYears = 2;
     }
 
     addInboxMessage(state, {
       title: `Transfer Tamamlandı: ${player.name}!`,
       sender: 'Sportif Direktör',
       category: 'TRANSFER',
-      body: `${player.name}, ${sellingTeam.name} kulübünden ${formatMoney(offeredBuyout)} bonservis ve haftalık ${formatMoney(offeredSalary)} maaşla kadromuza katıldı!`,
+      body: `${player.name}, ${sellingTeam.name} kulübünden ${formatMoney(offeredBuyout)} bonservisle katıldı!${player.importWeeksLeft > 0 ? ' (Dil/iletişim uyumu için 5 hafta adaptasyon süreci olacak.)' : ''}`,
     });
     return { ok: true, reason: `${player.name} takıma katıldı!` };
   }
 
-  // Free Agent Signing
   const minSalary = Math.round(player.salary * (userTeam.prestige >= 85 ? 0.92 : 1.05));
-  if (offeredSalary < minSalary) {
-    return { ok: false, reason: `${player.name} haftalık en az ${formatMoney(minSalary)} maaş istiyor.` };
-  }
+  if (offeredSalary < minSalary) return { ok: false, reason: `${player.name} haftalık en az ${formatMoney(minSalary)} maaş istiyor.` };
   player.teamId = userTeam.id;
   player.salary = offeredSalary;
   player.contractYears = contractYears;
   player.isStarter = false;
   player.morale = 86;
+  applyImportCheck();
   addInboxMessage(state, {
     title: `Serbest Transfer: ${player.name}`,
     sender: 'Sportif Direktör',
     category: 'TRANSFER',
-    body: `Serbest oyuncu ${player.name} ile ${contractYears} yıllık (haftalık ${formatMoney(offeredSalary)}) sözleşme imzalandı.`,
+    body: `Serbest oyuncu ${player.name} ile ${contractYears} yıllık sözleşme imzalandı.`,
   });
   return { ok: true, reason: `${player.name} serbest transferle kadroya katıldı!` };
 }
@@ -674,9 +1000,7 @@ export function setStarter(state, playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p || p.teamId !== state.userTeamId) return;
   for (const mate of state.players) {
-    if (mate.teamId === state.userTeamId && mate.role === p.role) {
-      mate.isStarter = (mate.id === p.id);
-    }
+    if (mate.teamId === state.userTeamId && mate.role === p.role) mate.isStarter = (mate.id === p.id);
   }
 }
 
@@ -685,10 +1009,7 @@ export function releasePlayer(state, playerId) {
   if (!p || p.teamId !== state.userTeamId) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   const sameRoleCount = state.players.filter(x => x.teamId === state.userTeamId && x.role === p.role).length;
   if (sameRoleCount <= 1) return { ok: false, reason: `Bu rolde (${p.role}) başka oyuncun yok! Önce yedek al.` };
-  p.teamId = null;
-  p.isStarter = false;
-  p.contractYears = 0;
-  // Make sure someone else is starter
+  p.teamId = null; p.isStarter = false; p.contractYears = 0;
   const sub = state.players.find(x => x.teamId === state.userTeamId && x.role === p.role);
   if (sub) sub.isStarter = true;
   return { ok: true, reason: `${p.name} serbest bırakıldı.` };
@@ -713,14 +1034,12 @@ export function playWeeklyScrim(state, opponentTeamId) {
   if (state.scrimDoneThisWeek) return { ok: false, reason: 'Bu hafta zaten hazırlık maçı (Scrim) yaptın.' };
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const oppTeam = state.teams.find(t => t.id === opponentTeamId);
-  const uRoster = getTeamRoster(state, userTeam.id);
-  const oRoster = getTeamRoster(state, oppTeam.id);
-  const m = quickSimulateGame(userTeam, oppTeam, uRoster, oRoster, getCurrentPatch(state));
+  const { match: m } = quickSimulateGame(userTeam, oppTeam, getTeamRoster(state, userTeam.id), getTeamRoster(state, oppTeam.id), getCurrentPatch(state));
   state.scrimDoneThisWeek = true;
 
   const won = m.winner === 'blue';
   userTeam.synergy = Math.min(100, userTeam.synergy + (won ? 4 : 2));
-  for (const p of uRoster) {
+  for (const p of getTeamRoster(state, userTeam.id)) {
     p.form = Math.min(99, Math.max(45, p.form + (won ? 3 : 1)));
     p.fatigue = Math.min(100, p.fatigue + 7);
   }
@@ -744,7 +1063,9 @@ export function upgradeFacility(state, facilityKey) {
 
 export function saveGame(state) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    // Strip non-serializable function refs on pendingEvent if present
+    const copy = { ...state, pendingEvent: null };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(copy));
     return true;
   } catch (e) {
     console.error('Save failed', e);

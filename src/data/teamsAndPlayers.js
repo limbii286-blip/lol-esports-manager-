@@ -1,4 +1,4 @@
-// LoL Esports Manager — 4 Major Regions, 32 Real Teams, 160+ Pro Players + Free Agents
+// LoL Esports Manager v2.0 — 7 Regions (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO), 56 Teams, 280+ Players, Traits, Rivalries & Worlds Mayhem Legends
 
 export const ROLES = ['TOP', 'JGL', 'MID', 'BOT', 'SUP'];
 export const ROLE_LABELS = {
@@ -10,11 +10,54 @@ export const ROLE_LABELS = {
 };
 
 export const REGIONS = [
-  { id: 'LCK', name: 'LCK (Kore)', color: '#38bdf8', prestige: 96, desc: 'Dünyanın en disiplinli makro ve bireysel yetenek ligi.' },
-  { id: 'LPL', name: 'LPL (Çin)', color: '#ef4444', prestige: 95, desc: 'Agresif takım savaşları ve yüksek mekanik temposu.' },
-  { id: 'LEC', name: 'LEC (Avrupa)', color: '#10b981', prestige: 84, desc: 'Yaratıcı draftlar ve sürpriz stratejilerin sahnesi.' },
-  { id: 'LCS', name: 'LCS (Kuzey Amerika)', color: '#f59e0b', prestige: 80, desc: 'Yüksek bütçeler, yıldız transferler ve şov kültürü.' },
+  { id: 'LCK', name: 'LCK (Kore)', color: '#38bdf8', prestige: 96, lang: 'KR', desc: 'Dünyanın en disiplinli makro ve bireysel yetenek ligi.' },
+  { id: 'LPL', name: 'LPL (Çin)', color: '#ef4444', prestige: 95, lang: 'CN', desc: 'Agresif takım savaşları ve yüksek mekanik temposu.' },
+  { id: 'LEC', name: 'LEC (Avrupa)', color: '#10b981', prestige: 84, lang: 'EN', desc: 'Yaratıcı draftlar ve sürpriz stratejilerin sahnesi.' },
+  { id: 'LCS', name: 'LCS (K. Amerika)', color: '#f59e0b', prestige: 80, lang: 'EN', desc: 'Yüksek bütçeler, yıldız transferler ve şov kültürü.' },
+  { id: 'TCL', name: 'TCL (Türkiye)', color: '#e11d48', prestige: 75, lang: 'TR', desc: 'Tutkulu taraftarlar, ateşli derbiler ve genç mekanik yetenekler.' },
+  { id: 'CBLOL', name: 'CBLOL (Brezilya)', color: '#22c55e', prestige: 76, lang: 'PT', desc: 'Dünyanın en coşkulu arenaları ve kaotik takım savaşları.' },
+  { id: 'LCO', name: 'LCO (Okyanusya)', color: '#06b6d4', prestige: 72, lang: 'EN', desc: 'Sürpriz pickler ve cesur erken oyun baskıları.' },
 ];
+
+export const REGION_LANG = Object.fromEntries(REGIONS.map(r => [r.id, r.lang]));
+
+export const TRAITS = {
+  Clutch: { label: 'Büyük Maç', icon: '🔥', desc: 'Playoff, Derbi ve Worlds maçlarında +3 performans.' },
+  Leader: { label: 'Lider', icon: '👑', desc: 'Takım sinerjisini ve moralini korur.' },
+  Grinder: { label: 'Çalışkan', icon: '⚡', desc: 'Antrenmanlarda %40 daha hızlı gelişir.' },
+  Streamer: { label: 'Yayıncı', icon: '🎥', desc: 'Kulübe ekstra haftalık taraftar geliri getirir.' },
+  Tilt: { label: 'Tilt Meyilli', icon: '💢', desc: 'Gerideyken performansı düşebilir ama öndeyken parlar.' },
+  Ego: { label: 'Egoist', icon: '💎', desc: 'Yedek kalırsa hızlıca mutsuz olur; ilk 5 iken yüksek clutch.' },
+};
+
+export const RIVALRIES = [
+  ['t1', 'geng', 'Telecom / LCK El Clasico'],
+  ['t1', 'kt', 'Telecom War'],
+  ['blg', 'tes', 'LPL Zirve Derbisi'],
+  ['ig', 'rng', 'LPL Klasik'],
+  ['g2', 'fnc', 'LEC El Clasico'],
+  ['kc', 'vit', 'Fransa Derbisi'],
+  ['fly', 'tl', 'LCS Şampiyonluk Derbisi'],
+  ['c9', 'tl', 'Kuzey Amerika Klasiği'],
+  ['sup', 'bjk', 'TCL Büyük Derbi'],
+  ['sup', 'dp', 'TCL Şampiyonlar Klasiği'],
+  ['lll', 'png', 'CBLOL Süper Derbi'],
+  ['red', 'png', 'Brezilya Ateşi'],
+  ['chf', 'dw', 'Okyanusya Derbisi'],
+];
+
+export function getRivalryName(teamIdA, teamIdB) {
+  const found = RIVALRIES.find(([a, b]) => (a === teamIdA && b === teamIdB) || (a === teamIdB && b === teamIdA));
+  return found ? found[2] : null;
+}
+
+export function getPlayerLang(nat) {
+  if (nat === 'KR') return 'KR';
+  if (nat === 'CN' || nat === 'TW') return 'CN';
+  if (nat === 'TR') return 'TR';
+  if (nat === 'BR') return 'PT';
+  return 'EN';
+}
 
 export function calcOVR(attrs) {
   return Math.round(
@@ -30,19 +73,20 @@ export function calcOVR(attrs) {
 export function calcMarketValue(ovr, age, pot) {
   const ageFactor = age <= 20 ? 1.35 : age <= 23 ? 1.15 : age <= 26 ? 1.0 : age <= 28 ? 0.8 : 0.65;
   const potBonus = Math.max(0, pot - ovr) * 18000;
-  const base = Math.pow(Math.max(1, ovr - 58), 2.35) * 280;
-  return Math.round((base * ageFactor + potBonus) / 5000) * 5000;
+  const base = Math.pow(Math.max(1, ovr - 55), 2.3) * 260;
+  return Math.max(25000, Math.round((base * ageFactor + potBonus) / 5000) * 5000);
 }
 
 export function calcWeeklySalary(ovr, prestige = 80) {
-  const base = Math.pow(Math.max(1, ovr - 60), 2.05) * 42;
-  return Math.round((base * (0.85 + prestige / 400)) / 500) * 500;
+  const base = Math.pow(Math.max(1, ovr - 56), 2.0) * 38;
+  return Math.max(2500, Math.round((base * (0.85 + prestige / 400)) / 500) * 500);
 }
 
 let _pid = 1;
+const TRAIT_KEYS = Object.keys(TRAITS);
+
 function mkPlayer(name, role, nat, age, baseOvr, pot, style, sigChamps, teamId, overrides = {}) {
-  // Generate realistic 6 attributes around baseOvr based on playstyle & role
-  const clamp = (v) => Math.max(55, Math.min(99, Math.round(v)));
+  const clamp = (v) => Math.max(52, Math.min(99, Math.round(v)));
   const j = () => Math.floor(Math.random() * 5) - 2;
 
   let m = baseOvr + j();
@@ -72,17 +116,34 @@ function mkPlayer(name, role, nat, age, baseOvr, pot, style, sigChamps, teamId, 
   const salary = calcWeeklySalary(ovr);
   const marketValue = calcMarketValue(ovr, age, finalPot);
 
+  // Assign a fitting trait
+  let trait = overrides.trait;
+  if (!trait) {
+    if (style === 'Shotcaller') trait = 'Leader';
+    else if (ovr >= 90) trait = Math.random() < 0.65 ? 'Clutch' : 'Ego';
+    else if (age <= 20) trait = Math.random() < 0.6 ? 'Grinder' : 'Tilt';
+    else trait = TRAIT_KEYS[Math.floor(Math.random() * TRAIT_KEYS.length)];
+  }
+
+  // Initial champion mastery on signature champs
+  const mastery = {};
+  for (const cid of sigChamps) mastery[cid] = 3;
+
   return {
     id: `p_${_pid++}`,
     name,
     role,
     nat,
+    lang: getPlayerLang(nat),
+    importWeeksLeft: 0,
     age,
     attrs,
     ovr,
     pot: finalPot,
     style,
+    trait,
     sigChamps,
+    mastery,
     teamId,
     salary,
     contractYears: overrides.contractYears ?? (Math.random() < 0.45 ? 1 : Math.random() < 0.75 ? 2 : 3),
@@ -191,7 +252,7 @@ const RAW_TEAMS = [
     id: 'blg', name: 'Bilibili Gaming', tag: 'BLG', region: 'LPL', color: '#00a1d6', color2: '#fb7299',
     budget: 3700000, prestige: 95, fanbase: 94,
     roster: [
-      ['Bin', 'TOP', 'CN', 23, 94, 96, 'Aggressive', ['jax', 'camille', 'rumble', 'renenkton'.replace('renenkton', 'renekton')]],
+      ['Bin', 'TOP', 'CN', 23, 94, 96, 'Aggressive', ['jax', 'camille', 'rumble', 'renekton']],
       ['Wei', 'JGL', 'CN', 23, 88, 90, 'Shotcaller', ['skarner', 'sejuani', 'vi']],
       ['knight', 'MID', 'CN', 25, 94, 95, 'Playmaker', ['ahri', 'syndra', 'sylas', 'aurora']],
       ['Elk', 'BOT', 'CN', 24, 92, 93, 'Aggressive', ['kaisa', 'kalista', 'ezreal', 'ashe']],
@@ -455,14 +516,283 @@ const RAW_TEAMS = [
       ['huhi', 'SUP', 'KR', 30, 81, 81, 'Shotcaller', ['nautilus', 'renata', 'braum']],
     ],
   },
+
+  // ==================== TCL — TÜRKİYE (8 Teams) ====================
+  {
+    id: 'sup', name: 'Papara SuperMassive', tag: 'SUP', region: 'TCL', color: '#e11d48', color2: '#ffffff',
+    budget: 1850000, prestige: 80, fanbase: 88,
+    roster: [
+      ['Armut', 'TOP', 'TR', 26, 81, 82, 'Aggressive', ['gnar', 'rumble', 'ksante']],
+      ['Skeanz', 'JGL', 'FR', 24, 79, 82, 'Playmaker', ['vi', 'viego', 'leesin']],
+      ['Blue', 'MID', 'TR', 24, 80, 83, 'Playmaker', ['ahri', 'syndra', 'leblanc']],
+      ['Luger', 'BOT', 'TR', 24, 81, 84, 'Scaling', ['kaisa', 'jinx', 'varus']],
+      ['Carry', 'SUP', 'TR', 22, 78, 84, 'Playmaker', ['rakan', 'rell', 'nautilus']],
+    ],
+  },
+  {
+    id: 'bjk', name: 'Beşiktaş Esports', tag: 'BJK', region: 'TCL', color: '#f8fafc', color2: '#111111',
+    budget: 1750000, prestige: 79, fanbase: 90,
+    roster: [
+      ['StarScreen', 'TOP', 'TR', 24, 79, 83, 'Aggressive', ['aatrox', 'jax', 'renekton']],
+      ['Kireas', 'JGL', 'TR', 22, 78, 84, 'Aggressive', ['leesin', 'viego', 'xinzhao']],
+      ['Kofte', 'MID', 'TR', 23, 79, 84, 'Scaling', ['azir', 'orianna', 'taliyah']],
+      ['Kaori', 'BOT', 'TR', 23, 81, 85, 'Aggressive', ['kaisa', 'ezreal', 'lucian']],
+      ['Farfetch', 'SUP', 'TR', 25, 79, 81, 'Shotcaller', ['nautilus', 'alistar', 'braum']],
+    ],
+  },
+  {
+    id: 'dp', name: 'BBL Dark Passage', tag: 'DP', region: 'TCL', color: '#0ea5e9', color2: '#111111',
+    budget: 1600000, prestige: 78, fanbase: 84,
+    roster: [
+      ['NuQ', 'TOP', 'TR', 23, 77, 82, 'Weakside', ['ksante', 'ornn', 'gnar']],
+      ['Typhoon', 'JGL', 'TR', 22, 77, 83, 'Playmaker', ['vi', 'sejuani', 'jarvan']],
+      ['Umut', 'MID', 'TR', 21, 78, 85, 'Playmaker', ['sylas', 'ahri', 'yone']],
+      ['HolyPhoenix', 'BOT', 'TR', 28, 80, 80, 'Scaling', ['jinx', 'xayah', 'varus']],
+      ['Pbd', 'SUP', 'TR', 24, 77, 80, 'Weakside', ['rell', 'leona', 'renata']],
+    ],
+  },
+  {
+    id: 'fut', name: 'FUT Esports', tag: 'FUT', region: 'TCL', color: '#111827', color2: '#facc15',
+    budget: 1650000, prestige: 77, fanbase: 82,
+    roster: [
+      ['fabFabulous', 'TOP', 'TR', 27, 78, 78, 'Weakside', ['ksante', 'renekton', 'ornn']],
+      ['Mojito', 'JGL', 'TR', 25, 78, 80, 'Shotcaller', ['maokai', 'sejuani', 'vi']],
+      ['Serin', 'MID', 'TR', 23, 79, 83, 'Playmaker', ['orianna', 'syndra', 'azir']],
+      ['BAO', 'BOT', 'KR', 23, 80, 84, 'Aggressive', ['kaisa', 'kalista', 'ezreal']],
+      ['Zergsting', 'SUP', 'TR', 25, 78, 80, 'Playmaker', ['thresh', 'rakan', 'nautilus']],
+    ],
+  },
+  {
+    id: 'bgt', name: 'Boostgate Esports', tag: 'BGT', region: 'TCL', color: '#f97316', color2: '#ffffff',
+    budget: 1450000, prestige: 74, fanbase: 74,
+    roster: [
+      ['Boda', 'TOP', 'TR', 21, 76, 83, 'Aggressive', ['ambessa', 'jax', 'rumble']],
+      ['Elramir', 'JGL', 'TR', 22, 78, 84, 'Playmaker', ['viego', 'leesin', 'vi']],
+      ['Mireu', 'MID', 'KR', 22, 80, 85, 'Scaling', ['azir', 'yone', 'aurora']],
+      ['Focus', 'BOT', 'TR', 21, 77, 84, 'Scaling', ['aphelios', 'jinx', 'kaisa']],
+      ['Paixdia', 'SUP', 'TR', 22, 76, 82, 'Playmaker', ['rell', 'rakan', 'alistar']],
+    ],
+  },
+  {
+    id: 'ef', name: 'Eternal Fire', tag: 'EF', region: 'TCL', color: '#facc15', color2: '#111111',
+    budget: 1550000, prestige: 76, fanbase: 85,
+    roster: [
+      ['Ragner', 'TOP', 'TR', 23, 79, 84, 'Aggressive', ['aatrox', 'ksante', 'gnar']],
+      ['Ferret', 'JGL', 'TR', 22, 77, 83, 'Aggressive', ['vi', 'viego', 'xinzhao']],
+      ['Bolulu', 'MID', 'TR', 25, 79, 81, 'Playmaker', ['ahri', 'taliyah', 'leblanc']],
+      ['Wako', 'BOT', 'TR', 22, 77, 82, 'Scaling', ['varus', 'ashe', 'ezreal']],
+      ['Absolute', 'SUP', 'TR', 23, 76, 81, 'Weakside', ['braum', 'nautilus', 'leona']],
+    ],
+  },
+  {
+    id: 'gal', name: 'Galakticos', tag: 'GAL', region: 'TCL', color: '#3b82f6', color2: '#ffffff',
+    budget: 1300000, prestige: 72, fanbase: 70,
+    roster: [
+      ['Skewer', 'TOP', 'TR', 20, 75, 83, 'Aggressive', ['renekton', 'rumble', 'jax']],
+      ['Robin', 'JGL', 'TR', 21, 75, 82, 'Playmaker', ['jarvan', 'vi', 'sejuani']],
+      ['Stillnumb', 'MID', 'TR', 22, 76, 82, 'Scaling', ['orianna', 'syndra', 'corki']],
+      ['Coldraa', 'BOT', 'TR', 20, 75, 83, 'Aggressive', ['kaisa', 'lucian', 'ezreal']],
+      ['Batuuu', 'SUP', 'TR', 20, 74, 82, 'Playmaker', ['rakan', 'thresh', 'nautilus']],
+    ],
+  },
+  {
+    id: 'misa', name: 'Misa Esports', tag: 'MISA', region: 'TCL', color: '#ec4899', color2: '#ffffff',
+    budget: 1350000, prestige: 73, fanbase: 72,
+    roster: [
+      ['Mihile', 'TOP', 'KR', 21, 78, 85, 'Aggressive', ['ksante', 'ambessa', 'aatrox']],
+      ['Chef', 'JGL', 'TR', 21, 76, 83, 'Playmaker', ['viego', 'skarner', 'vi']],
+      ['Callme', 'MID', 'KR', 22, 79, 84, 'Playmaker', ['sylas', 'ahri', 'azir']],
+      ['Ruep', 'BOT', 'TR', 21, 76, 82, 'Scaling', ['xayah', 'jinx', 'varus']],
+      ['Vsta', 'SUP', 'KR', 24, 78, 81, 'Shotcaller', ['rell', 'nautilus', 'renata']],
+    ],
+  },
+
+  // ==================== CBLOL — BREZİLYA (8 Teams) ====================
+  {
+    id: 'lll', name: 'LOUD', tag: 'LLL', region: 'CBLOL', color: '#22c55e', color2: '#111111',
+    budget: 2100000, prestige: 82, fanbase: 94,
+    roster: [
+      ['Robo', 'TOP', 'BR', 27, 81, 81, 'Aggressive', ['renekton', 'aatrox', 'rumble']],
+      ['Croc', 'JGL', 'KR', 25, 81, 82, 'Playmaker', ['vi', 'viego', 'sejuani']],
+      ['tinowns', 'MID', 'BR', 28, 82, 82, 'Shotcaller', ['azir', 'orianna', 'ahri']],
+      ['Route', 'BOT', 'KR', 25, 83, 84, 'Scaling', ['kaisa', 'ezreal', 'varus']],
+      ['RedBert', 'SUP', 'BR', 26, 79, 80, 'Weakside', ['nautilus', 'rell', 'braum']],
+    ],
+  },
+  {
+    id: 'png', name: 'paiN Gaming', tag: 'PNG', region: 'CBLOL', color: '#dc2626', color2: '#111111',
+    budget: 2050000, prestige: 82, fanbase: 93,
+    roster: [
+      ['Wizer', 'TOP', 'KR', 26, 81, 82, 'Weakside', ['ksante', 'gnar', 'ornn']],
+      ['Cariok', 'JGL', 'BR', 25, 81, 83, 'Playmaker', ['leesin', 'vi', 'skarner']],
+      ['dyNquedo', 'MID', 'BR', 27, 80, 80, 'Playmaker', ['taliyah', 'orianna', 'sylas']],
+      ['TitaN', 'BOT', 'BR', 25, 83, 85, 'Aggressive', ['kaisa', 'lucian', 'kalista']],
+      ['Kuri', 'SUP', 'KR', 24, 81, 83, 'Playmaker', ['rakan', 'rell', 'alistar']],
+    ],
+  },
+  {
+    id: 'red', name: 'RED Canids', tag: 'RED', region: 'CBLOL', color: '#b91c1c', color2: '#ffffff',
+    budget: 1750000, prestige: 78, fanbase: 82,
+    roster: [
+      ['fNb', 'TOP', 'BR', 25, 79, 81, 'Aggressive', ['jax', 'aatrox', 'rumble']],
+      ['Aegis', 'JGL', 'BR', 24, 80, 82, 'Aggressive', ['viego', 'leesin', 'vi']],
+      ['Grevthar', 'MID', 'BR', 24, 78, 81, 'Playmaker', ['ahri', 'sylas', 'yone']],
+      ['Brance', 'BOT', 'BR', 21, 80, 86, 'Aggressive', ['kaisa', 'ezreal', 'jinx']],
+      ['Frosty', 'SUP', 'BR', 22, 78, 83, 'Playmaker', ['nautilus', 'thresh', 'rakan']],
+    ],
+  },
+  {
+    id: 'vks', name: 'Vivo Keyd Stars', tag: 'VKS', region: 'CBLOL', color: '#7c3aed', color2: '#ffffff',
+    budget: 1800000, prestige: 78, fanbase: 81,
+    roster: [
+      ['Guigo', 'TOP', 'BR', 23, 80, 84, 'Aggressive', ['ksante', 'ambessa', 'gnar']],
+      ['Disamis', 'JGL', 'BR', 21, 79, 85, 'Playmaker', ['vi', 'viego', 'skarner']],
+      ['Toucouille', 'MID', 'FR', 24, 81, 83, 'Scaling', ['orianna', 'azir', 'syndra']],
+      ['SMILED', 'BOT', 'BR', 22, 78, 83, 'Scaling', ['varus', 'xayah', 'ashe']],
+      ['ProDelta', 'SUP', 'BR', 22, 78, 83, 'Shotcaller', ['rell', 'leona', 'braum']],
+    ],
+  },
+  {
+    id: 'fur', name: 'FURIA', tag: 'FUR', region: 'CBLOL', color: '#334155', color2: '#ffffff',
+    budget: 1700000, prestige: 77, fanbase: 84,
+    roster: [
+      ['Zzk', 'TOP', 'BR', 22, 77, 83, 'Weakside', ['ornn', 'ksante', 'renekton']],
+      ['Tatu', 'JGL', 'BR', 19, 78, 87, 'Aggressive', ['leesin', 'viego', 'nidalee']],
+      ['Tutsz', 'MID', 'BR', 23, 78, 82, 'Playmaker', ['ahri', 'taliyah', 'aurora']],
+      ['Ayu', 'BOT', 'BR', 19, 79, 88, 'Scaling', ['kaisa', 'zeri', 'jinx']],
+      ['JoJo', 'SUP', 'BR', 24, 78, 81, 'Playmaker', ['rakan', 'nautilus', 'renata']],
+    ],
+  },
+  {
+    id: 'kbm', name: 'KaBuM! Esports', tag: 'KBM', region: 'CBLOL', color: '#f97316', color2: '#111111',
+    budget: 1650000, prestige: 76, fanbase: 79,
+    roster: [
+      ['Lonely', 'TOP', 'KR', 24, 79, 82, 'Aggressive', ['rumble', 'aatrox', 'jayce']],
+      ['Malrang', 'JGL', 'KR', 26, 81, 81, 'Aggressive', ['jarvan', 'vi', 'leesin']],
+      ['Hauz', 'MID', 'BR', 23, 78, 82, 'Scaling', ['azir', 'syndra', 'orianna']],
+      ['Netuno', 'BOT', 'BR', 23, 79, 83, 'Aggressive', ['ezreal', 'varus', 'lucian']],
+      ['CeosBR', 'SUP', 'BR', 25, 78, 80, 'Shotcaller', ['nautilus', 'alistar', 'rell']],
+    ],
+  },
+  {
+    id: 'fx', name: 'Fluxo', tag: 'FX', region: 'CBLOL', color: '#a855f7', color2: '#ffffff',
+    budget: 1550000, prestige: 74, fanbase: 80,
+    roster: [
+      ['Kiari', 'TOP', 'BR', 22, 76, 82, 'Weakside', ['ksante', 'gnar', 'ornn']],
+      ['Shini', 'JGL', 'BR', 26, 77, 78, 'Shotcaller', ['sejuani', 'maokai', 'vi']],
+      ['Fuuu', 'MID', 'BR', 21, 77, 84, 'Playmaker', ['yone', 'sylas', 'ahri']],
+      ['Trigo', 'BOT', 'BR', 24, 78, 81, 'Scaling', ['jinx', 'aphelios', 'xayah']],
+      ['scuro', 'SUP', 'BR', 22, 76, 81, 'Playmaker', ['rakan', 'leona', 'braum']],
+    ],
+  },
+  {
+    id: 'los', name: 'LOS', tag: 'LOS', region: 'CBLOL', color: '#f59e0b', color2: '#111111',
+    budget: 1500000, prestige: 74, fanbase: 78,
+    roster: [
+      ['SuperCleber', 'TOP', 'BR', 21, 76, 83, 'Aggressive', ['renekton', 'ambessa', 'jax']],
+      ['Seize', 'JGL', 'KR', 24, 78, 81, 'Playmaker', ['viego', 'vi', 'xinzhao']],
+      ['Envy', 'MID', 'BR', 25, 78, 80, 'Scaling', ['orianna', 'azir', 'taliyah']],
+      ['Celo', 'BOT', 'BR', 22, 76, 82, 'Aggressive', ['kaisa', 'varus', 'ashe']],
+      ['Kabbie', 'SUP', 'KR', 24, 78, 81, 'Playmaker', ['rell', 'nautilus', 'thresh']],
+    ],
+  },
+
+  // ==================== LCO — OKYANUSYA (8 Teams) ====================
+  {
+    id: 'chf', name: 'Chiefs Esports Club', tag: 'CHF', region: 'LCO', color: '#06b6d4', color2: '#111111',
+    budget: 1550000, prestige: 76, fanbase: 78,
+    roster: [
+      ['BioPanther', 'TOP', 'AU', 24, 78, 81, 'Weakside', ['ksante', 'ornn', 'gnar']],
+      ['Mir', 'JGL', 'KR', 23, 79, 83, 'Playmaker', ['vi', 'viego', 'leesin']],
+      ['JimieN', 'MID', 'TW', 23, 79, 83, 'Playmaker', ['ahri', 'azir', 'sylas']],
+      ['Raes', 'BOT', 'NZ', 27, 79, 80, 'Scaling', ['jinx', 'xayah', 'varus']],
+      ['Aladoric', 'SUP', 'AU', 25, 78, 80, 'Shotcaller', ['nautilus', 'rell', 'braum']],
+    ],
+  },
+  {
+    id: 'dw', name: 'Dire Wolves', tag: 'DW', region: 'LCO', color: '#e2e8f0', color2: '#111111',
+    budget: 1450000, prestige: 75, fanbase: 76,
+    roster: [
+      ['Zorenous', 'TOP', 'AU', 23, 76, 81, 'Aggressive', ['aatrox', 'renekton', 'rumble']],
+      ['Poltron', 'JGL', 'AU', 22, 76, 82, 'Aggressive', ['viego', 'jarvan', 'vi']],
+      ['ry0ma', 'MID', 'AU', 26, 79, 80, 'Scaling', ['orianna', 'azir', 'syndra']],
+      ['Violet', 'BOT', 'AU', 23, 78, 82, 'Scaling', ['kaisa', 'ezreal', 'aphelios']],
+      ['Dragku', 'SUP', 'AU', 24, 77, 80, 'Playmaker', ['rakan', 'alistar', 'thresh']],
+    ],
+  },
+  {
+    id: 'gzg', name: 'Ground Zero Gaming', tag: 'GZG', region: 'LCO', color: '#22c55e', color2: '#111111',
+    budget: 1400000, prestige: 74, fanbase: 72,
+    roster: [
+      ['Thien', 'TOP', 'AU', 23, 77, 82, 'Aggressive', ['jax', 'ambessa', 'ksante']],
+      ['Swathe', 'JGL', 'AU', 22, 76, 82, 'Playmaker', ['skarner', 'sejuani', 'vi']],
+      ['Shok', 'MID', 'NZ', 24, 78, 81, 'Playmaker', ['taliyah', 'ahri', 'aurora']],
+      ['k1ng', 'BOT', 'AU', 26, 79, 80, 'Aggressive', ['varus', 'kalista', 'kaisa']],
+      ['Decoy', 'SUP', 'NZ', 25, 77, 79, 'Shotcaller', ['rell', 'nautilus', 'renata']],
+    ],
+  },
+  {
+    id: 'blis', name: 'Team Bliss', tag: 'BLIS', region: 'LCO', color: '#ec4899', color2: '#ffffff',
+    budget: 1350000, prestige: 73, fanbase: 73,
+    roster: [
+      ['Lived', 'TOP', 'AU', 22, 76, 82, 'Weakside', ['gnar', 'ksante', 'ornn']],
+      ['Babip', 'JGL', 'AU', 26, 78, 79, 'Shotcaller', ['vi', 'maokai', 'sejuani']],
+      ['Haeri', 'MID', 'AU', 24, 79, 82, 'Scaling', ['azir', 'orianna', 'corki']],
+      ['Leemas', 'BOT', 'AU', 21, 76, 83, 'Scaling', ['jinx', 'kaisa', 'ashe']],
+      ['whynot', 'SUP', 'AU', 23, 75, 80, 'Playmaker', ['rakan', 'leona', 'braum']],
+    ],
+  },
+  {
+    id: 'fury', name: 'FURY Global', tag: 'FURY', region: 'LCO', color: '#ef4444', color2: '#ffffff',
+    budget: 1300000, prestige: 71, fanbase: 68,
+    roster: [
+      ['Api', 'TOP', 'AU', 21, 74, 81, 'Aggressive', ['renekton', 'rumble', 'aatrox']],
+      ['Kevy', 'JGL', 'AU', 22, 76, 82, 'Aggressive', ['leesin', 'viego', 'xinzhao']],
+      ['Kisee', 'MID', 'AU', 22, 77, 83, 'Playmaker', ['sylas', 'yone', 'ahri']],
+      ['gunkrab', 'BOT', 'AU', 22, 75, 81, 'Aggressive', ['ezreal', 'lucian', 'varus']],
+      ['Shinki', 'SUP', 'AU', 22, 74, 80, 'Playmaker', ['nautilus', 'thresh', 'rell']],
+    ],
+  },
+  {
+    id: 'kng', name: 'Kanga Esports', tag: 'KNG', region: 'LCO', color: '#f59e0b', color2: '#111111',
+    budget: 1250000, prestige: 70, fanbase: 69,
+    roster: [
+      ['Chippys', 'TOP', 'NZ', 26, 75, 77, 'Aggressive', ['rumble', 'jayce', 'gnar']],
+      ['Pabu', 'JGL', 'AU', 26, 76, 78, 'Playmaker', ['vi', 'jarvan', 'nocturne']],
+      ['Claire', 'MID', 'AU', 25, 76, 78, 'Scaling', ['orianna', 'syndra', 'azir']],
+      ['Praedyth', 'BOT', 'AU', 23, 75, 80, 'Scaling', ['xayah', 'jinx', 'kaisa']],
+      ['Crayzee', 'SUP', 'AU', 21, 74, 81, 'Weakside', ['braum', 'lulu', 'renata']],
+    ],
+  },
+  {
+    id: 'ant', name: 'Antic Esports', tag: 'ANT', region: 'LCO', color: '#8b5cf6', color2: '#ffffff',
+    budget: 1200000, prestige: 69, fanbase: 66,
+    roster: [
+      ['Winterer', 'TOP', 'AU', 20, 74, 82, 'Weakside', ['ksante', 'ornn', 'renekton']],
+      ['Oneway', 'JGL', 'AU', 21, 74, 81, 'Playmaker', ['viego', 'vi', 'sejuani']],
+      ['Chungy', 'MID', 'AU', 20, 75, 83, 'Aggressive', ['ahri', 'leblanc', 'akali']],
+      ['Bambi', 'BOT', 'AU', 21, 74, 81, 'Scaling', ['varus', 'ashe', 'ezreal']],
+      ['Corporal', 'SUP', 'AU', 23, 75, 79, 'Shotcaller', ['nautilus', 'alistar', 'leona']],
+    ],
+  },
+  {
+    id: 'mmm', name: 'Mammoth', tag: 'MMM', region: 'LCO', color: '#eab308', color2: '#111111',
+    budget: 1200000, prestige: 70, fanbase: 70,
+    roster: [
+      ['Topoon', 'TOP', 'KR', 24, 77, 80, 'Aggressive', ['aatrox', 'jax', 'gnar']],
+      ['LeeSA', 'JGL', 'AU', 24, 75, 78, 'Playmaker', ['leesin', 'vi', 'maokai']],
+      ['roky', 'MID', 'AU', 22, 74, 80, 'Scaling', ['azir', 'taliyah', 'orianna']],
+      ['kpop', 'BOT', 'AU', 22, 74, 80, 'Aggressive', ['kaisa', 'lucian', 'kalista']],
+      ['Beats', 'SUP', 'AU', 22, 74, 80, 'Playmaker', ['rakan', 'rell', 'bard']],
+    ],
+  },
 ];
 
-// Free Agents & Academy Wonderkids available on Transfer Market
+// Free Agents
 const RAW_FREE_AGENTS = [
   ['Nuguri', 'TOP', 'KR', 26, 86, 86, 'Aggressive', ['kennen', 'camille', 'jayce']],
   ['Wunder', 'TOP', 'DK', 27, 82, 82, 'Weakside', ['ornn', 'gnar', 'ksante']],
   ['Adam', 'TOP', 'FR', 24, 81, 84, 'Aggressive', ['renekton', 'aatrox', 'ambessa']],
-  ['Armut', 'TOP', 'TR', 26, 80, 81, 'Teamfight', ['gnar', 'rumble', 'ksante']],
   ['Photon', 'TOP', 'KR', 24, 83, 86, 'Aggressive', ['jayce', 'jax', 'rumble']],
   ['Jankos', 'JGL', 'PL', 30, 83, 83, 'Shotcaller', ['sejuani', 'leesin', 'jarvan']],
   ['Clid', 'JGL', 'KR', 26, 83, 83, 'Aggressive', ['leesin', 'vi', 'xinzhao']],
@@ -485,10 +815,59 @@ const RAW_FREE_AGENTS = [
   ['Zinie', 'MID', 'KR', 19, 81, 92, 'Playmaker', ['azir', 'aurora', 'yone']],
   ['Poby', 'MID', 'KR', 19, 78, 88, 'Scaling', ['orianna', 'azir', 'taliyah']],
   ['Guwon', 'JGL', 'KR', 21, 79, 87, 'Playmaker', ['vi', 'viego', 'leesin']],
-  ['StarScreen', 'TOP', 'TR', 24, 77, 82, 'Aggressive', ['aatrox', 'jax', 'gnar']],
-  ['Luger', 'BOT', 'TR', 24, 80, 84, 'Scaling', ['jinx', 'kaisa', 'aphelios']],
-  ['Blue', 'MID', 'TR', 24, 79, 83, 'Playmaker', ['ahri', 'syndra', 'leblanc']],
-  ['Jactroll', 'SUP', 'PL', 26, 77, 79, 'Playmaker', ['nautilus', 'thresh', 'rakan']],
+];
+
+// Worlds Mayhem Arcade Mode — 40 Iconic Historical Season Cards
+export const LEGENDS_MAYHEM = [
+  // TOP
+  { name: '2018 TheShy', role: 'TOP', team: 'IG', region: 'LPL', ovr: 98, era: '2018', style: 'Aggressive', desc: 'Aatrox & Jayce ile tek başına koridoru yok eden efsane.' },
+  { name: '2023 Zeus', role: 'TOP', team: 'T1', region: 'LCK', ovr: 97, era: '2023', style: 'Aggressive', desc: 'Worlds Final MVP, durdurulamaz mekanik zirve.' },
+  { name: '2015 MaRin', role: 'TOP', team: 'SKT', region: 'LCK', ovr: 96, era: '2015', style: 'Shotcaller', desc: 'Rumble ve Fiora ile SKT hanedanının kaptanı.' },
+  { name: '2020 Nuguri', role: 'TOP', team: 'DWG', region: 'LCK', ovr: 96, era: '2020', style: 'Aggressive', desc: 'DAMWON altın çağının üst koridor canavarı.' },
+  { name: '2024 Bin', role: 'TOP', team: 'BLG', region: 'LPL', ovr: 95, era: '2024', style: 'Aggressive', desc: 'Jax ve Camille ile 1v9 makinesi.' },
+  { name: '2016 Smeb', role: 'TOP', team: 'ROX', region: 'LCK', ovr: 95, era: '2016', style: 'Playmaker', desc: 'Kennen ultisiyle tarihe geçen ROX yıldızı.' },
+  { name: '2019 Wunder', role: 'TOP', team: 'G2', region: 'LEC', ovr: 92, era: '2019', style: 'Weakside', desc: 'Avrupa altın çağının en esnek üst koridoru.' },
+  { name: '2022 Kingen', role: 'TOP', team: 'DRX', region: 'LCK', ovr: 93, era: '2022', style: 'Clutch', desc: 'Aatrox ile Worlds finalini tek başına çeviren kahraman.' },
+
+  // JGL
+  { name: '2020 Canyon', role: 'JGL', team: 'DWG', region: 'LCK', ovr: 98, era: '2020', style: 'Playmaker', desc: 'Ormancı rolünün gelmiş geçmiş en baskın sezonu.' },
+  { name: '2014 DanDy', role: 'JGL', team: 'SSW', region: 'LCK', ovr: 97, era: '2014', style: 'Shotcaller', desc: 'Haritayı herkesten 2 dakika önce okuyan ormancı.' },
+  { name: '2023 Oner', role: 'JGL', team: 'T1', region: 'LCK', ovr: 95, era: '2023', style: 'Playmaker', desc: 'Rell ve Lee Sin ile kusursuz takım savaşları.' },
+  { name: '2019 Tian', role: 'JGL', team: 'FPX', region: 'LPL', ovr: 95, era: '2019', style: 'Playmaker', desc: 'Lee Sin ile G2 finalini domine eden MVP.' },
+  { name: '2015 Bengi', role: 'JGL', team: 'SKT', region: 'LCK', ovr: 94, era: '2015', style: 'Weakside', desc: 'Faker\'ın sağ kolu, 3x Dünya Şampiyonu.' },
+  { name: '2023 Kanavi', role: 'JGL', team: 'JDG', region: 'LPL', ovr: 95, era: '2023', style: 'Aggressive', desc: 'Golden Road yürüyüşünün motoru.' },
+  { name: '2019 Jankos', role: 'JGL', team: 'G2', region: 'LEC', ovr: 92, era: '2019', style: 'Shotcaller', desc: 'First Blood King ve Avrupa efsanesi.' },
+  { name: '2021 Jiejie', role: 'JGL', team: 'EDG', region: 'LPL', ovr: 93, era: '2021', style: 'Playmaker', desc: 'Jarvan IV ile Worlds kupasını getiren beyin.' },
+
+  // MID
+  { name: '2015 Faker', role: 'MID', team: 'SKT', region: 'LCK', ovr: 99, era: '2015', style: 'Shotcaller', desc: 'Unkillable Demon King — zirve dönemi.' },
+  { name: '2024 Chovy', role: 'MID', team: 'GEN', region: 'LCK', ovr: 97, era: '2024', style: 'Scaling', desc: 'Kusursuz koridor hakimiyeti ve CS makinesi.' },
+  { name: '2018 Rookie', role: 'MID', team: 'IG', region: 'LPL', ovr: 97, era: '2018', style: 'Playmaker', desc: 'LPL\'in ilk Worlds kupasının mimarı.' },
+  { name: '2020 ShowMaker', role: 'MID', team: 'DWG', region: 'LCK', ovr: 96, era: '2020', style: 'Playmaker', desc: 'Syndra ve TF ile haritayı domine eden yıldız.' },
+  { name: '2019 Caps', role: 'MID', team: 'G2', region: 'LEC', ovr: 95, era: '2019', style: 'Playmaker', desc: 'MSI Şampiyonu, Batı\'nın en büyük orta koridoru.' },
+  { name: '2022 Zeka', role: 'MID', team: 'DRX', region: 'LCK', ovr: 95, era: '2022', style: 'Clutch', desc: 'Sylas & Akali ile mucize Worlds koşusu.' },
+  { name: '2023 knight', role: 'MID', team: 'JDG', region: 'LPL', ovr: 96, era: '2023', style: 'Playmaker', desc: 'LPL & MSI MVP, sol elin altın çocuğu.' },
+  { name: '2019 Doinb', role: 'MID', team: 'FPX', region: 'LPL', ovr: 94, era: '2019', style: 'Shotcaller', desc: 'Nautilus Mid ile metayı baştan yazan kaptan.' },
+
+  // BOT
+  { name: '2018 Uzi', role: 'BOT', team: 'RNG', region: 'LPL', ovr: 98, era: '2018', style: 'Aggressive', desc: 'Kai\'Sa & Vayne ile ADC rolünün tanrısı.' },
+  { name: '2023 Ruler', role: 'BOT', team: 'JDG', region: 'LCK', ovr: 97, era: '2023', style: 'Scaling', desc: 'Kusursuz pozisyon alma ve geç oyun güvencesi.' },
+  { name: '2021 Viper', role: 'BOT', team: 'EDG', region: 'LPL', ovr: 97, era: '2021', style: 'Scaling', desc: 'Aphelios & Lucian ile Dünya Şampiyonu.' },
+  { name: '2023 Gumayusi', role: 'BOT', team: 'T1', region: 'LCK', ovr: 96, era: '2023', style: 'Aggressive', desc: '1v2 mekanikleri ve Baron çalmalarıyla efsane.' },
+  { name: '2016 Bang', role: 'BOT', team: 'SKT', region: 'LCK', ovr: 95, era: '2016', style: 'Scaling', desc: 'Ezreal ile sıfır hatasız 2x Dünya Şampiyonu.' },
+  { name: '2018 JackeyLove', role: 'BOT', team: 'IG', region: 'LPL', ovr: 95, era: '2018', style: 'Aggressive', desc: '17 yaşında Worlds kaldıran korkusuz nişancı.' },
+  { name: '2022 Deft', role: 'BOT', team: 'DRX', region: 'LCK', ovr: 94, era: '2022', style: 'Clutch', desc: '"Önemli olan kırılmayan kalptir."' },
+  { name: '2019 Perkz', role: 'BOT', team: 'G2', region: 'LEC', ovr: 93, era: '2019', style: 'Playmaker', desc: 'Xayah & Kai\'Sa ile rol değiştirip MSI kazanan dahi.' },
+
+  // SUP
+  { name: '2023 Keria', role: 'SUP', team: 'T1', region: 'LCK', ovr: 98, era: '2023', style: 'Playmaker', desc: 'Nişancı destekleriyle metayı kıran dahi.' },
+  { name: '2014 Mata', role: 'SUP', team: 'SSW', region: 'LCK', ovr: 98, era: '2014', style: 'Shotcaller', desc: 'Modern görüş kontrolünü icat eden Worlds MVP.' },
+  { name: '2021 Meiko', role: 'SUP', team: 'EDG', region: 'LPL', ovr: 95, era: '2021', style: 'Shotcaller', desc: 'LPL tarihinin ilk Grand Slam destek oyuncusu.' },
+  { name: '2022 BeryL', role: 'SUP', team: 'DRX', region: 'LCK', ovr: 95, era: '2022', style: 'Shotcaller', desc: '2 farklı takımla Worlds kazanan strateji dehası.' },
+  { name: '2016 Wolf', role: 'SUP', team: 'SKT', region: 'LCK', ovr: 94, era: '2016', style: 'Playmaker', desc: 'SKT hanedanının takım savaşı başlatıcısı.' },
+  { name: '2019 Mikyx', role: 'SUP', team: 'G2', region: 'LEC', ovr: 93, era: '2019', style: 'Playmaker', desc: 'Avrupa\'nın en yaratıcı destek oyuncusu.' },
+  { name: '2018 Ming', role: 'SUP', team: 'RNG', region: 'LPL', ovr: 95, era: '2018', style: 'Playmaker', desc: 'Uzi ile tarihin en korkulan alt koridoru.' },
+  { name: '2017 CoreJJ', role: 'SUP', team: 'SSG', region: 'LCK', ovr: 94, era: '2017', style: 'Shotcaller', desc: 'Samsung Galaxy Worlds şampiyonunun beyni.' },
 ];
 
 export function createInitialDatabase() {
@@ -509,7 +888,7 @@ export function createInitialDatabase() {
       fanbase: rt.fanbase,
       synergy: 68 + Math.floor(Math.random() * 14),
       facilities: {
-        gamingHouse: rt.prestige >= 90 ? 3 : rt.prestige >= 82 ? 2 : 1,
+        gamingHouse: rt.prestige >= 90 ? 3 : rt.prestige >= 80 ? 2 : 1,
         analystDesk: rt.prestige >= 90 ? 3 : rt.prestige >= 80 ? 2 : 1,
         youthAcademy: rt.prestige >= 88 ? 2 : 1,
         psychologist: rt.prestige >= 90 ? 2 : 1,
@@ -519,6 +898,9 @@ export function createInitialDatabase() {
         gameplan: 'balanced', // aggressive | balanced | scaling | split
         laneFocus: 'MID',     // TOP | MID | BOT
         objective: 'dragon',  // dragon | baron | towers
+        topStyle: 'balanced', // carry | balanced | weakside
+        supStyle: 'balanced', // roam | balanced | peel
+        adcStyle: 'balanced', // aggressive | balanced | safe
       },
       sponsor: null,
       trophies: [],
@@ -541,18 +923,25 @@ export function createInitialDatabase() {
   return { teams, players };
 }
 
-// Generate an academy regen player for Off-Season or Youth Promotion
-const REGEN_FIRST = ['Kael', 'Jin', 'Vex', 'Sora', 'Miro', 'Luka', 'Haneul', 'Ryu', 'Taro', 'Arda', 'Eren', 'Neo', 'Kiro', 'Zed', 'Yoon', 'Dae', 'Milo', 'Nox', 'Faye', 'Sven'];
+const REGEN_FIRST = ['Kael', 'Jin', 'Vex', 'Sora', 'Miro', 'Luka', 'Haneul', 'Ryu', 'Taro', 'Arda', 'Eren', 'Kaan', 'Kiro', 'Zed', 'Yoon', 'Dae', 'Milo', 'Nox', 'Faye', 'Sven', 'Caio', 'Mateus', 'Liam'];
 const REGEN_SUF = ['X', '7', 'gg', 'KR', 'zy', 'on', 'ix', 'el', 'ar', '', '', '', ''];
-const REGION_NATS = { LCK: ['KR'], LPL: ['CN', 'TW'], LEC: ['FR', 'DE', 'ES', 'PL', 'SE', 'DK', 'TR'], LCS: ['US', 'CA', 'AU', 'BR'] };
+const REGION_NATS = {
+  LCK: ['KR'],
+  LPL: ['CN', 'TW'],
+  LEC: ['FR', 'DE', 'ES', 'PL', 'SE', 'DK'],
+  LCS: ['US', 'CA'],
+  TCL: ['TR'],
+  CBLOL: ['BR'],
+  LCO: ['AU', 'NZ'],
+};
 
 export function generateRegenPlayer(role, region, academyLevel = 1, teamId = null) {
   const nats = REGION_NATS[region] || ['KR'];
   const nat = nats[Math.floor(Math.random() * nats.length)];
   const name = REGEN_FIRST[Math.floor(Math.random() * REGEN_FIRST.length)] + REGEN_SUF[Math.floor(Math.random() * REGEN_SUF.length)] + (Math.random() < 0.25 ? Math.floor(Math.random() * 99) : '');
-  const age = 17 + Math.floor(Math.random() * 3);
-  const baseOvr = 68 + academyLevel * 3 + Math.floor(Math.random() * 8);
-  const pot = Math.min(97, baseOvr + 8 + academyLevel * 2 + Math.floor(Math.random() * 8));
+  const age = 16 + Math.floor(Math.random() * 3);
+  const baseOvr = 66 + academyLevel * 3 + Math.floor(Math.random() * 8);
+  const pot = Math.min(97, baseOvr + 9 + academyLevel * 2 + Math.floor(Math.random() * 10));
   const styles = ['Aggressive', 'Scaling', 'Playmaker', 'Weakside', 'Shotcaller'];
   const style = styles[Math.floor(Math.random() * styles.length)];
 
@@ -567,4 +956,22 @@ export function generateRegenPlayer(role, region, academyLevel = 1, teamId = nul
   const p = mkPlayer(name, role, nat, age, baseOvr, pot, style, pool, teamId, { contractYears: teamId ? 3 : 0 });
   p.isStarter = false;
   return p;
+}
+
+// Generate 14 SoloQ Challenger Ladder Wonderkids with hidden potential until scouted!
+export function generateChallengerProspects() {
+  const list = [];
+  const servers = ['KR', 'EUW', 'CN', 'TR', 'BR', 'NA', 'OCE'];
+  const serverToReg = { KR: 'LCK', EUW: 'LEC', CN: 'LPL', TR: 'TCL', BR: 'CBLOL', NA: 'LCS', OCE: 'LCO' };
+  for (let i = 0; i < 14; i++) {
+    const srv = servers[i % servers.length];
+    const role = ROLES[i % ROLES.length];
+    const p = generateRegenPlayer(role, serverToReg[srv], Math.random() < 0.35 ? 3 : 2, null);
+    p.lp = 1100 + Math.floor(Math.random() * 650);
+    p.server = srv;
+    p.scouted = false;
+    p.signingFee = Math.round(p.marketValue * 0.45 / 5000) * 5000;
+    list.push(p);
+  }
+  return list.sort((a, b) => b.lp - a.lp);
 }
