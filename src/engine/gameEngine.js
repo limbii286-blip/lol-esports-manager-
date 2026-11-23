@@ -281,7 +281,7 @@ function maybeTriggerDramaEvent(state) {
 
   const templates = [
     {
-      title: '🎥 Gece Yarısı Yayın Krizi',
+      title: 'Gece Yarısı Yayın Krizi',
       desc: `${p1.name}, önemli maç haftasında sabah 4'e kadar SoloQ yayını yaptığı için antrenmana uykusuz geldi. Nasıl tepki vereceksin?`,
       choices: [
         { label: 'Para Cezası & Disiplin (Form +2, Moral -8, Bütçe +$15K)', effect: () => { p1.form = Math.min(99, p1.form + 2); p1.morale = Math.max(30, p1.morale - 8); team.budget += 15000; } },
@@ -290,7 +290,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
-      title: '💥 Scrim Sonrası Tartışma',
+      title: 'Scrim Sonrası Tartışma',
       desc: `Scrim değerlendirmesinde ${p1.name} ve ${p2.name} harita çağrısı yüzünden sertçe tartıştı. Takım atmosferi gergin!`,
       choices: [
         { label: 'Takım Yemeği Düzenle (-$20K, Sinerji +5, Moral +6)', effect: () => { team.budget -= 20000; team.synergy = Math.min(100, team.synergy + 5); roster.forEach(p => { p.morale = Math.min(100, p.morale + 6); }); } },
@@ -299,7 +299,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
-      title: '🎙️ Basın Toplantısı & Trash Talk',
+      title: 'Basın Toplantısı & Trash Talk',
       desc: `Rakip koç, röportajda ${team.name} için "Sadece şansla kazanıyorlar, bizi asla yenemezler" dedi. Mikrofon sende!`,
       choices: [
         { label: 'Sert Trash Talk Yap (Taraftar +3, Takım Moral +5)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 3); roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); }); } },
@@ -307,7 +307,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
-      title: '📸 Sponsor Reklam Çekimi',
+      title: 'Sponsor Reklam Çekimi',
       desc: `Ana sponsorunuz hafta ortasında tam günlük reklam çekimi talep ediyor. Kabul ederseniz nakit prim var ama antrenman aksayacak.`,
       choices: [
         { label: 'Çekimi Kabul Et (Bütçe +$85K, Yorgunluk +9)', effect: () => { team.budget += 85000; roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 9); }); } },
@@ -364,7 +364,7 @@ function maybeGenerateIncomingOffer(state) {
   });
 
   addInboxMessage(state, {
-    title: `💰 Transfer Teklifi: ${buyer.name} → ${target.name}`,
+    title: `Transfer Teklifi: ${buyer.name} → ${target.name}`,
     sender: buyer.name,
     category: 'TRANSFER',
     body: `${buyer.name} kulübü, ${target.name} (${target.role}, OVR ${target.ovr}) için ${formatMoney(offerAmount)} bonservis teklif etti! Genel Bakış veya Transfer ekranından kabul/reddedebilirsin.`,
@@ -481,7 +481,7 @@ function awardSplitHonors(state, splitName) {
   });
 
   addInboxMessage(state, {
-    title: `🏅 ${userTeam.region} ${splitName} Sezon Ödülleri Açıklandı!`,
+    title: `${userTeam.region} ${splitName} Sezon Ödülleri Açıklandı`,
     sender: 'Lig Komitesi',
     category: 'NEWS',
     body: `Mevsim MVP'si: ${mvp.name} | Yılın Çaylağı: ${rookie ? rookie.name : '-'} | All-Pro 1. Takım: ${allPro.join(', ')}`,
@@ -785,7 +785,7 @@ function finishBracketAndTransition(state) {
     state.swiss = createWorldsSwissStage(state);
 
     addInboxMessage(state, {
-      title: `🌍 WORLDS ${state.season} — 16 TAKIMLI İSVİÇRE AŞAMASI BAŞLIYOR!`,
+      title: `WORLDS ${state.season} — 16 Takımlı İsviçre Aşaması Başlıyor`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
       body: `Yaz Şampiyonları: ${champs.join(' • ')}. 3 galibiyet alan Çeyrek Final'e çıkar, 3 mağlubiyet alan elenir!`,
@@ -810,7 +810,7 @@ function finishBracketAndTransition(state) {
     runOffSeasonProgression(state);
 
     addInboxMessage(state, {
-      title: `🏆 WORLDS ${state.season} ŞAMPİYONU: ${worldsWinner.name}!`,
+      title: `WORLDS ${state.season} Şampiyonu: ${worldsWinner.name}`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
       body: `${worldsWinner.name} Sihirdar Kupası'nı kazandı! Sezon arası transfer dönemi açıldı, AI takımları transfer hamlelerini yapıyor ve yeni Challenger yetenekleri ortaya çıktı.`,
@@ -866,7 +866,7 @@ function runOffSeasonProgression(state) {
   }
   if (aiMoves.length) {
     addInboxMessage(state, {
-      title: '📰 Sezon Arası Transfer Özeti',
+      title: 'Sezon Arası Transfer Özeti',
       sender: 'Esports Insider',
       category: 'TRANSFER',
       body: `Öne çıkan AI transferleri: ${aiMoves.join(' • ')}`,
@@ -924,7 +924,7 @@ export function signChallengerProspect(state, prospectId) {
   state.players.push(p);
 
   addInboxMessage(state, {
-    title: `🌟 Challenger Wonderkid İmzası: ${p.name}!`,
+    title: `Challenger Wonderkid İmzası: ${p.name}`,
     sender: 'Scouting Ekibi',
     category: 'TRANSFER',
     body: `${p.server} Challenger (${p.lp} LP) yeteneği ${p.name} (${p.age} yaş, ${p.role}, OVR ${p.ovr}/POT ${p.pot}) ${formatMoney(p.signingFee)} bedelle kadromuza katıldı!`,

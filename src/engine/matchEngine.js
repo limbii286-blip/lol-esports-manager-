@@ -133,7 +133,7 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
 
     lastEventPos: null,
     events: [
-      { min: 0, type: 'SYSTEM', text: `Vadiye hoş geldiniz! ${blueTeam.tag} (Mavi) vs ${redTeam.tag} (Kırmızı)${highStakes ? ' — 🔥 YÜKSEK GERİLİMLİ MAÇ!' : ''} başlıyor.` }
+      { min: 0, type: 'SYSTEM', tag: 'BAŞLANGIÇ', text: `${blueTeam.tag} (Mavi) vs ${redTeam.tag} (Kırmızı)${highStakes ? ' — Yüksek gerilimli karşılaşma' : ''} başladı.` }
     ],
     mvp: null,
   };
@@ -304,8 +304,9 @@ export function stepMatchMinute(state) {
       state.events.push({
         min: m,
         type: isFB ? 'FIRST_BLOOD' : 'KILL',
+        tag: isFB ? 'İLK KAN' : 'BASKIN',
         side: killerSide,
-        text: `${isFB ? '🩸 İLK KAN! ' : ''}${tag} ${killer.name} (${killer.champName}), ${targetLane} koridorunda başarılı baskınla ${oppTag} ${victim.name}'ı düşürdü!`,
+        text: `${tag} ${killer.name} (${killer.champName}), ${targetLane} koridorunda başarılı baskınla ${oppTag} ${victim.name}'ı düşürdü.`,
       });
       focusPoint = LANE_COORDS[targetLane];
       state.lastEventPos = { ...focusPoint, color: killerSide === 'blue' ? '#38bdf8' : '#ef4444' };
@@ -316,8 +317,9 @@ export function stepMatchMinute(state) {
       state.events.push({
         min: m,
         type: isFB ? 'FIRST_BLOOD' : 'SOLO',
+        tag: isFB ? 'İLK KAN' : 'SOLO KILL',
         side: killerSide,
-        text: `${isFB ? '🩸 İLK KAN! ' : '⚔️ SOLO KILL! '}${tag} ${killer.name} (${killer.champName}), 1v1'de ${victim.name} (${victim.champName}) karşısında üstünlük kurdu!`,
+        text: `${tag} ${killer.name} (${killer.champName}), 1v1'de ${victim.name} (${victim.champName}) karşısında üstünlük kurdu.`,
       });
       focusPoint = LANE_COORDS[laneRole];
       state.lastEventPos = { ...focusPoint, color: killerSide === 'blue' ? '#38bdf8' : '#ef4444' };
@@ -334,7 +336,7 @@ export function stepMatchMinute(state) {
     if (side === 'blue') { state.blueGrubs++; state.bluePlayers.forEach(p => { p.gold += 120; }); }
     else { state.redGrubs++; state.redPlayers.forEach(p => { p.gold += 120; }); }
     const tag = side === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
-    state.events.push({ min: m, type: 'OBJECTIVE', side, text: `🟣 ${tag}, ${objName} objektifini kontrol altına aldı!` });
+    state.events.push({ min: m, type: 'OBJECTIVE', tag: 'OBJEKTİF', side, text: `${tag}, ${objName} objektifini kontrol altına aldı.` });
     focusPoint = LANE_COORDS.BARON;
     state.lastEventPos = { ...focusPoint, color: '#a855f7' };
   }
@@ -365,10 +367,11 @@ export function stepMatchMinute(state) {
     state.events.push({
       min: m,
       type: isSoul ? 'SOUL' : 'DRAGON',
+      tag: isSoul ? 'EJDER RUHU' : 'EJDER',
       side: winner,
       text: isSoul
-        ? `🔥 EJDER RUHU! ${tag}, 4. ejderi alarak Ejder Ruhu'nu tamamladı!`
-        : `🐉 ${tag}, Ejderi aldı (${dCount}/4)${contested ? ' ve çukur etrafındaki savaştan karlı çıktı!' : '.'}`,
+        ? `${tag}, 4. ejderi alarak Ejder Ruhu'nu tamamladı.`
+        : `${tag}, Ejderi aldı (${dCount}/4)${contested ? ' ve çukur etrafındaki savaştan karlı çıktı.' : '.'}`,
     });
     focusPoint = LANE_COORDS.DRAGON;
     state.lastEventPos = { ...focusPoint, color: '#f59e0b' };
@@ -391,7 +394,7 @@ export function stepMatchMinute(state) {
       else { state.redTowers++; state.redPlayers.forEach(p => { p.gold += 220; }); }
       const tag = side === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
       const tierText = oppLanes[lane] === 2 ? 'dış kulesini' : oppLanes[lane] === 1 ? 'iç kulesini' : 'inhibitör kulesini ve inhibitörü';
-      state.events.push({ min: m, type: 'TOWER', side, text: `🏰 ${tag}, ${lane} koridorundaki ${tierText} yıktı!` });
+      state.events.push({ min: m, type: 'TOWER', tag: 'KULE', side, text: `${tag}, ${lane} koridorundaki ${tierText} yıktı.` });
       focusPoint = LANE_COORDS[lane];
       state.lastEventPos = { ...focusPoint, color: side === 'blue' ? '#38bdf8' : '#ef4444' };
     }
@@ -418,7 +421,7 @@ export function stepMatchMinute(state) {
     state.baronTimer = m + 7;
 
     const tag = winner === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
-    state.events.push({ min: m, type: 'BARON', side: winner, text: `👑 BARON NASHOR! ${tag}, büyük 5v5 takım savaşını ${wKills}-${lKills} kazanıp Baron güçlendirmesini aldı!` });
+    state.events.push({ min: m, type: 'BARON', tag: 'BARON', side: winner, text: `${tag}, büyük 5v5 takım savaşını ${wKills}-${lKills} kazanıp Baron Nashor güçlendirmesini aldı.` });
     focusPoint = LANE_COORDS.BARON;
     state.lastEventPos = { ...focusPoint, color: '#c084fc' };
   }
@@ -469,8 +472,9 @@ export function stepMatchMinute(state) {
       state.events.push({
         min: m,
         type: 'NEXUS',
+        tag: 'NEXUS',
         side: winner,
-        text: `🏆 NEXUS YIKILDI! ${winTeam.name} (${winTeam.tag}) ${m}. dakikada galibiyete uzandı! Maçın MVP'si: ${mvp.name} (${mvp.champName}, ${mvp.kills}/${mvp.deaths}/${mvp.assists})`,
+        text: `${winTeam.name} (${winTeam.tag}) ${m}. dakikada galibiyete uzandı. MVP: ${mvp.name} (${mvp.champName}, ${mvp.kills}/${mvp.deaths}/${mvp.assists})`,
       });
       const baseCoord = winner === 'blue' ? LANE_COORDS.RED_BASE : LANE_COORDS.BLUE_BASE;
       state.lastEventPos = { ...baseCoord, color: winner === 'blue' ? '#38bdf8' : '#ef4444' };

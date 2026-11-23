@@ -1,5 +1,6 @@
-// LoL Esports Manager v2.0 — Worlds Mayhem Arcade Mode (LoLdle-inspired Legends Draft + 3 Rerolls + Instant Worlds Run)
+// LoL Esports Manager v2.1 — Worlds Mayhem Arcade Mode (Zero Emojis, Crisp Broadcast UI)
 import { ROLES, LEGENDS_MAYHEM } from '../data/teamsAndPlayers.js';
+import { icon } from './icons.js';
 
 export function openWorldsMayhemModal() {
   const backdrop = document.createElement('div');
@@ -30,7 +31,6 @@ export function openWorldsMayhemModal() {
     const bonuses = [];
     let syn = 0;
 
-    // Region & Team synergy bonuses
     const regCounts = {};
     const teamCounts = {};
     for (const p of mayhem.roster) {
@@ -90,14 +90,13 @@ export function openWorldsMayhemModal() {
     box.innerHTML = `
       <div class="card-header">
         <div>
-          <span class="card-title" style="font-size:17px;">🔥 WORLDS MAYHEM — Efsane Kadro Modu</span>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">LoLdle Worlds Mayhem tarzı: 5 efsane sezon kartı seç (3 Reroll hakkı), Sihirdar Kupası'nı kazan!</div>
+          <span class="card-title" style="font-size:15px;">${icon('flame', 16)} WORLDS MAYHEM — Efsane Kadro Modu</span>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">5 efsane sezon kartı seç (3 Reroll hakkı), Sihirdar Kupası için turnuvayı simüle et.</div>
         </div>
-        <button class="btn-ghost btn-sm" id="btnCloseMayhem">✕ Kapat</button>
+        <button class="btn-ghost btn-sm" id="btnCloseMayhem">${icon('x', 14)} Kapat</button>
       </div>
 
-      <!-- Current 5-Man Roster -->
-      <div class="grid-5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;">
         ${ROLES.map((r, i) => {
           const p = mayhem.roster[i];
           return `
@@ -107,7 +106,7 @@ export function openWorldsMayhemModal() {
                 <div style="font-weight:800;font-size:13px;margin-top:6px;color:var(--gold-bright);">${p.name}</div>
                 <div style="font-size:11px;color:var(--text-muted);">${p.team} • ${p.region}</div>
                 <div style="margin-top:4px;"><span class="ovr-pill ovr-90">${p.ovr}</span></div>
-              ` : `<div style="font-size:12px;color:var(--text-muted);margin-top:12px;">${i === mayhem.roleIdx ? 'Seçiliyor...' : 'Bekliyor'}</div>`}
+              ` : `<div style="font-size:11.5px;color:var(--text-muted);margin-top:12px;">${i === mayhem.roleIdx ? 'Seçiliyor...' : 'Bekliyor'}</div>`}
             </div>
           `;
         }).join('')}
@@ -115,50 +114,50 @@ export function openWorldsMayhemModal() {
 
       ${!finishedDraft ? `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <strong style="color:var(--gold-bright);font-size:15px;">Rol Seçimi (${mayhem.roleIdx + 1}/5): <span class="badge role-${ROLES[mayhem.roleIdx]}">${ROLES[mayhem.roleIdx]}</span></strong>
-          <button class="btn-blue btn-sm" id="btnMayhemReroll" ${mayhem.rerolls <= 0 ? 'disabled' : ''}>🎲 Reroll (${mayhem.rerolls} Hak Kaldı)</button>
+          <strong style="color:var(--gold-bright);font-size:14px;">Rol Seçimi (${mayhem.roleIdx + 1}/5): <span class="badge role-${ROLES[mayhem.roleIdx]}">${ROLES[mayhem.roleIdx]}</span></strong>
+          <button class="btn-blue btn-sm" id="btnMayhemReroll" ${mayhem.rerolls <= 0 ? 'disabled' : ''}>${icon('refresh', 13)} Reroll (${mayhem.rerolls} Hak)</button>
         </div>
         <div class="grid-3">
           ${mayhem.choices.map((c, idx) => `
             <div class="club-card" style="cursor:pointer;" data-pick-legend="${idx}">
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <span class="badge tier-S">${c.team} • ${c.region}</span>
-                <span class="ovr-pill ovr-90" style="font-size:16px;">${c.ovr}</span>
+                <span class="ovr-pill ovr-90" style="font-size:15px;">${c.ovr}</span>
               </div>
-              <div style="font-size:17px;font-weight:900;color:var(--gold-bright);">${c.name}</div>
+              <div style="font-size:16px;font-weight:900;color:var(--gold-bright);">${c.name}</div>
               <div style="font-size:12px;color:var(--text-muted);min-height:36px;">${c.desc}</div>
-              <div style="font-size:11px;color:var(--blue);">Stil: ${c.style}</div>
-              <button class="btn-primary btn-sm" style="margin-top:auto;">Kadroya Ekle →</button>
+              <div style="font-size:11px;color:var(--blue);font-weight:600;">Stil: ${c.style}</div>
+              <button class="btn-primary btn-sm" style="margin-top:auto;">Kadroya Ekle ${icon('arrowRight', 13)}</button>
             </div>
           `).join('')}
         </div>
       ` : !mayhem.simResult ? `
         <div class="card" style="text-align:center;padding:24px;">
-          <div style="font-size:20px;font-weight:900;color:var(--gold-bright);">RÜYA KADRO HAZIR!</div>
-          <div style="font-size:15px;margin:8px 0;">Ortalama OVR: <b>${score.avg}</b> • Sinerji Bonusu: <b style="color:var(--green);">+${score.synergy}</b> • Toplam Güç: <b style="color:var(--gold-bright);">${score.total}</b></div>
+          <div style="font-size:19px;font-weight:900;color:var(--gold-bright);letter-spacing:0.6px;">RÜYA KADRO HAZIR</div>
+          <div class="num" style="font-size:14px;margin:8px 0;">Ortalama OVR: <b>${score.avg}</b> • Sinerji Bonusu: <b style="color:var(--green);">+${score.synergy}</b> • Toplam Güç: <b style="color:var(--gold-bright);">${score.total}</b></div>
           ${score.bonuses.length ? `<div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${score.bonuses.map(b => `<span class="badge tier-A">${b}</span>`).join('')}</div>` : ''}
-          <button class="btn-primary" id="btnRunMayhemSim" style="padding:12px 26px;font-size:15px;">🏆 WORLDS TURNUVASINI SİMÜLE ET!</button>
+          <button class="btn-primary" id="btnRunMayhemSim" style="padding:11px 24px;font-size:14px;">${icon('trophy', 15)} Worlds Turnuvasını Simüle Et</button>
         </div>
       ` : `
         <div class="card" style="border-color:${mayhem.simResult.champion ? 'var(--gold)' : 'var(--red)'};">
           <div style="text-align:center;margin-bottom:16px;">
-            <div style="font-size:24px;font-weight:900;color:${mayhem.simResult.champion ? 'var(--gold-bright)' : 'var(--red)'};">
-              ${mayhem.simResult.champion ? '🏆 SİHİRDAR KUPASI SENİN! WORLDS ŞAMPİYONU!' : `💔 ${mayhem.simResult.eliminatedAt} Turunda Elendin`}
+            <div style="font-size:21px;font-weight:900;color:${mayhem.simResult.champion ? 'var(--gold-bright)' : 'var(--red)'};">
+              ${mayhem.simResult.champion ? 'WORLDS ŞAMPİYONU — SİHİRDAR KUPASI SENİN' : `${mayhem.simResult.eliminatedAt} Turunda Elendin`}
             </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">
-              Kadronun Gücü: <b>${score.total}</b> • Turnuva Yıldızın: <b>${mayhem.simResult.mvp.name}</b>
+            <div class="num" style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+              Kadronun Gücü: <b style="color:var(--text);">${score.total}</b> • Turnuva Yıldızın: <b style="color:var(--gold-bright);">${mayhem.simResult.mvp.name}</b>
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
             ${mayhem.simResult.log.map(item => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:8px;border-left:4px solid ${item.won ? 'var(--green)' : 'var(--red)'};">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:7px;border-left:3px solid ${item.won ? 'var(--green)' : 'var(--red)'};">
                 <div><strong>${item.round}</strong> <span style="color:var(--text-muted);">vs ${item.opp}</span></div>
-                <div><b style="color:${item.won ? 'var(--green)' : 'var(--red)'};">${item.won ? 'GALİBİYET' : 'ELENDİ'} (${item.score})</b></div>
+                <div class="num"><b style="color:${item.won ? 'var(--green)' : 'var(--red)'};">${item.won ? 'GALİBİYET' : 'ELENDİ'} (${item.score})</b></div>
               </div>
             `).join('')}
           </div>
           <div style="text-align:center;">
-            <button class="btn-primary" id="btnMayhemRestart">🔄 Yeni Worlds Mayhem Başlat</button>
+            <button class="btn-primary" id="btnMayhemRestart">${icon('refresh', 14)} Yeni Worlds Mayhem Başlat</button>
           </div>
         </div>
       `}

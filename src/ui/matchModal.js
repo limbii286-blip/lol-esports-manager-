@@ -1,4 +1,4 @@
-// LoL Esports Manager v2.0 — Series Modal (Fearless Draft, Opponent Scouting, NO Mola, Role Micro-Tactics, 10-Player 2D Minimap, Deep Post-Match Analytics)
+// LoL Esports Manager v2.1 — Pro Broadcast Series Modal (Zero Emojis, SVG Icons, Fearless Draft, 2D Minimap, Role Micro-Tactics)
 import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier } from '../data/champions.js';
 import { ROLES, getRivalryName } from '../data/teamsAndPlayers.js';
 import {
@@ -9,6 +9,7 @@ import {
   createLiveMatchState, stepMatchMinute, finishMatchInstantly, applyMatchOutcomeToPlayers
 } from '../engine/matchEngine.js';
 import { getTeamRoster, getCurrentPatch, recordSeriesResult } from '../engine/gameEngine.js';
+import { icon } from './icons.js';
 
 export function openSeriesModal(gameState, match, onSeriesComplete) {
   const blueTeam = gameState.teams.find(t => t.id === match.blueId);
@@ -58,6 +59,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     series.search = '';
     const locked = gameState.fearlessEnabled ? series.fearlessLocked : new Set();
     series.draft = createDraftState(blueTeam, redTeam, blueRoster, redRoster, patch, userSide, locked);
+    box.scrollTop = 0;
     render();
     scheduleAIDraftIfNeeded();
   }
@@ -83,6 +85,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       blueTeam, redTeam, blueRoster, redRoster,
       series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes
     );
+    box.scrollTop = 0;
     render();
     startMatchLoop();
   }
@@ -125,17 +128,17 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span class="team-tag" style="background:${blueTeam.color};color:${blueTeam.color2};">${blueTeam.tag}</span>
-          <strong style="font-size:16px;">${blueTeam.name}</strong>
-          <span style="font-size:20px;font-weight:900;color:var(--gold-bright);padding:0 8px;">${series.blueScore} - ${series.redScore}</span>
-          <strong style="font-size:16px;">${redTeam.name}</strong>
+          <strong style="font-size:15.5px;">${blueTeam.name}</strong>
+          <span class="num" style="font-size:20px;font-weight:900;color:var(--gold-bright);padding:0 8px;">${series.blueScore} - ${series.redScore}</span>
+          <strong style="font-size:15.5px;">${redTeam.name}</strong>
           <span class="team-tag" style="background:${redTeam.color};color:${redTeam.color2};">${redTeam.tag}</span>
           <span class="badge tier-A">BO${match.bestOf} • MAÇ ${series.gameNum}</span>
-          ${gameState.fearlessEnabled ? `<span class="badge tier-S">🔥 FEARLESS (${series.fearlessLocked.size} Kilitli)</span>` : ''}
-          ${rivalry ? `<span class="badge tier-C">⚔️ ${rivalry}</span>` : ''}
+          ${gameState.fearlessEnabled ? `<span class="badge tier-S">${icon('lock', 11)} FEARLESS (${series.fearlessLocked.size})</span>` : ''}
+          ${rivalry ? `<span class="badge tier-C">${icon('sword', 11)} ${rivalry}</span>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="badge tier-B">Yama ${patch.version}</span>
-          ${series.phase === 'DRAFT' && !series.draft.finished ? `<button class="btn-ghost btn-sm" id="btnAutoDraft">⚡ Oto-Draft Tamamla</button>` : ''}
+          ${series.phase === 'DRAFT' && !series.draft.finished ? `<button class="btn-ghost btn-sm" id="btnAutoDraft">${icon('fast', 13)} Oto-Draft Tamamla</button>` : ''}
         </div>
       </div>
     `;
@@ -148,13 +151,12 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     const blueAn = analyzeDraftSide(d.bluePicks, blueRoster, patch, d.redPicks);
     const redAn = analyzeDraftSide(d.redPicks, redRoster, patch, d.bluePicks);
 
-    // Opponent Scouting Intel Banner
     const oppStar = [...oppRoster].sort((a, b) => b.ovr - a.ovr)[0];
     const oppPlanLabel = { aggressive: 'Erken Baskı', balanced: 'Dengeli', scaling: 'Geç Oyun Scaling', split: 'Split Push' }[oppTeam.tactics?.gameplan] || 'Dengeli';
     const scoutingHtml = `
-      <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <span>🔎 <b>Rakip Scout (${oppTeam.tag}):</b> Stil: <b>${oppPlanLabel}</b> • Odak: <b>${oppTeam.tactics?.laneFocus || 'MID'}</b></span>
-        <span>⭐ En Tehlikeli: <b>${oppStar?.name} (${oppStar?.role}, ${oppStar?.ovr})</b> — İmza: <b>${(oppStar?.sigChamps || []).slice(0, 3).map(id => CHAMPION_MAP[id]?.name).join(', ')}</b></span>
+      <div style="background:var(--blue-soft);border:1px solid rgba(56,189,248,0.28);border-radius:7px;padding:8px 12px;margin-top:10px;font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;">${icon('search', 13)} <b>Rakip Scout (${oppTeam.tag}):</b> Stil: <b>${oppPlanLabel}</b> • Odak: <b>${oppTeam.tactics?.laneFocus || 'MID'}</b></span>
+        <span>Kilit Oyuncu: <b>${oppStar?.name} (${oppStar?.role}, ${oppStar?.ovr})</b> — İmza: <b>${(oppStar?.sigChamps || []).slice(0, 3).map(id => CHAMPION_MAP[id]?.name).join(', ')}</b></span>
       </div>
     `;
 
@@ -179,10 +181,10 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
               <div style="display:flex;align-items:center;gap:5px;">
                 <span class="badge role-${role}">${role}</span>
                 <strong style="font-size:12.5px;">${p ? p.name : role}</strong>
-                <span style="font-size:11px;color:var(--text-muted);">(${p?.ovr})</span>
+                <span class="num" style="font-size:11px;color:var(--text-muted);">(${p?.ovr})</span>
               </div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
-                ${ch ? `<span style="color:${sideColor};font-weight:700;">${ch.name}</span> <span class="badge tier-${tier}">${tier}</span> ${isSig ? '<span style="color:#f0c96e;">★</span>' : ''} ${mast > 0 ? `<span style="color:#34d399;">U${mast}</span>` : ''}` : `İmza: ${(p?.sigChamps || []).slice(0, 2).map(id => CHAMPION_MAP[id]?.name).join(', ')}`}
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:4px;">
+                ${ch ? `<span style="color:${sideColor};font-weight:700;">${ch.name}</span> <span class="badge tier-${tier}">${tier}</span> ${isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 11)}</span>` : ''} ${mast > 0 ? `<span style="color:var(--green);font-weight:700;">U${mast}</span>` : ''}` : `İmza: ${(p?.sigChamps || []).slice(0, 2).map(id => CHAMPION_MAP[id]?.name).join(', ')}`}
               </div>
             </div>
             ${ch ? `<div class="champ-avatar" style="background:${ch.color};width:28px;height:28px;font-size:10px;">${ch.name.slice(0, 2).toUpperCase()}</div>` : ''}
@@ -193,18 +195,18 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       return `
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <strong style="color:${sideColor};font-size:13.5px;">${team.tag} ${side === userSide ? '(SEN)' : '(AI)'}</strong>
+            <strong style="color:${sideColor};font-size:13px;letter-spacing:0.3px;">${team.tag} ${side === userSide ? '(SEN)' : '(AI)'}</strong>
             <span class="badge tier-A">Draft: ${an.score || '-'}</span>
           </div>
           <div class="ban-row">${banSlots}</div>
           ${pickSlots}
           <div class="card" style="padding:9px;font-size:11px;margin-top:6px;">
-            <div style="display:flex;justify-content:space-between;"><span>Erken: <b>${an.early}</b></span><span>Orta: <b>${an.mid}</b></span><span>Geç: <b>${an.late}</b></span></div>
-            <div style="display:flex;justify-content:space-between;margin-top:3px;color:var(--text-muted);">
+            <div class="num" style="display:flex;justify-content:space-between;"><span>Erken: <b>${an.early}</b></span><span>Orta: <b>${an.mid}</b></span><span>Geç: <b>${an.late}</b></span></div>
+            <div class="num" style="display:flex;justify-content:space-between;margin-top:3px;color:var(--text-muted);">
               <span>Engage: ${an.engage}</span>
               <span style="color:${an.counterEdge >= 0 ? 'var(--green)' : 'var(--red)'};">Counter: ${an.counterEdge >= 0 ? '+' : ''}${an.counterEdge}</span>
             </div>
-            ${an.warnings.length ? `<div style="color:#f87171;margin-top:4px;">⚠ ${an.warnings.join(', ')}</div>` : ''}
+            ${an.warnings.length ? `<div style="color:#fda4af;margin-top:4px;">Uyarı: ${an.warnings.join(', ')}</div>` : ''}
           </div>
         </div>
       `;
@@ -224,23 +226,23 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     const allUserSigs = new Set(userRoster.flatMap(p => p.sigChamps));
 
     const centerContent = d.finished ? `
-      <div class="card" style="text-align:center;padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;">
-        <div style="font-size:20px;font-weight:900;color:var(--gold-bright);">DRAFT TAMAMLANDI!</div>
+      <div class="card" style="text-align:center;padding:36px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;">
+        <div style="font-size:18px;font-weight:900;letter-spacing:0.8px;color:var(--gold-bright);">DRAFT TAMAMLANDI</div>
         <p style="color:var(--text-muted);font-size:13px;max-width:420px;">
           Her iki takım kompozisyonunu kilitledi. Sihirdar Vadisi'nde canlı mikro taktiklerinle maçı yönetebilirsin.
         </p>
-        <div style="display:flex;gap:12px;">
-          <button class="btn-primary" id="btnStartLiveMatch" style="padding:12px 24px;font-size:15px;">▶ CANLI MAÇI BAŞLAT</button>
-          <button class="btn-ghost" id="btnInstantMatch">⚡ Hızlı Simüle Et</button>
+        <div style="display:flex;gap:10px;">
+          <button class="btn-primary" id="btnStartLiveMatch" style="padding:11px 22px;font-size:14px;">${icon('play', 14)} Canlı Maçı Başlat</button>
+          <button class="btn-ghost" id="btnInstantMatch">${icon('fast', 14)} Hızlı Simüle Et</button>
         </div>
       </div>
     ` : `
       <div>
-        <div style="background:${isUserTurn ? 'rgba(200,155,60,0.16)' : 'var(--bg-card)'};border:1px solid ${isUserTurn ? 'var(--gold)' : 'var(--border)'};border-radius:8px;padding:9px 13px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:13px;font-weight:800;color:${isUserTurn ? 'var(--gold-bright)' : 'var(--text-muted)'};">
-            ${isUserTurn ? (step.type === 'ban' ? '🚫 SENİN SIRAN — Şampiyon Yasakla (BAN)' : `✅ SENİN SIRAN — Şampiyon Seç (Kalan: ${userMissing.join(', ')})`) : `⏳ Rakip düşünüyor... (${step.label})`}
+        <div style="background:${isUserTurn ? 'var(--gold-soft)' : 'var(--bg-card)'};border:1px solid ${isUserTurn ? 'var(--gold)' : 'var(--border)'};border-radius:7px;padding:9px 13px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:12.5px;font-weight:800;color:${isUserTurn ? 'var(--gold-bright)' : 'var(--text-muted)'};">
+            ${isUserTurn ? (step.type === 'ban' ? 'SENİN SIRAN — Şampiyon Yasakla (BAN)' : `SENİN SIRAN — Şampiyon Seç (Kalan: ${userMissing.join(', ')})`) : `Rakip seçimi bekleniyor... (${step.label})`}
           </div>
-          <span style="font-size:11px;color:var(--text-muted);">Adım ${d.stepIndex + 1}/20</span>
+          <span class="num" style="font-size:11px;color:var(--text-muted);">Adım ${d.stepIndex + 1}/20</span>
         </div>
 
         <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
@@ -258,12 +260,12 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
             const disabled = used || !isUserTurn || !fitsMissing;
             return `
               <div class="champ-card ${disabled ? 'disabled' : ''}" data-champ-pick="${c.id}" title="${isFearless ? 'Fearless Draft: Önceki maçta kullanıldı' : c.name}">
-                <div class="champ-avatar" style="background:${c.color};">${isFearless ? '🔒' : c.name.slice(0, 2).toUpperCase()}</div>
+                <div class="champ-avatar" style="background:${c.color};">${isFearless ? icon('lock', 14) : c.name.slice(0, 2).toUpperCase()}</div>
                 <div style="font-size:11.5px;font-weight:700;">${c.name}</div>
                 <div style="display:flex;gap:3px;align-items:center;">
                   <span class="badge tier-${tier}">${tier}</span>
                   <span style="font-size:10px;color:var(--text-muted);">${c.roles[0]}</span>
-                  ${isSig ? '<span style="color:#f0c96e;font-size:11px;">★</span>' : ''}
+                  ${isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 10)}</span>` : ''}
                 </div>
               </div>
             `;
@@ -286,7 +288,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
   function renderMinimapSVG(m) {
     const towerDots = (side) => {
       const lanes = side === 'blue' ? m.blueLaneTowers : m.redLaneTowers;
-      const col = side === 'blue' ? '#38bdf8' : '#ef4444';
+      const col = side === 'blue' ? '#38bdf8' : '#f43f5e';
       const coords = side === 'blue'
         ? { TOP: [[16, 42], [16, 58], [16, 72]], MID: [[38, 62], [30, 70], [23, 77]], BOT: [[58, 84], [42, 84], [28, 84]] }
         : { TOP: [[42, 16], [58, 16], [72, 16]], MID: [[62, 38], [70, 30], [77, 23]], BOT: [[84, 58], [84, 42], [84, 28]] };
@@ -301,7 +303,6 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       return svg;
     };
 
-    // 10 Live Moving Champion Dots!
     const champDots = (players, borderCol) => players.map(p => `
       <g style="transition: transform 0.35s ease;" transform="translate(${p.x}, ${p.y})">
         <circle cx="0" cy="0" r="3.4" fill="${p.champColor}" stroke="${borderCol}" stroke-width="1.2" />
@@ -317,7 +318,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       : '';
 
     return `
-      <svg viewBox="0 0 100 100" style="width:100%;max-width:260px;display:block;margin:0 auto;background:#09121e;border:1px solid var(--border);border-radius:10px;">
+      <svg viewBox="0 0 100 100" style="width:100%;max-width:255px;display:block;margin:0 auto;background:#08101c;border:1px solid var(--border);border-radius:8px;">
         <path d="M 15 15 Q 50 50 85 85" stroke="#0c4a6e" stroke-width="7" fill="none" opacity="0.55" />
         <polyline points="14,86 14,14 86,14" stroke="#1e293b" stroke-width="4" fill="none" />
         <polyline points="14,86 86,86 86,14" stroke="#1e293b" stroke-width="4" fill="none" />
@@ -327,18 +328,18 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
         <circle cx="66" cy="70" r="4" fill="rgba(245,158,11,0.28)" stroke="#f59e0b" stroke-width="0.8" />
         <text x="66" y="71.5" font-size="3.6" fill="#fcd34d" text-anchor="middle" font-weight="bold">D</text>
         <rect x="9" y="81" width="9" height="9" rx="2" fill="${m.blueNexusHP > 0 ? '#38bdf8' : '#334155'}" />
-        <rect x="82" y="10" width="9" height="9" rx="2" fill="${m.redNexusHP > 0 ? '#ef4444' : '#334155'}" />
+        <rect x="82" y="10" width="9" height="9" rx="2" fill="${m.redNexusHP > 0 ? '#f43f5e' : '#334155'}" />
         ${towerDots('blue')}
         ${towerDots('red')}
         ${pulse}
         ${champDots(m.bluePlayers, '#38bdf8')}
-        ${champDots(m.redPlayers, '#ef4444')}
+        ${champDots(m.redPlayers, '#f43f5e')}
       </svg>
     `;
   }
 
   function renderGoldGraphSVG(history) {
-    const w = 270, h = 70;
+    const w = 270, h = 68;
     const maxAbs = Math.max(2500, ...history.map(v => Math.abs(v)));
     const pts = history.map((v, i) => {
       const x = history.length === 1 ? 0 : (i / (history.length - 1)) * w;
@@ -346,15 +347,15 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
     const last = history[history.length - 1] || 0;
-    const stroke = last >= 0 ? '#38bdf8' : '#ef4444';
+    const stroke = last >= 0 ? '#38bdf8' : '#f43f5e';
 
     return `
       <div style="margin-top:8px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px;">
           <span>Altın Farkı Grafiği</span>
-          <strong style="color:${stroke};">${last >= 0 ? `${blueTeam.tag} +${(last / 1000).toFixed(1)}k` : `${redTeam.tag} +${(Math.abs(last) / 1000).toFixed(1)}k`}</strong>
+          <strong class="num" style="color:${stroke};">${last >= 0 ? `${blueTeam.tag} +${(last / 1000).toFixed(1)}k` : `${redTeam.tag} +${(Math.abs(last) / 1000).toFixed(1)}k`}</strong>
         </div>
-        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:70px;background:var(--bg);border:1px solid var(--border);border-radius:7px;">
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:68px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
           <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#334155" stroke-dasharray="3,3" stroke-width="1" />
           <polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2" />
         </svg>
@@ -384,57 +385,63 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       <div class="scoreboard-bar" style="margin-top:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <div style="font-size:12px;color:var(--blue);font-weight:800;">${blueTeam.name} ${userSide === 'blue' ? '(SEN)' : ''}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
-              💰 ${(m.blueGold / 1000).toFixed(1)}k • 🏰 ${m.blueTowers} • 🐉 ${m.blueDragons} • 👑 ${m.blueBarons}
+            <div style="font-size:12.5px;color:var(--blue);font-weight:800;">${blueTeam.name} ${userSide === 'blue' ? '(SEN)' : ''}</div>
+            <div class="stat-strip num">
+              <span>Altın <b>${(m.blueGold / 1000).toFixed(1)}k</b></span>
+              <span>Kule <b>${m.blueTowers}</b></span>
+              <span>Ejder <b>${m.blueDragons}</b></span>
+              <span>Baron <b>${m.blueBarons}</b></span>
             </div>
           </div>
-          <div style="font-size:28px;font-weight:900;color:var(--blue);">${m.blueKills}</div>
+          <div class="num" style="font-size:28px;font-weight:900;color:var(--blue);">${m.blueKills}</div>
         </div>
 
         <div style="text-align:center;padding:0 16px;border-left:1px solid var(--border);border-right:1px solid var(--border);">
-          <div style="font-size:21px;font-weight:900;color:var(--gold-bright);">${String(m.minute).padStart(2, '0')}:00</div>
-          <div style="font-size:10.5px;color:var(--text-muted);">${m.finished ? 'MAÇ SONU' : (series.paused ? 'DURAKLATILDI' : 'CANLI')}</div>
+          <div class="num" style="font-size:21px;font-weight:900;color:var(--gold-bright);">${String(m.minute).padStart(2, '0')}:00</div>
+          <div style="font-size:10px;letter-spacing:0.6px;color:var(--text-muted);font-weight:700;">${m.finished ? 'MAÇ SONU' : (series.paused ? 'DURAKLATILDI' : 'CANLI')}</div>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:28px;font-weight:900;color:var(--red);">${m.redKills}</div>
+          <div class="num" style="font-size:28px;font-weight:900;color:var(--red);">${m.redKills}</div>
           <div style="text-align:right;">
-            <div style="font-size:12px;color:var(--red);font-weight:800;">${redTeam.name} ${userSide === 'red' ? '(SEN)' : ''}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
-              👑 ${m.redBarons} • 🐉 ${m.redDragons} • 🏰 ${m.redTowers} • 💰 ${(m.redGold / 1000).toFixed(1)}k
+            <div style="font-size:12.5px;color:var(--red);font-weight:800;">${redTeam.name} ${userSide === 'red' ? '(SEN)' : ''}</div>
+            <div class="stat-strip num" style="justify-content:flex-end;">
+              <span>Baron <b>${m.redBarons}</b></span>
+              <span>Ejder <b>${m.redDragons}</b></span>
+              <span>Kule <b>${m.redTowers}</b></span>
+              <span>Altın <b>${(m.redGold / 1000).toFixed(1)}k</b></span>
             </div>
           </div>
         </div>
       </div>
 
       ${m.finished ? `
-        <div class="card" style="margin-top:10px;border-color:var(--gold);background:rgba(200,155,60,0.1);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div class="card" style="margin-top:10px;border-color:var(--gold);background:var(--gold-soft);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
           <div>
-            <div style="font-size:16px;font-weight:900;color:var(--gold-bright);">
-              🏆 ${m.winner === 'blue' ? blueTeam.name : redTeam.name} Maç ${series.gameNum}'i Kazandı!
+            <div style="font-size:15.5px;font-weight:900;color:var(--gold-bright);display:flex;align-items:center;gap:7px;">
+              ${icon('trophy', 16)} ${m.winner === 'blue' ? blueTeam.name : redTeam.name} Maç ${series.gameNum}'i Kazandı
             </div>
-            <div style="font-size:12.5px;color:var(--text-muted);margin-top:3px;">
-              MVP: <b>${m.mvp?.name}</b> (${m.mvp?.champName}) — ${m.mvp?.kills}/${m.mvp?.deaths}/${m.mvp?.assists} • Puan: ${m.mvp?.rating}
+            <div class="num" style="font-size:12.5px;color:var(--text-muted);margin-top:3px;">
+              MVP: <b style="color:var(--text);">${m.mvp?.name}</b> (${m.mvp?.champName}) — ${m.mvp?.kills}/${m.mvp?.deaths}/${m.mvp?.assists} • Puan: ${m.mvp?.rating}
               ${m.gd15 !== null ? ` • <b>GD@15:</b> ${m.gd15 >= 0 ? `${blueTeam.tag} +${(m.gd15 / 1000).toFixed(1)}k` : `${redTeam.tag} +${(Math.abs(m.gd15) / 1000).toFixed(1)}k`}` : ''}
             </div>
           </div>
           <div>
             ${seriesOver
-              ? `<button class="btn-primary" id="btnFinishSeries" style="padding:10px 20px;">Seriyi Tamamla (${series.blueScore}-${series.redScore}) →</button>`
-              : `<button class="btn-primary" id="btnNextGame" style="padding:10px 20px;">Maç ${series.gameNum + 1} Draft'ına Geç →</button>`}
+              ? `<button class="btn-primary" id="btnFinishSeries" style="padding:10px 18px;">Seriyi Tamamla (${series.blueScore}-${series.redScore}) ${icon('arrowRight', 14)}</button>`
+              : `<button class="btn-primary" id="btnNextGame" style="padding:10px 18px;">Maç ${series.gameNum + 1} Draft'ına Geç ${icon('arrowRight', 14)}</button>`}
           </div>
         </div>
       ` : `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;">
           <div style="display:flex;gap:6px;align-items:center;">
-            <button class="btn-ghost btn-sm" id="btnTogglePause">${series.paused ? '▶ Devam' : '⏸ Duraklat'}</button>
+            <button class="btn-ghost btn-sm" id="btnTogglePause">${series.paused ? `${icon('play', 12)} Devam` : `${icon('pause', 12)} Duraklat`}</button>
             <button class="tactic-btn ${series.speed === 1 ? 'active' : ''}" data-speed="1">1x</button>
             <button class="tactic-btn ${series.speed === 2 ? 'active' : ''}" data-speed="2">2x</button>
             <button class="tactic-btn ${series.speed === 4 ? 'active' : ''}" data-speed="4">4x</button>
-            <button class="btn-ghost btn-sm" id="btnSkipToEnd">⏭ Maçı Bitir</button>
+            <button class="btn-ghost btn-sm" id="btnSkipToEnd">${icon('fast', 12)} Maçı Bitir</button>
           </div>
-          <span style="font-size:11.5px;color:var(--text-muted);">💡 Sol panelden anlık takım ve rol taktikleri verebilirsin</span>
+          <span style="font-size:11.5px;color:var(--text-muted);">Sol panelden anlık takım ve rol taktikleri verebilirsin.</span>
         </div>
       `}
 
@@ -446,7 +453,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
           </div>
 
           <div class="card" style="padding:11px;">
-            <div class="card-title" style="margin-bottom:7px;">Canlı Takım & Rol Taktikleri</div>
+            <div class="card-title" style="margin-bottom:8px;">${icon('sliders', 13)} Canlı Takım & Rol Taktikleri</div>
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">Oyun Planı</div>
             <div class="tactic-btn-group" style="margin-bottom:7px;">
               ${[['aggressive', 'Erken Baskı'], ['balanced', 'Dengeli'], ['scaling', 'Scaling'], ['split', 'Split']].map(([k, lbl]) =>
@@ -456,9 +463,9 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">Ormancı Odak & Objektif</div>
             <div class="tactic-btn-group" style="margin-bottom:7px;">
               ${['TOP', 'MID', 'BOT'].map(l => `<button class="tactic-btn ${uTactics.laneFocus === l ? 'active' : ''}" data-tactic-lane="${l}">${l}</button>`).join('')}
-              ${[['dragon', '🐉'], ['baron', '👑'], ['towers', '🏰']].map(([k, lbl]) => `<button class="tactic-btn ${uTactics.objective === k ? 'active' : ''}" data-tactic-obj="${k}">${lbl}</button>`).join('')}
+              ${[['dragon', 'Ejder'], ['baron', 'Baron'], ['towers', 'Kule']].map(([k, lbl]) => `<button class="tactic-btn ${uTactics.objective === k ? 'active' : ''}" data-tactic-obj="${k}">${lbl}</button>`).join('')}
             </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">Rol Mikro Emirleri (TOP / SUP / ADC)</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">Rol Mikro Emirleri</div>
             <div class="tactic-btn-group" style="margin-bottom:5px;">
               ${[['carry', 'Top: Carry'], ['balanced', 'Dengeli'], ['weakside', 'Weakside']].map(([k, lbl]) =>
                 `<button class="tactic-btn ${uTactics.topStyle === k ? 'active' : ''}" data-tactic-top="${k}">${lbl}</button>`
@@ -483,7 +490,8 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
             <div class="event-feed" id="eventFeed">
               ${[...m.events].reverse().map(ev => `
                 <div class="event-item ${ev.side || ''} ${ev.type || ''}">
-                  <span style="color:var(--gold-bright);font-weight:800;margin-right:6px;">${ev.min}'</span>
+                  <span class="num" style="color:var(--gold-bright);font-weight:800;min-width:26px;">${ev.min}'</span>
+                  ${ev.tag ? `<span class="ev-tag ev-tag-${ev.type || ''}">${ev.tag}</span>` : ''}
                   <span>${ev.text}</span>
                 </div>
               `).join('')}
@@ -502,7 +510,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
               <div style="font-size:12px;font-weight:800;color:var(--red);margin-bottom:6px;">${redTeam.tag} ${m.finished ? 'Maç Analitiği' : 'Canlı İstatistik'}</div>
               <table>
                 <thead><tr><th>Rol</th><th>Oyuncu</th><th>KDA</th><th>CS</th><th>Altın</th>${m.finished ? '<th>DMG%</th><th>Görüş</th>' : ''}<th>Puan</th></tr></thead>
-                <tbody>${playerRows(m.redPlayers, '#fca5a5')}</tbody>
+                <tbody>${playerRows(m.redPlayers, '#fda4af')}</tbody>
               </table>
             </div>
           </div>
@@ -550,6 +558,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       series.phase = 'MATCH';
       series.liveMatch = createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes);
       finishMatchInstantly(series.liveMatch);
+      box.scrollTop = 0;
       onGameEnded();
     });
 

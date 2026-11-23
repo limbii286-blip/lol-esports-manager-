@@ -22,12 +22,12 @@ export const REGIONS = [
 export const REGION_LANG = Object.fromEntries(REGIONS.map(r => [r.id, r.lang]));
 
 export const TRAITS = {
-  Clutch: { label: 'Büyük Maç', icon: '🔥', desc: 'Playoff, Derbi ve Worlds maçlarında +3 performans.' },
-  Leader: { label: 'Lider', icon: '👑', desc: 'Takım sinerjisini ve moralini korur.' },
-  Grinder: { label: 'Çalışkan', icon: '⚡', desc: 'Antrenmanlarda %40 daha hızlı gelişir.' },
-  Streamer: { label: 'Yayıncı', icon: '🎥', desc: 'Kulübe ekstra haftalık taraftar geliri getirir.' },
-  Tilt: { label: 'Tilt Meyilli', icon: '💢', desc: 'Gerideyken performansı düşebilir ama öndeyken parlar.' },
-  Ego: { label: 'Egoist', icon: '💎', desc: 'Yedek kalırsa hızlıca mutsuz olur; ilk 5 iken yüksek clutch.' },
+  Clutch: { label: 'Büyük Maç', desc: 'Playoff, Derbi ve Worlds maçlarında +3 performans.' },
+  Leader: { label: 'Lider', desc: 'Takım sinerjisini ve moralini korur.' },
+  Grinder: { label: 'Çalışkan', desc: 'Antrenmanlarda %40 daha hızlı gelişir.' },
+  Streamer: { label: 'Yayıncı', desc: 'Kulübe ekstra haftalık taraftar geliri getirir.' },
+  Tilt: { label: 'Tilt Meyilli', desc: 'Gerideyken performansı düşebilir ama öndeyken parlar.' },
+  Ego: { label: 'Egoist', desc: 'Yedek kalırsa hızlıca mutsuz olur; ilk 5 iken yüksek clutch.' },
 };
 
 export const RIVALRIES = [
