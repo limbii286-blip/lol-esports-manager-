@@ -8,6 +8,8 @@ import {
 import { quickSimulateGame, applyMatchOutcomeToPlayers } from './matchEngine.js';
 
 export const SAVE_KEY = 'lol_esports_manager_save_v2';
+export const SLOTS_KEY = 'lol_esports_manager_slots_v2';
+export const SAVE_SLOT_IDS = ['autosave', 'slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 export const SPONSORS = [
   { id: 'sp_safe', name: 'LogiTech Gear', weekly: 55000, bonus: 180000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti haftalık gelir, düşük baskı.' },
@@ -1061,23 +1063,93 @@ export function upgradeFacility(state, facilityKey) {
   return { ok: true, reason: `${FACILITY_INFO[facilityKey].name} Seviye ${lvl + 1} oldu!` };
 }
 
-export function saveGame(state) {
+function readAllSlots() {
   try {
-    // Strip non-serializable function refs on pendingEvent if present
-    const copy = { ...state, pendingEvent: null };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(copy));
+    const raw = localStorage.getItem(SLOTS_KEY);
+    const slots = raw ? JSON.parse(raw) : {};
+    // Migrate legacy single save if autosave doesn't exist yet
+    if (!slots.autosave) {
+      const legacy = localStorage.getItem(SAVE_KEY);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (parsed && parsed.userTeamId) {
+          slots.autosave = buildSlotRecord(parsed, 'Otomatik Kayıt');
+          localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+        }
+      }
+    }
+    return slots;
+  } catch (e) {
+    return {};
+  }
+}
+
+function buildSlotRecord(state, customName) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const copy = { ...state, pendingEvent: null };
+  return {
+    name: customName || `${team?.name || 'Kariyer'} — S${state.season}`,
+    savedAt: new Date().toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    teamName: team?.name || 'Bilinmeyen',
+    teamTag: team?.tag || '?',
+    teamColor: team?.color || '#38bdf8',
+    teamColor2: team?.color2 || '#ffffff',
+    region: team?.region || '',
+    season: state.season,
+    phaseLabel: getPhaseLabel(state.phase),
+    week: state.week,
+    ovr: getTeamOVR(state, state.userTeamId),
+    budget: team?.budget || 0,
+    data: copy,
+  };
+}
+
+export function listSaveSlots() {
+  const slots = readAllSlots();
+  return SAVE_SLOT_IDS.map(id => ({
+    slotId: id,
+    label: id === 'autosave' ? 'Otomatik Kayıt' : `Kayıt Slotu ${id.replace('slot', '')}`,
+    record: slots[id] || null,
+  }));
+}
+
+export function saveToSlot(state, slotId, customName = '') {
+  try {
+    const slots = readAllSlots();
+    const fallbackName = slotId === 'autosave' ? 'Otomatik Kayıt' : customName.trim();
+    slots[slotId] = buildSlotRecord(state, fallbackName);
+    localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
     return true;
   } catch (e) {
-    console.error('Save failed', e);
+    console.error('Save slot failed', e);
     return false;
   }
 }
 
-export function loadGame() {
+export function loadFromSlot(slotId) {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const slots = readAllSlots();
+    return slots[slotId]?.data || null;
   } catch (e) {
     return null;
   }
+}
+
+export function deleteSaveSlot(slotId) {
+  try {
+    const slots = readAllSlots();
+    delete slots[slotId];
+    localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function saveGame(state) {
+  return saveToSlot(state, 'autosave', 'Otomatik Kayıt');
+}
+
+export function loadGame() {
+  return loadFromSlot('autosave') || listSaveSlots().find(s => s.record)?.record?.data || null;
 }

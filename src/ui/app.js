@@ -8,7 +8,7 @@ import {
   advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
-  resolveDramaEvent, saveGame, loadGame
+  resolveDramaEvent, saveGame, loadGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot
 } from '../engine/gameEngine.js';
 import { openSeriesModal } from './matchModal.js';
 import { openWorldsMayhemModal } from './mayhemModal.js';
@@ -27,6 +27,8 @@ let ui = {
   transferMinOvr: 72,
   negotiatingPlayerId: null,
   selectedInboxId: null,
+  saveModalOpen: false,
+  saveNameDraft: '',
   toastMsg: null,
   toastTimer: null,
 };
@@ -54,7 +56,8 @@ function barHtml(val, color) {
 
 // ==================== START SCREEN ====================
 function renderStartScreen() {
-  const saved = loadGame();
+  const slots = listSaveSlots();
+  const filledCount = slots.filter(s => s.record).length;
   const regTeams = previewDB.teams.filter(t => t.region === ui.startRegion);
 
   return `
@@ -66,11 +69,9 @@ function renderStartScreen() {
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn-blue" id="btnStartMayhem" style="padding:11px 18px;font-size:13.5px;">🔥 Worlds Mayhem (Arcade)</button>
-          ${saved ? `
-            <button class="btn-primary" id="btnLoadSave" style="padding:11px 18px;font-size:13.5px;">
-              ▶ Kayıtlı Kariyer (${saved.teams.find(t => t.id === saved.userTeamId)?.tag} • S${saved.season})
-            </button>
-          ` : ''}
+          <button class="btn-primary" id="btnOpenSaveManager" style="padding:11px 18px;font-size:13.5px;">
+            💾 Kayıtlı Oyunlar / Yükle (${filledCount})
+          </button>
         </div>
       </div>
 
@@ -855,6 +856,75 @@ function renderDramaModal() {
   `;
 }
 
+function renderSaveLoadModal() {
+  if (!ui.saveModalOpen) return '';
+  const slots = listSaveSlots();
+  const curTeam = state ? state.teams.find(t => t.id === state.userTeamId) : null;
+  const defaultName = ui.saveNameDraft || (curTeam ? `${curTeam.name} S${state.season}` : '');
+
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box" style="max-width:740px;">
+        <div class="card-header">
+          <div>
+            <span class="card-title" style="font-size:16px;">💾 Kayıt & Yükleme Yöneticisi (Save / Load)</span>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Farklı kariyerlerini ayrı slotlara kaydedebilir, istediğin zaman yükleyebilir veya .json olarak yedekleyebilirsin.</div>
+          </div>
+          <button class="btn-ghost btn-sm" id="btnCloseSaveModal">✕ Kapat</button>
+        </div>
+
+        ${state ? `
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;background:var(--bg);padding:10px 12px;border-radius:8px;border:1px solid var(--border);">
+            <span style="font-size:12px;color:var(--text-muted);">Kayıt Adı:</span>
+            <input type="text" id="saveNameInput" value="${defaultName}" placeholder="Örn: T1 Hanedanlık, SuperMassive Worlds..." style="flex:1;min-width:200px;" />
+            <button class="btn-ghost btn-sm" id="btnExportCurrent">⬇ .JSON İndir</button>
+            <label class="btn-ghost btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;">
+              ⬆ .JSON Yükle
+              <input type="file" id="importSaveFile" accept=".json" style="display:none;" />
+            </label>
+          </div>
+        ` : `
+          <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+            <label class="btn-ghost btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;">
+              ⬆ Bilgisayardan .JSON Kayıt Yükle
+              <input type="file" id="importSaveFile" accept=".json" style="display:none;" />
+            </label>
+          </div>
+        `}
+
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          ${slots.map(s => {
+            const r = s.record;
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg-card);border:1px solid ${r ? 'var(--border)' : 'rgba(35,48,74,0.45)'};border-radius:9px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  ${r ? `<span class="team-tag" style="background:${r.teamColor};color:${r.teamColor2};font-size:13px;padding:6px 9px;">${r.teamTag}</span>` : `<span class="badge tier-B">BOŞ</span>`}
+                  <div>
+                    <div style="font-weight:800;font-size:14px;color:${r ? 'var(--gold-bright)' : 'var(--text-muted)'};">
+                      ${s.label} ${r ? `— ${r.name}` : '(Boş Slot)'}
+                    </div>
+                    ${r ? `
+                      <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">
+                        ${r.teamName} (${r.region}) • Sezon ${r.season} ${r.phaseLabel} (H${r.week}) • OVR ${r.ovr} • ${formatMoney(r.budget)}
+                      </div>
+                      <div style="font-size:10.5px;color:#64748b;">Kaydedildi: ${r.savedAt}</div>
+                    ` : `<div style="font-size:11.5px;color:#64748b;">Bu slota mevcut kariyerini kaydedebilirsin.</div>`}
+                  </div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  ${state ? `<button class="btn-primary btn-sm" data-save-slot="${s.slotId}">${r ? '💾 Üzerine Yaz' : '💾 Kaydet'}</button>` : ''}
+                  ${r ? `<button class="btn-blue btn-sm" data-load-slot="${s.slotId}">▶ Yükle</button>` : ''}
+                  ${r ? `<button class="btn-danger btn-sm" data-del-slot="${s.slotId}">🗑</button>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ==================== MAIN SHELL ====================
 function renderAppShell() {
   const team = state.teams.find(t => t.id === state.userTeamId);
@@ -903,7 +973,7 @@ function renderAppShell() {
         </nav>
         <div class="sidebar-footer">
           <button class="btn-ghost btn-sm" id="btnToggleFearless">${state.fearlessEnabled ? '🔥 Fearless Draft: AÇIK' : 'Fearless Draft: KAPALI'}</button>
-          <button class="btn-ghost btn-sm" id="btnSaveGame">💾 Kariyeri Kaydet</button>
+          <button class="btn-primary btn-sm" id="btnOpenSaveManager">💾 Kaydet / Yükle (Slotlar)</button>
           <button class="btn-ghost btn-sm" id="btnMainMenu">↩ Ana Menü</button>
         </div>
       </aside>
@@ -930,7 +1000,7 @@ function renderAppShell() {
 }
 
 function render() {
-  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
+  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + renderSaveLoadModal() + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
   bindAppEvents();
 }
 
@@ -948,6 +1018,86 @@ function launchUserMatch() {
 function bindAppEvents() {
   root.querySelector('#btnStartMayhem')?.addEventListener('click', openWorldsMayhemModal);
   root.querySelector('#btnSideMayhem')?.addEventListener('click', openWorldsMayhemModal);
+
+  // Save / Load Manager Modal Events
+  root.querySelector('#btnOpenSaveManager')?.addEventListener('click', () => {
+    ui.saveNameDraft = '';
+    ui.saveModalOpen = true;
+    render();
+  });
+  root.querySelector('#btnCloseSaveModal')?.addEventListener('click', () => {
+    ui.saveModalOpen = false;
+    render();
+  });
+  root.querySelector('#saveNameInput')?.addEventListener('input', (e) => {
+    ui.saveNameDraft = e.target.value;
+  });
+  root.querySelectorAll('[data-save-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!state) return;
+      const nameInput = root.querySelector('#saveNameInput')?.value || '';
+      const ok = saveToSlot(state, btn.dataset.saveSlot, nameInput);
+      render();
+      showToast(ok ? `Kariyer "${btn.dataset.saveSlot}" slotuna kaydedildi!` : 'Kayıt başarısız oldu.');
+    });
+  });
+  root.querySelectorAll('[data-load-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const loaded = loadFromSlot(btn.dataset.loadSlot);
+      if (loaded) {
+        state = loaded;
+        ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId)?.region || 'LCK';
+        ui.tab = 'dashboard';
+        ui.saveModalOpen = false;
+        render();
+        showToast('Kayıtlı kariyer başarıyla yüklendi!');
+      }
+    });
+  });
+  root.querySelectorAll('[data-del-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      deleteSaveSlot(btn.dataset.delSlot);
+      render();
+      showToast('Kayıt slotu silindi.');
+    });
+  });
+  root.querySelector('#btnExportCurrent')?.addEventListener('click', () => {
+    if (!state) return;
+    const team = state.teams.find(t => t.id === state.userTeamId);
+    const copy = { ...state, pendingEvent: null };
+    const blob = new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lol-manager-${team?.tag || 'save'}-S${state.season}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Kariyer .json dosyası olarak indirildi!');
+  });
+  root.querySelector('#importSaveFile')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || !parsed.userTeamId || !Array.isArray(parsed.teams)) {
+          showToast('Geçersiz kayıt dosyası!');
+          return;
+        }
+        state = parsed;
+        ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId)?.region || 'LCK';
+        ui.tab = 'dashboard';
+        ui.saveModalOpen = false;
+        saveGame(state);
+        render();
+        showToast('Kariyer dosyası başarıyla içe aktarıldı!');
+      } catch (err) {
+        showToast('JSON dosyası okunamadı.');
+      }
+    };
+    reader.readAsText(file);
+  });
 
   root.querySelectorAll('[data-start-region]').forEach(btn => {
     btn.addEventListener('click', () => { ui.startRegion = btn.dataset.startRegion; render(); });
