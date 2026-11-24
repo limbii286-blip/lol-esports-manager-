@@ -7,7 +7,9 @@ import {
   getSquadDynamics, getBoardObjectives, talkToPlayer1on1,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
-  getRenewalDemand, negotiateContractRenewal, setPlayerIndividualTraining, upgradeStaff, getLeagueStatLeaders,
+  getRenewalDemand, negotiateContractRenewal, renewAllExpiringContracts,
+  offerPlayerToClubs, negotiateSaleCounter, completePlayerSale,
+  setPlayerIndividualTraining, upgradeStaff, getLeagueStatLeaders,
   getBoardConfidence, getTransferRoomOpportunities, resignFromClub, acceptJobOffer, dismissManagerJobOffer,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
@@ -37,6 +39,11 @@ let ui = {
   renewingPlayerId: null,
   trainingPlayerId: null,
   profilePlayerId: null,
+  sellingPlayerId: null,
+  sellAskingPrice: 0,
+  sellOffers: [],
+  sellInfoMsg: '',
+  confirmOffseasonExpire: false,
   selectedInboxId: null,
   saveModalOpen: false,
   saveNameDraft: '',
@@ -296,8 +303,30 @@ function renderDashboard() {
     </div>
   ` : '';
 
+  const expiringMine = state.players.filter(p => p.teamId === team.id && p.contractYears <= 0);
+  const expiringBanner = expiringMine.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:rgba(245,158,11,0.7);background:linear-gradient(135deg, rgba(245,158,11,0.14), var(--bg-card));">
+      <div class="card-header" style="margin-bottom:8px;">
+        <span class="card-title" style="color:var(--amber);">${icon('briefcase', 14)} Sözleşmesi Biten Oyuncuların Var (${expiringMine.length}) — Yeni Sezona Geçmeden Yenile!</span>
+        <button class="btn-green btn-sm" id="btnRenewAllExpiring">${icon('check', 12)} Hepsini 2 Yıl Yenile</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${expiringMine.map(p => `
+          <div style="background:var(--bg);border:1px solid rgba(245,158,11,0.45);border-radius:6px;padding:8px 10px;display:flex;align-items:center;gap:10px;">
+            <div>
+              <span class="badge role-${p.role}">${p.role}</span> <b>${p.name}</b> <span class="ovr-pill ${ovrClass(p.ovr)}" style="font-size:11px;">${p.ovr}</span>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Yenilenmezse sezon başında serbest kalır!</div>
+            </div>
+            <button class="btn-primary btn-sm" data-open-renew="${p.id}">Pazarlık</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
   return `
     ${calStripHtml}
+    ${expiringBanner}
     ${jobOffersBanner}
     ${offersBanner}
     <div class="grid-4" style="margin-bottom:16px;">
@@ -510,8 +539,9 @@ function renderRoster() {
                     <div style="display:flex;gap:4px;flex-wrap:wrap;">
                       ${!p.isStarter ? `<button class="btn-blue btn-sm" data-set-starter="${p.id}">İlk 5</button>` : ''}
                       <button class="btn-ghost btn-sm" data-open-plan="${p.id}" title="Bireysel Antrenman & Şampiyon Öğrenme">Plan</button>
+                      <button class="btn-primary btn-sm" data-open-sell="${p.id}" title="Oyuncuyu Kulüplere Öner & Pazarlıkla Sat">Sat</button>
                       ${p.contractYears <= 1 ? `<button class="btn-green btn-sm" data-open-renew="${p.id}">Pazarlık</button>` : ''}
-                      <button class="btn-danger btn-sm" data-release-player="${p.id}">Sal</button>
+                      <button class="btn-danger btn-sm" data-release-player="${p.id}" title="Serbest Bırak (Bonservissiz)">Sal</button>
                     </div>
                   </td>
                 </tr>
@@ -1454,6 +1484,71 @@ function renderPlayerProfileModal() {
   `;
 }
 
+function renderSellModal() {
+  if (!ui.sellingPlayerId) return '';
+  const p = state.players.find(x => x.id === ui.sellingPlayerId && x.teamId === state.userTeamId);
+  if (!p) return '';
+  const winSt = getTransferWindowStatus(state);
+  const askVal = ui.sellAskingPrice || p.marketValue;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box" style="max-width:640px;">
+        <div class="card-header">
+          <span class="card-title">${icon('briefcase', 14)} Oyuncu Satış & Kulüplere Öner (Pazarlık)</span>
+          <button class="btn-ghost btn-sm" id="btnCloseSell">${icon('x', 14)}</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <span class="badge role-${p.role}">${p.role}</span> <strong style="font-size:16px;margin-left:4px;">${p.name}</strong>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Yaş ${p.age} • Piyasa Değeri: <b style="color:var(--gold-bright);">${formatMoney(p.marketValue)}</b> • Maaş: ${formatMoney(p.salary)}/hf</div>
+          </div>
+          <span class="ovr-pill ${ovrClass(p.ovr)}" style="font-size:15px;padding:4px 10px;">${p.ovr} / ${p.pot}</span>
+        </div>
+
+        ${!winSt.open ? `
+          <div style="padding:10px 12px;border-radius:6px;background:var(--red-soft);border:1px solid rgba(244,63,94,0.4);color:#fda4af;font-size:12.5px;margin-bottom:12px;">
+            <b>Kadro Kilidi Aktif:</b> ${winSt.detail}
+          </div>
+        ` : `
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:11px;margin-bottom:12px;">
+            <label style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:5px;">İstenen Bonservis Bedeli (Piyasa: ${formatMoney(p.marketValue)})</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="number" id="sellAskInput" value="${askVal}" step="25000" style="flex:1;min-width:150px;" />
+              <button class="btn-primary" id="btnOfferToClubs">${icon('globe', 13)} Kulüplere Öner & Teklif Al</button>
+            </div>
+          </div>
+        `}
+
+        ${ui.sellInfoMsg ? `<div style="font-size:12px;color:var(--blue);margin-bottom:10px;font-weight:700;">${ui.sellInfoMsg}</div>` : ''}
+
+        ${ui.sellOffers.length ? `
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            ${ui.sellOffers.map((off, idx) => `
+              <div style="background:var(--bg);border:1px solid ${off.status === 'WALKED' ? 'rgba(244,63,94,0.35)' : 'var(--border-strong)'};border-radius:7px;padding:10px 12px;opacity:${off.status === 'WALKED' ? '0.55' : '1'};">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+                  <div>
+                    <span class="team-tag" style="background:${off.buyerColor};color:${off.buyerColor2};margin-right:6px;">${off.buyerTag}</span>
+                    <strong>${off.buyerName}</strong> <span style="font-size:11px;color:var(--text-muted);">(${off.buyerRegion})</span>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${off.note}</div>
+                  </div>
+                  <div class="num" style="font-size:16px;font-weight:900;color:var(--green);">${formatMoney(off.amount)}</div>
+                </div>
+                ${off.status !== 'WALKED' ? `
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <input type="number" data-counter-input="${idx}" value="${Math.round((off.amount * 1.15) / 5000) * 5000}" step="25000" style="width:130px;padding:5px 8px;font-size:12px;" />
+                    <button class="btn-blue btn-sm" data-sell-counter="${idx}">Karşı Teklif (Pazarlık)</button>
+                    <button class="btn-green btn-sm" data-sell-accept="${idx}">${icon('check', 12)} Kabul Et & Sat</button>
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderDramaModal() {
   if (!state?.pendingEvent) return '';
   const ev = state.pendingEvent;
@@ -1736,6 +1831,7 @@ function renderAppShell() {
     ${renderRenewalModal()}
     ${renderPlayerPlanModal()}
     ${renderPlayerProfileModal()}
+    ${renderSellModal()}
     ${renderDramaModal()}
   `;
 }
@@ -1876,7 +1972,11 @@ function bindAppEvents() {
 
   if (!state) return;
 
-  root.querySelectorAll('[data-nav]').forEach(btn => btn.addEventListener('click', () => { ui.tab = btn.dataset.nav; render(); }));
+  root.querySelectorAll('[data-nav]').forEach(btn => btn.addEventListener('click', () => {
+    ui.tab = btn.dataset.nav;
+    render();
+    window.scrollTo(0, 0);
+  }));
   root.querySelector('#btnToggleFearless')?.addEventListener('click', () => {
     state.fearlessEnabled = !state.fearlessEnabled;
     saveGame(state); render();
@@ -1917,6 +2017,15 @@ function bindAppEvents() {
   root.querySelector('#btnDashSkipMatchDay')?.addEventListener('click', doSkipDay);
 
   const doAdvance = () => {
+    if (state.phase === 'OFFSEASON') {
+      const exp = state.players.filter(p => p.teamId === state.userTeamId && p.contractYears <= 0);
+      if (exp.length > 0 && !ui.confirmOffseasonExpire) {
+        ui.confirmOffseasonExpire = true;
+        showToast(`DİKKAT: ${exp.map(p => p.name).join(', ')} sözleşmesi bitti! Yenilemezsen serbest kalacaklar. Devam etmek için tekrar tıkla veya üstten yenile.`);
+        return;
+      }
+      ui.confirmOffseasonExpire = false;
+    }
     advanceWeekOrRound(state);
     saveGame(state);
     render();
@@ -1975,6 +2084,57 @@ function bindAppEvents() {
     ensureTeamExtras(uTeam);
     uTeam.matchPrep = btn.dataset.setPrep;
     autoSaveNow(); render(); showToast('Haftalık maç hazırlığı güncellendi.');
+  }));
+
+  root.querySelector('#btnRenewAllExpiring')?.addEventListener('click', () => {
+    const res = renewAllExpiringContracts(state);
+    ui.confirmOffseasonExpire = false;
+    autoSaveNow(); render(); showToast(res.reason);
+  });
+
+  root.querySelectorAll('[data-open-sell]').forEach(btn => btn.addEventListener('click', () => {
+    const p = state.players.find(x => x.id === btn.dataset.openSell && x.teamId === state.userTeamId);
+    if (!p) return;
+    ui.sellingPlayerId = p.id;
+    ui.sellAskingPrice = p.marketValue;
+    ui.sellOffers = [];
+    ui.sellInfoMsg = '';
+    render();
+  }));
+  root.querySelector('#btnCloseSell')?.addEventListener('click', () => {
+    ui.sellingPlayerId = null; ui.sellOffers = []; ui.sellInfoMsg = ''; render();
+  });
+  root.querySelector('#btnOfferToClubs')?.addEventListener('click', () => {
+    const ask = Number(root.querySelector('#sellAskInput')?.value) || 0;
+    ui.sellAskingPrice = ask;
+    const res = offerPlayerToClubs(state, ui.sellingPlayerId, ask);
+    ui.sellOffers = res.offers || [];
+    ui.sellInfoMsg = res.reason;
+    render();
+  });
+  root.querySelectorAll('[data-sell-counter]').forEach(btn => btn.addEventListener('click', () => {
+    const idx = Number(btn.dataset.sellCounter);
+    const off = ui.sellOffers[idx];
+    const inp = root.querySelector(`[data-counter-input="${idx}"]`);
+    if (!off || !inp) return;
+    const res = negotiateSaleCounter(off, Number(inp.value) || 0);
+    ui.sellInfoMsg = res.reason;
+    render();
+    showToast(res.reason);
+  }));
+  root.querySelectorAll('[data-sell-accept]').forEach(btn => btn.addEventListener('click', () => {
+    const idx = Number(btn.dataset.sellAccept);
+    const off = ui.sellOffers[idx];
+    if (!off) return;
+    const res = completePlayerSale(state, ui.sellingPlayerId, off.buyerTeamId, off.amount);
+    if (res.ok) {
+      ui.sellingPlayerId = null;
+      ui.sellOffers = [];
+      ui.sellInfoMsg = '';
+    } else {
+      ui.sellInfoMsg = res.reason;
+    }
+    autoSaveNow(); render(); showToast(res.reason);
   }));
 
   root.querySelectorAll('[data-open-renew]').forEach(btn => btn.addEventListener('click', () => { ui.renewingPlayerId = btn.dataset.openRenew; render(); }));
@@ -2154,7 +2314,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || !state) return;
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
-  if (ui.saveModalOpen || ui.negotiatingPlayerId || ui.renewingPlayerId || ui.trainingPlayerId || ui.profilePlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
+  if (ui.saveModalOpen || ui.negotiatingPlayerId || ui.renewingPlayerId || ui.trainingPlayerId || ui.profilePlayerId || ui.sellingPlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
   e.preventDefault();
   if (isMatchDay(state)) {
     launchUserMatch();

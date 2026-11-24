@@ -314,6 +314,24 @@ export function ensureCalendarState(state) {
   if (!state.financeLog) state.financeLog = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
+  // Auto-deduplicate any colliding player IDs (fixes old SoloQ Challenger signings!)
+  if (Array.isArray(state.players)) {
+    const seen = new Set();
+    for (const p of state.players) {
+      if (seen.has(p.id)) {
+        p.id = `p_fix_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      }
+      seen.add(p.id);
+    }
+    if (Array.isArray(state.challengerPool)) {
+      for (const c of state.challengerPool) {
+        if (seen.has(c.id)) {
+          c.id = `p_ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        }
+        seen.add(c.id);
+      }
+    }
+  }
   // One-time realistic budget rebalance for existing saves!
   if (!state.economyRebalancedV2 && Array.isArray(state.teams)) {
     state.economyRebalancedV2 = true;
@@ -960,11 +978,12 @@ export function resolveDramaEvent(state, choiceIdx) {
 }
 
 // ==================== AI INCOMING TRANSFER BIDS ====================
-function maybeGenerateIncomingOffer(state, chance = 0.28) {
+function maybeGenerateIncomingOffer(state, chance = 0.34) {
   if (!isTransferWindowOpen(state)) return;
-  const maxOffers = state.phase === 'OFFSEASON' ? 3 : 2;
-  if (state.incomingOffers.length >= maxOffers || Math.random() > chance) return;
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const effectiveChance = Math.min(0.92, chance + ((userTeam?.prestige || 75) >= 84 ? 0.18 : 0));
+  const maxOffers = state.phase === 'OFFSEASON' ? 4 : 3;
+  if (state.incomingOffers.length >= maxOffers || Math.random() > effectiveChance) return;
   const existingIds = new Set(state.incomingOffers.map(o => o.playerId));
   const userPlayers = state.players.filter(p => p.teamId === state.userTeamId && !existingIds.has(p.id));
   if (userPlayers.length === 0) return;
@@ -1967,6 +1986,9 @@ export function signChallengerProspect(state, prospectId) {
 
   team.budget -= p.signingFee;
   state.challengerPool.splice(idx, 1);
+  if (state.players.some(x => x.id === p.id)) {
+    p.id = `p_ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  }
   p.teamId = team.id;
   p.contractYears = 3;
   p.isStarter = false;
@@ -2170,6 +2192,155 @@ export function negotiateContractRenewal(state, playerId, offeredSalary, years =
   p.rolePromise = rolePromise;
   p.morale = Math.min(100, p.morale + 8);
   return { ok: true, reason: `${p.name} ile ${p.contractYears} yıllık yeni sözleşme imzalandı (${formatMoney(offeredSalary)}/hf, Rol: ${rolePromise === 'STAR' ? 'İlk 5 Yıldız' : 'Rotasyon'}).` };
+}
+
+export function renewAllExpiringContracts(state) {
+  const expiring = state.players.filter(p => p.teamId === state.userTeamId && p.contractYears <= 0);
+  if (expiring.length === 0) return { ok: false, reason: 'Sözleşmesi biten oyuncu yok.' };
+  let count = 0;
+  for (const p of expiring) {
+    const demand = getRenewalDemand(state, p.id);
+    if (!demand) continue;
+    p.salary = demand.minSalary;
+    p.contractYears = 2;
+    p.rolePromise = demand.wantsStar ? 'STAR' : 'ROTATION';
+    p.morale = Math.min(100, p.morale + 6);
+    count++;
+  }
+  return { ok: true, reason: `${count} oyuncunun sözleşmesi 2 yıl daha uzatıldı!` };
+}
+
+// ==================== FM OFFER PLAYER TO CLUBS & SALE NEGOTIATION ====================
+export function offerPlayerToClubs(state, playerId, askingPrice) {
+  if (!isTransferWindowOpen(state)) {
+    return { ok: false, reason: 'Kadro Kilidi (Roster Lock) aktif! Transfer penceresi açılana kadar satış yapılamaz.', offers: [] };
+  }
+  const p = state.players.find(x => x.id === playerId && x.teamId === state.userTeamId);
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !userTeam) return { ok: false, reason: 'Oyuncu kadroda bulunamadı.', offers: [] };
+
+  const ask = Math.max(25000, Number(askingPrice) || p.marketValue);
+  if (ask > p.marketValue * 1.85) {
+    return { ok: true, reason: 'İstediğin bonservis piyasa değerinin çok üzerinde — hiçbir kulüp teklif vermedi. Fiyatı biraz düşür.', offers: [] };
+  }
+
+  const interested = state.teams.filter(t => {
+    if (t.id === userTeam.id) return false;
+    if (t.budget < ask * 0.72) return false;
+    const starter = getTeamRoster(state, t.id).find(x => x.role === p.role);
+    const starterOvr = starter ? starter.ovr : 70;
+    const goodFit = p.ovr >= starterOvr - 3 || (p.age <= 21 && p.pot >= starterOvr + 3);
+    if (!goodFit) return false;
+    // Realistic league/prestige check
+    if ((t.region === 'LCK' || t.region === 'LPL') && p.ovr < 81 && !(p.age <= 20 && p.pot >= 89)) return false;
+    return true;
+  }).sort((a, b) => {
+    const sameA = a.region === userTeam.region ? 1 : 0;
+    const sameB = b.region === userTeam.region ? 1 : 0;
+    return (sameB - sameA) || (b.budget - a.budget);
+  });
+
+  const picked = interested.slice(0, 4);
+  if (picked.length === 0) {
+    return { ok: true, reason: 'Şu an bu fiyata talip olan bir kulüp çıkmadı. İstenen bedeli biraz düşürüp tekrar önerebilirsin.', offers: [] };
+  }
+
+  const offers = picked.map(club => {
+    const ratio = ask / Math.max(25000, p.marketValue);
+    const mult = ratio <= 0.9 ? 1.0 : ratio <= 1.15 ? (0.88 + Math.random() * 0.14) : (0.76 + Math.random() * 0.12);
+    const amount = Math.min(Math.floor(club.budget * 0.8), Math.max(25000, Math.round((ask * mult) / 5000) * 5000));
+    const maxWilling = Math.min(Math.floor(club.budget * 0.85), Math.round((p.marketValue * (1.18 + Math.random() * 0.18)) / 5000) * 5000);
+    return {
+      buyerTeamId: club.id,
+      buyerName: club.name,
+      buyerTag: club.tag,
+      buyerRegion: club.region,
+      buyerColor: club.color,
+      buyerColor2: club.color2,
+      amount,
+      maxWilling: Math.max(amount, maxWilling),
+      status: 'OPEN', // OPEN | COUNTERED | WALKED
+      note: `${club.name} (${club.region}) masada!`,
+    };
+  });
+
+  return { ok: true, reason: `${offers.length} kulüp ${p.name} için teklif sundu!`, offers };
+}
+
+export function negotiateSaleCounter(offer, counterAmount) {
+  const counter = Math.max(25000, Math.round((Number(counterAmount) || 0) / 5000) * 5000);
+  if (counter <= offer.amount) {
+    offer.amount = counter;
+    offer.status = 'OPEN';
+    offer.note = 'Teklifini hemen kabul ettiler!';
+    return { ok: true, accepted: true, reason: `${offer.buyerName}, ${formatMoney(counter)} teklifini kabul etti! Şimdi "Kabul Et & Sat" diyebilirsin.` };
+  }
+  if (counter <= offer.maxWilling) {
+    offer.amount = counter;
+    offer.status = 'OPEN';
+    offer.note = `${formatMoney(counter)} kabul edildi!`;
+    return { ok: true, accepted: true, reason: `${offer.buyerName} pazarlığı kabul etti ve teklifini ${formatMoney(counter)} seviyesine çıkardı!` };
+  }
+  if (counter <= offer.maxWilling * 1.18) {
+    const mid = Math.round(((offer.amount + offer.maxWilling) / 2) / 5000) * 5000;
+    offer.amount = Math.max(offer.amount, mid);
+    offer.status = 'COUNTERED';
+    offer.note = `Son teklifleri: ${formatMoney(offer.amount)}`;
+    return { ok: true, accepted: false, reason: `${offer.buyerName} o kadar çıkmadı ama son teklifini ${formatMoney(offer.amount)} olarak güncelledi.` };
+  }
+  offer.status = 'WALKED';
+  offer.note = 'Çok yüksek fiyat — masadan kalktılar.';
+  return { ok: false, accepted: false, reason: `${offer.buyerName} istediğin fiyatı çok yüksek buldu ve masadan kalktı.` };
+}
+
+export function completePlayerSale(state, playerId, buyerTeamId, amount) {
+  if (!isTransferWindowOpen(state)) return { ok: false, reason: 'Kadro Kilidi aktif, şu an satış yapılamaz.' };
+  const p = state.players.find(x => x.id === playerId && x.teamId === state.userTeamId);
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const buyer = state.teams.find(t => t.id === buyerTeamId);
+  if (!p || !userTeam || !buyer) return { ok: false, reason: 'Satış bilgisi geçersiz.' };
+
+  const sameRoleCount = state.players.filter(x => x.teamId === userTeam.id && x.role === p.role).length;
+  if (sameRoleCount <= 1) {
+    return { ok: false, reason: `${p.role} rolünde başka oyuncun yok! Önce yedek al veya Akademiden oyuncu çıkar.` };
+  }
+
+  userTeam.budget += amount;
+  buyer.budget = Math.max(200000, buyer.budget - amount);
+  p.teamId = buyer.id;
+  p.isStarter = true;
+  p.contractYears = 2;
+  if (p.lang && p.lang !== REGION_LANG[buyer.region]) p.importWeeksLeft = 5;
+
+  // Promote remaining user player in that role to starter
+  const sub = state.players.find(x => x.teamId === userTeam.id && x.role === p.role);
+  if (sub) sub.isStarter = true;
+
+  // Remove any pending incoming offers for this player
+  state.incomingOffers = (state.incomingOffers || []).filter(o => o.playerId !== p.id);
+
+  ensureCalendarState(state);
+  state.transferFeed.unshift({
+    season: state.season,
+    phase: getPhaseLabel(state.phase),
+    buyerTag: buyer.tag,
+    buyerColor: buyer.color,
+    buyerColor2: buyer.color2,
+    fromTag: userTeam.tag,
+    playerName: p.name,
+    role: p.role,
+    ovr: p.ovr,
+    fee: amount,
+  });
+  if (state.transferFeed.length > 35) state.transferFeed.pop();
+
+  addInboxMessage(state, {
+    title: `Oyuncu Satışı Tamamlandı: ${p.name} → ${buyer.name}`,
+    sender: 'Sportif Direktör',
+    category: 'TRANSFER',
+    body: `${p.name} (${p.role}, OVR ${p.ovr}), ${formatMoney(amount)} bonservis bedeliyle ${buyer.name} (${buyer.region}) kulübüne satıldı!`,
+  });
+  return { ok: true, reason: `${p.name}, ${formatMoney(amount)} karşılığında ${buyer.name} kulübüne satıldı!` };
 }
 
 export function setPlayerIndividualTraining(state, playerId, indFocus, learningChampId) {

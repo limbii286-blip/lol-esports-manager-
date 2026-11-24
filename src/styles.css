@@ -718,15 +718,18 @@ tr.highlight-row td { background: rgba(139, 92, 246, 0.16); }
 .mobile-header-bar { display: none; }
 
 @media (max-width: 860px) {
-  .start-screen { padding: 16px 12px 48px; }
+  .start-screen { padding: calc(18px + env(safe-area-inset-top)) 12px 56px; }
   .brand-title { font-size: 19px; }
-  .app-shell { grid-template-columns: 1fr; padding-bottom: 72px; }
+  .app-shell { grid-template-columns: 1fr; padding-bottom: 76px; }
   .sidebar { display: none; }
   .mobile-header-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 9px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
     background: var(--bg-sidebar);
     border-top: 3px solid var(--club-color, var(--fm-violet));
     border-bottom: 1px solid var(--border-strong);
@@ -756,7 +759,7 @@ tr.highlight-row td { background: rgba(139, 92, 246, 0.16); }
   }
   .mobile-nav-btn.active { color: var(--fm-cyan); background: var(--fm-violet-soft); }
 
-  .topbar { padding: 9px 12px; gap: 8px; border-top: none; }
+  .topbar { position: static; padding: 9px 12px; gap: 8px; border-top: none; }
   .topbar-meta { gap: 6px; font-size: 11px; }
   .meta-chip { padding: 4px 7px; }
   .topbar-actions { width: 100%; justify-content: stretch; }
@@ -775,8 +778,8 @@ tr.highlight-row td { background: rgba(139, 92, 246, 0.16); }
   .grid-4 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .draft-layout, .match-grid, .grid-2, .grid-3, .start-bar-grid { grid-template-columns: 1fr !important; }
   .scoreboard-bar { grid-template-columns: 1fr; text-align: center; gap: 10px; padding: 12px; }
-  .modal-backdrop { padding: 8px; align-items: flex-start; }
-  .modal-box { padding: 14px; max-height: 92vh; }
+  .modal-backdrop { padding: calc(12px + env(safe-area-inset-top)) 8px calc(76px + env(safe-area-inset-bottom)); align-items: flex-start; }
+  .modal-box { padding: 14px; max-height: 86vh; }
   .kpi-val { font-size: 18px; }
   button { min-height: 36px; }
   .btn-sm { min-height: 30px; }

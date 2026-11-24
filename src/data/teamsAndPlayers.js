@@ -130,7 +130,7 @@ function mkPlayer(name, role, nat, age, baseOvr, pot, style, sigChamps, teamId, 
   for (const cid of sigChamps) mastery[cid] = 3;
 
   return {
-    id: `p_${_pid++}`,
+    id: `p_${Date.now().toString(36)}_${_pid++}_${Math.random().toString(36).slice(2, 5)}`,
     name,
     role,
     nat,
