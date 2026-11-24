@@ -2671,10 +2671,16 @@ export function getBoardConfidence(state) {
 }
 
 export function buildJobOffers(state, excludeTeamId) {
-  const candidates = state.teams
-    .filter(t => t.id !== excludeTeamId && t.prestige <= 86)
+  const curTeam = state.teams.find(t => t.id === excludeTeamId);
+  const curP = curTeam?.prestige || 75;
+  const maxP = Math.min(84, curP + 2);
+  let candidates = state.teams
+    .filter(t => t.id !== excludeTeamId && t.prestige <= maxP && t.prestige >= Math.max(60, curP - 10))
     .sort(() => Math.random() - 0.5)
     .slice(0, 4);
+  if (candidates.length < 3) {
+    candidates = state.teams.filter(t => t.id !== excludeTeamId && t.prestige <= maxP).sort(() => Math.random() - 0.5).slice(0, 4);
+  }
   return candidates.map(t => ({
     teamId: t.id,
     name: t.name,
@@ -2734,20 +2740,43 @@ export function resignFromClub(state) {
 export function generateSuccessJobOffers(state) {
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const conf = getBoardConfidence(state);
-  const wonTrophyThisYear = userTeam.trophies.some(t => t.includes(String(state.season)));
+  const seasonStr = String(state.season);
+  const wonIntlThisYear = userTeam.trophies.some(t => t.includes(seasonStr) && (t.startsWith('MSI') || t.startsWith('WORLDS')));
+  const wonTrophyThisYear = userTeam.trophies.some(t => t.includes(seasonStr));
   if (!wonTrophyThisYear && conf.rank > 2 && conf.score < 82) {
     state.managerJobOffers = [];
     return;
   }
 
-  // Step-up clubs: higher prestige than current club (or rival elite giants if already 90+)
-  const minP = userTeam.prestige >= 90 ? 88 : userTeam.prestige + 2;
-  const maxP = userTeam.prestige >= 90 ? 99 : Math.min(99, userTeam.prestige + 14 + (wonTrophyThisYear ? 5 : 0));
+  // Realistic FM Coaching Ladder:
+  // - Minor regions (TCL/LCO/CBLOL) step up to top minor clubs or bottom/mid LEC/LCS (NOT LCK/LPL giants unless you won MSI/Worlds!)
+  // - Mid LEC/LCS step up to top LEC/LCS or lower LCK/LPL
+  // - Top LEC/LCS & LCK/LPL step up to elite LCK/LPL contenders
+  const isMinor = ['TCL', 'LCO', 'CBLOL'].includes(userTeam.region);
+  const isWest = ['LEC', 'LCS'].includes(userTeam.region);
 
-  let cands = state.teams.filter(t => t.id !== userTeam.id && t.prestige >= minP && t.prestige <= maxP);
-  if (cands.length < 2) {
-    cands = state.teams.filter(t => t.id !== userTeam.id && t.prestige >= userTeam.prestige - 2);
+  const minP = userTeam.prestige >= 90 ? 88 : Math.max(68, userTeam.prestige + 1);
+  const maxStep = wonIntlThisYear ? 14 : (wonTrophyThisYear ? 7 : 5);
+  const hardCap = (isMinor && !wonIntlThisYear) ? 80 : (isWest && !wonIntlThisYear && userTeam.prestige < 84) ? 86 : 99;
+  const maxP = userTeam.prestige >= 90 ? 99 : Math.min(hardCap, userTeam.prestige + maxStep);
+
+  let cands = state.teams.filter(t => {
+    if (t.id === userTeam.id) return false;
+    if (t.prestige < minP || t.prestige > maxP) return false;
+    // LCK & LPL clubs don't hire directly from TCL/LCO/CBLOL unless you won MSI/Worlds!
+    if (isMinor && !wonIntlThisYear && (t.region === 'LCK' || t.region === 'LPL')) return false;
+    return true;
+  });
+
+  if (cands.length === 0) {
+    cands = state.teams.filter(t => {
+      if (t.id === userTeam.id) return false;
+      if (isMinor && !wonIntlThisYear && (t.region === 'LCK' || t.region === 'LPL')) return false;
+      return t.prestige >= userTeam.prestige - 2 && t.prestige <= maxP + 2;
+    });
   }
+
+  // Prefer realistic geographic/tier progression (e.g. TCL -> LEC/LCS bottom-mid or top TCL/CBLOL)
   const picked = cands.sort(() => Math.random() - 0.5).slice(0, 3);
   state.managerJobOffers = picked.map(t => ({
     teamId: t.id,
@@ -2768,7 +2797,7 @@ export function generateSuccessJobOffers(state) {
       title: `Başarılı Sezon Sonrası Sana Koçluk Teklifleri Geldi!`,
       sender: 'Menajerlik Ajansı',
       category: 'BOARD',
-      body: `Tebrikler ${mgr}! Gösterdiğin üstün performans büyük kulüplerin dikkatini çekti. Şu kulüpler seni Baş Koç olarak istiyor: ${names}. Genel Bakış ekranından teklifleri değerlendirebilir veya ${userTeam.name} ile yola devam edebilirsin.`,
+      body: `Tebrikler ${mgr}! Gösterdiğin performans kulüplerin dikkatini çekti. Şu kulüpler seni Baş Koç olarak istiyor: ${names}. Genel Bakış ekranından teklifleri değerlendirebilir veya ${userTeam.name} ile yola devam edebilirsin.`,
     });
   }
 }
