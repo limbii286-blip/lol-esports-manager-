@@ -6,7 +6,7 @@ import {
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR, getTeamDuoSynergy, ensureTeamExtras,
   getSquadDynamics, getBoardObjectives, talkToPlayer1on1,
   getTeamWeeklyWages, getTeamWageCap, getSortedStandings, getUserNextMatch, quickSimSeries,
-  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
+  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getFreeAgentSigningBonus, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
   getRenewalDemand, negotiateContractRenewal, renewAllExpiringContracts,
   offerPlayerToClubs, negotiateSaleCounter, completePlayerSale,
   setPlayerIndividualTraining, upgradeStaff, getLeagueStatLeaders,
@@ -447,6 +447,7 @@ function renderInbox() {
 // ==================== ROSTER, TRAINING & TACTICS ====================
 function renderRoster() {
   const team = state.teams.find(t => t.id === state.userTeamId);
+  getTeamRoster(state, team.id); // Guarantee strictly 1 starter per role (5 total)
   const myPlayers = state.players
     .filter(p => p.teamId === team.id)
     .sort((a, b) => (b.isStarter - a.isStarter) || (ROLES.indexOf(a.role) - ROLES.indexOf(b.role)));
@@ -851,7 +852,7 @@ function renderTransfers() {
                   <td>${p.age}</td>
                   <td><span class="ovr-pill ${ovrClass(p.ovr)}">${p.ovr}</span> <span style="font-size:11px;color:var(--text-dim);">/${p.pot}</span></td>
                   <td><span class="badge ${intrBadge}" title="${intr.reason}">${intr.label}</span></td>
-                  <td>${club ? formatMoney(p.marketValue) : '<span style="color:var(--green);">Ücretsiz</span>'}</td>
+                  <td>${club ? formatMoney(p.marketValue) : `<span style="color:var(--amber);" title="Serbest Oyuncu İmza Parası">İmza: ${formatMoney(getFreeAgentSigningBonus(p))}</span>`}</td>
                   <td>${formatMoney(p.salary)}/hf</td>
                   <td><button class="btn-primary btn-sm" data-open-nego="${p.id}" ${winSt.open ? '' : 'disabled'}>${winSt.open ? (club ? 'Teklif Yap' : 'İmza At') : 'Kilitli'}</button></td>
                 </tr>
@@ -1296,7 +1297,9 @@ function renderNegotiationModal() {
           <b>Transfer İlgisi (${intr.label}):</b> ${intr.reason}
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
-          ${club ? `<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Bonservis Teklifi (Piyasa: ${formatMoney(p.marketValue)})</label><input type="number" id="negoBuyout" value="${suggestedBuyout}" step="25000" style="width:100%;" /></div>` : `<input type="hidden" id="negoBuyout" value="0" />`}
+          ${club
+            ? `<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Bonservis Teklifi (Piyasa: ${formatMoney(p.marketValue)})</label><input type="number" id="negoBuyout" value="${suggestedBuyout}" step="25000" style="width:100%;" /></div>`
+            : `<div style="padding:7px 10px;border-radius:6px;background:var(--gold-soft);border:1px solid rgba(234,179,8,0.4);font-size:12px;"><b>Serbest Oyuncu İmza Parası:</b> <b style="color:var(--gold-bright);">${formatMoney(getFreeAgentSigningBonus(p))}</b> (Bütçeden düşülür)</div><input type="hidden" id="negoBuyout" value="0" />`}
           <div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Haftalık Maaş (Mevcut: ${formatMoney(p.salary)})</label><input type="number" id="negoSalary" value="${suggestedSalary}" step="1000" style="width:100%;" /></div>
           <div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Süre</label><select id="negoYears" style="width:100%;"><option value="1">1 Yıl</option><option value="2" selected>2 Yıl</option><option value="3">3 Yıl</option></select></div>
         </div>

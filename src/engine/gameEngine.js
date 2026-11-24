@@ -181,11 +181,13 @@ export function getTeamRoster(state, teamId) {
   const all = state.players.filter(p => p.teamId === teamId);
   const starters = [];
   for (const role of ROLES) {
-    const st = all.find(p => p.role === role && p.isStarter) || all.find(p => p.role === role);
-    if (st) {
-      st.isStarter = true;
-      starters.push(st);
-    }
+    const rolePlayers = all.filter(p => p.role === role);
+    if (rolePlayers.length === 0) continue;
+    // Enforce strictly ONE starter per role (fixes 6+ starters bug!)
+    const curStarters = rolePlayers.filter(p => p.isStarter).sort((a, b) => b.ovr - a.ovr);
+    const chosen = curStarters[0] || [...rolePlayers].sort((a, b) => b.ovr - a.ovr)[0];
+    for (const rp of rolePlayers) rp.isStarter = (rp.id === chosen.id);
+    starters.push(chosen);
   }
   return starters;
 }
@@ -321,7 +323,12 @@ export function ensureCalendarState(state) {
   if (!state.recentNewsIds) state.recentNewsIds = [];
   if (!state.financeLog) state.financeLog = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
-  if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
+  if (Array.isArray(state.teams)) {
+    state.teams.forEach(t => {
+      ensureTeamExtras(t);
+      if (Array.isArray(state.players)) getTeamRoster(state, t.id);
+    });
+  }
   // Auto-deduplicate any colliding player IDs (fixes old SoloQ Challenger signings!)
   if (Array.isArray(state.players)) {
     const seen = new Set();
@@ -2194,6 +2201,10 @@ export function signChallengerProspect(state, prospectId) {
   return { ok: true, reason: `${p.name} kadroya katıldı!` };
 }
 
+export function getFreeAgentSigningBonus(player) {
+  return Math.max(25000, Math.round((player.marketValue * 0.45) / 5000) * 5000);
+}
+
 export function evaluateTransferInterest(state, player, userTeam) {
   if (!player || !userTeam) return { level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 1, reason: 'Geçersiz oyuncu.' };
   const userReg = REGIONS.find(r => r.id === userTeam.region);
@@ -2204,18 +2215,21 @@ export function evaluateTransferInterest(state, player, userTeam) {
   const userAllure = userTeam.prestige * 0.62 + (userReg?.prestige || 75) * 0.38 + Math.min(10, userTeam.trophies.length * 2.5);
   const sellAllure = sellingTeam ? (sellingTeam.prestige * 0.62 + (sellReg?.prestige || 75) * 0.38) : 72;
 
-  // Free agents are more flexible, though elite superstars still want decent prestige
+  // Free agents demand realistic club prestige + signing bonus + FA salary premium!
   if (!sellingTeam) {
-    if (player.ovr >= 88 && userAllure < 82) {
+    if (player.ovr >= 82 && userAllure < 82) {
       return {
         level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 1.5,
-        reason: `${player.name} (OVR ${player.ovr}), kariyer hedefleri doğrultusunda ${userTeam.name} (${userTeam.region}) teklifini reddetti.`,
+        reason: `${player.name} (OVR ${player.ovr}), kariyer hedefleri doğrultusunda ${userTeam.name} (${userTeam.region}) projesini reddetti.`,
       };
     }
-    if (player.ovr >= 83 && userAllure < 79) {
-      return { level: 'HARD', label: 'Zor', willing: true, salaryMult: 1.45, reason: 'Yüksek maaş şartıyla düşünebilir.' };
+    if (player.ovr >= 76 && userAllure < 77) {
+      return {
+        level: 'HARD', label: 'Zor', willing: true, salaryMult: 1.45,
+        reason: `İmza parası ve yüksek maaş (+%45) karşılığında düşünebilir.`,
+      };
     }
-    return { level: 'HIGH', label: 'İlgili', willing: true, salaryMult: 1.0, reason: 'Görüşmeye açık.' };
+    return { level: 'HIGH', label: 'İlgili', willing: true, salaryMult: 1.2, reason: 'Görüşmeye açık (İmza parası + serbest oyuncu maaş primi talep eder).' };
   }
 
   // Contracted player checks
@@ -2331,8 +2345,13 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     return { ok: true, reason: `${player.name} takıma katıldı!` };
   }
 
+  const signingBonus = getFreeAgentSigningBonus(player);
+  if (userTeam.budget < signingBonus) {
+    return { ok: false, reason: `${player.name} imza parası (${formatMoney(signingBonus)}) için yeterli bütçen yok.` };
+  }
   const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
   if (offeredSalary < minSalary) return { ok: false, reason: `${player.name} haftalık en az ${formatMoney(minSalary)} maaş istiyor.` };
+  userTeam.budget -= signingBonus;
   player.teamId = userTeam.id;
   player.salary = offeredSalary;
   player.contractYears = contractYears;
@@ -2343,9 +2362,9 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     title: `Serbest Transfer: ${player.name}`,
     sender: 'Sportif Direktör',
     category: 'TRANSFER',
-    body: `Serbest oyuncu ${player.name} ile ${contractYears} yıllık sözleşme imzalandı.`,
+    body: `Serbest oyuncu ${player.name} ile ${formatMoney(signingBonus)} imza parası ve ${contractYears} yıllık sözleşme imzalandı.`,
   });
-  return { ok: true, reason: `${player.name} serbest transferle kadroya katıldı!` };
+  return { ok: true, reason: `${player.name}, ${formatMoney(signingBonus)} imza parasıyla kadroya katıldı!` };
 }
 
 export function setStarter(state, playerId) {
