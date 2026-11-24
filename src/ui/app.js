@@ -5,7 +5,7 @@ import {
   SPONSORS, FACILITY_INFO, TRAINING_MODES,
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
-  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
+  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
   getBoardConfidence, getTransferRoomOpportunities,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
@@ -535,8 +535,20 @@ function renderRoster() {
 function renderTransfers() {
   const team = state.teams.find(t => t.id === state.userTeamId);
   const scoutCost = team.facilities.analystDesk >= 3 ? 'Ücretsiz (Analist Sv.3)' : '$15K';
+  const winSt = getTransferWindowStatus(state);
+
+  const windowBanner = `
+    <div class="card" style="margin-bottom:14px;padding:11px 14px;border-color:${winSt.open ? 'rgba(16,185,129,0.45)' : 'rgba(244,63,94,0.45)'};background:${winSt.open ? 'var(--green-soft)' : 'var(--red-soft)'};display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="badge ${winSt.open ? 'tier-A' : 'tier-C'}">${winSt.open ? 'AÇIK' : `${icon('lock', 10)} KİLİTLİ`}</span>
+        <strong style="font-size:13px;">${winSt.label}</strong>
+      </div>
+      <span style="font-size:12px;color:var(--text-muted);">${winSt.detail}</span>
+    </div>
+  `;
 
   const subTabs = `
+    ${windowBanner}
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <button class="region-tab ${ui.transferSubTab === 'market' ? 'active' : ''}" data-tr-sub="market">${icon('globe', 14)} Transfer Pazarı</button>
       <button class="region-tab ${ui.transferSubTab === 'challenger' ? 'active' : ''}" data-tr-sub="challenger">${icon('star', 14)} SoloQ Challenger Scouting (${state.challengerPool.length})</button>
@@ -571,7 +583,7 @@ function renderTransfers() {
                 <td>
                   <div style="display:flex;gap:6px;">
                     ${!p.scouted ? `<button class="btn-blue btn-sm" data-scout-chal="${p.id}">${icon('search', 12)} Scout (${scoutCost === '$15K' ? '$15K' : 'Ücretsiz'})</button>` : ''}
-                    <button class="btn-green btn-sm" data-sign-chal="${p.id}">İmzala</button>
+                    <button class="btn-green btn-sm" data-sign-chal="${p.id}" ${winSt.open ? '' : 'disabled'}>${winSt.open ? 'İmzala' : 'Kilitli'}</button>
                   </div>
                 </td>
               </tr>
@@ -631,7 +643,7 @@ function renderTransfers() {
                 <div><span class="badge role-${o.player.role}">${o.player.role}</span> <b>${o.player.name}</b> <span class="ovr-pill ${ovrClass(o.player.ovr)}" style="font-size:11px;">${o.player.ovr}</span></div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${o.club?.tag} • ${o.reason} • <b style="color:var(--green);">${formatMoney(o.discountPrice)}</b></div>
               </div>
-              <button class="btn-blue btn-sm" data-open-nego="${o.player.id}">Teklif</button>
+              <button class="btn-blue btn-sm" data-open-nego="${o.player.id}" ${winSt.open ? '' : 'disabled'}>${winSt.open ? 'Teklif' : 'Kilitli'}</button>
             </div>
           `).join('')}
         </div>
@@ -688,7 +700,7 @@ function renderTransfers() {
                   <td><span class="badge ${intrBadge}" title="${intr.reason}">${intr.label}</span></td>
                   <td>${club ? formatMoney(p.marketValue) : '<span style="color:var(--green);">Ücretsiz</span>'}</td>
                   <td>${formatMoney(p.salary)}/hf</td>
-                  <td><button class="btn-primary btn-sm" data-open-nego="${p.id}">${club ? 'Teklif Yap' : 'İmza At'}</button></td>
+                  <td><button class="btn-primary btn-sm" data-open-nego="${p.id}" ${winSt.open ? '' : 'disabled'}>${winSt.open ? (club ? 'Teklif Yap' : 'İmza At') : 'Kilitli'}</button></td>
                 </tr>
               `;
             }).join('')}

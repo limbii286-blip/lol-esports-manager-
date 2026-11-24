@@ -121,6 +121,24 @@ export function addInboxMessage(state, { title, sender, category, body }) {
   if (state.inbox.length > 70) state.inbox.pop();
 }
 
+export function getTransferWindowStatus(state) {
+  if (state.phase === 'OFFSEASON') {
+    return { open: true, label: 'Büyük Transfer Penceresi (Rostermania)', detail: 'Sezon arası açık — tüm bonservisli ve serbest transferler aktif.' };
+  }
+  if ((state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') && state.week <= 2) {
+    const splitLbl = state.phase === 'SPRING_SPLIT' ? 'Bahar' : 'Yaz Ara';
+    return { open: true, label: `${splitLbl} Transfer Penceresi (AÇIK)`, detail: `Hafta 2 sonunda Kadro Kilidi (Roster Lock) devreye girecek.` };
+  }
+  const nextWin = state.phase === 'SPRING_SPLIT' || state.phase === 'SPRING_PLAYOFFS' || state.phase === 'MSI'
+    ? 'Yaz Mevsimi Hafta 1'
+    : 'Sezon Arası (Kasım)';
+  return { open: false, label: 'Kadro Kilidi (Roster Lock)', detail: `Transferler kapalı. Scouting yapabilirsin; sonraki pencere: ${nextWin}.` };
+}
+
+export function isTransferWindowOpen(state) {
+  return getTransferWindowStatus(state).open;
+}
+
 export function getPhaseLabel(phase) {
   const map = {
     SPRING_SPLIT: 'Bahar Mevsimi',
@@ -504,6 +522,7 @@ export function resolveDramaEvent(state, choiceIdx) {
 
 // ==================== AI INCOMING TRANSFER BIDS ====================
 function maybeGenerateIncomingOffer(state) {
+  if (!isTransferWindowOpen(state)) return;
   if (state.incomingOffers.length >= 2 || Math.random() > 0.28) return;
   const userPlayers = state.players.filter(p => p.teamId === state.userTeamId);
   if (userPlayers.length === 0) return;
@@ -834,6 +853,15 @@ export function advanceWeekOrRound(state) {
     runWeeklyClubTick(state);
     maybeTriggerDramaEvent(state);
     maybeGenerateIncomingOffer(state);
+
+    if (state.week === 2) {
+      addInboxMessage(state, {
+        title: 'Kadro Kilidi (Roster Lock) Devreye Girdi',
+        sender: 'Lig Komitesi',
+        category: 'TRANSFER',
+        body: 'Transfer penceresi kapandı! Bir sonraki transfer dönemine kadar yeni transfer yapılamaz; mevcut yedeklerinle ve scouting ile devam edebilirsin.',
+      });
+    }
 
     if (state.week === 4) {
       state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
@@ -1201,6 +1229,7 @@ export function scoutChallengerProspect(state, prospectId) {
 }
 
 export function signChallengerProspect(state, prospectId) {
+  if (!isTransferWindowOpen(state)) return { ok: false, reason: 'Kadro Kilidi (Roster Lock) aktif! Transfer penceresi açılana kadar imza atılamaz.' };
   const idx = state.challengerPool.findIndex(x => x.id === prospectId);
   const team = state.teams.find(t => t.id === state.userTeamId);
   if (idx === -1) return { ok: false, reason: 'Oyuncu bulunamadı.' };
@@ -1284,6 +1313,7 @@ export function evaluateTransferInterest(state, player, userTeam) {
 }
 
 export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSalary, contractYears) {
+  if (!isTransferWindowOpen(state)) return { ok: false, reason: 'Kadro Kilidi (Roster Lock) aktif! Transfer penceresi açılana kadar yeni oyuncu alınamaz.' };
   const player = state.players.find(p => p.id === playerId);
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   if (!player || !userTeam) return { ok: false, reason: 'Oyuncu bulunamadı.' };
