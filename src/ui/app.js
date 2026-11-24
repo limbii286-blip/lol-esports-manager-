@@ -20,6 +20,7 @@ const root = document.getElementById('app');
 let state = null;
 let ui = {
   startRegion: 'LCK',
+  managerName: localStorage.getItem('lol_mgr_nickname') || '',
   tab: 'dashboard',
   leagueRegion: 'LCK',
   transferSubTab: 'market',
@@ -60,6 +61,7 @@ function barHtml(val, color) {
 function renderStartScreen() {
   const slots = listSaveSlots();
   const filledCount = slots.filter(s => s.record).length;
+  const autoRec = slots.find(s => s.slotId === 'autosave')?.record;
   const regTeams = previewDB.teams.filter(t => t.region === ui.startRegion);
 
   return `
@@ -69,13 +71,33 @@ function renderStartScreen() {
           <img src="./assets/icon.jpg" alt="LoL Esports Manager" style="width:52px;height:52px;border-radius:12px;border:1px solid rgba(200,155,60,0.45);box-shadow:0 4px 16px rgba(0,0,0,0.45);object-fit:cover;" />
           <div>
             <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span></div>
-            <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • 16 Takımlı Swiss Worlds • Wonderkid Scouting</div>
+            <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • Worlds 2026 • Wonderkid Scouting</div>
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn-blue" id="btnStartMayhem" style="padding:10px 16px;">${icon('flame', 15)} Worlds Mayhem</button>
-          <button class="btn-primary" id="btnOpenSaveManager" style="padding:10px 16px;">${icon('save', 15)} Kayıtlı Oyunlar (${filledCount})</button>
+          <button class="btn-ghost" id="btnOpenSaveManager" style="padding:10px 16px;">${icon('save', 15)} Kayıt Slotları (${filledCount})</button>
         </div>
+      </div>
+
+      <div style="max-width:1260px;margin:0 auto 20px;display:grid;grid-template-columns:${autoRec ? '1fr 1fr' : '1fr'};gap:14px;" class="start-bar-grid">
+        <div class="card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--gold-bright);text-transform:uppercase;letter-spacing:0.5px;">Koç Adı / Nickname</div>
+          <input type="text" id="managerNameInput" value="${ui.managerName}" placeholder="Adın veya Nickname (Örn: Limbi, KkOma)..." style="flex:1;min-width:180px;" maxlength="24" />
+        </div>
+
+        ${autoRec ? `
+          <div class="card" style="border-color:rgba(200,155,60,0.5);background:linear-gradient(135deg, rgba(200,155,60,0.1), var(--bg-card));display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 16px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="team-tag" style="background:${autoRec.teamColor};color:${autoRec.teamColor2};">${autoRec.teamTag}</span>
+              <div>
+                <div style="font-size:13px;font-weight:800;color:var(--gold-bright);">Kaldığın Yerden Devam Et (${autoRec.managerName || 'Koç'})</div>
+                <div class="num" style="font-size:11.5px;color:var(--text-muted);">${autoRec.teamName} • S${autoRec.season} ${autoRec.phaseLabel} (H${autoRec.week}) • ${autoRec.savedAt}</div>
+              </div>
+            </div>
+            <button class="btn-primary btn-sm" id="btnQuickResume">${icon('play', 13)} Devam Et</button>
+          </div>
+        ` : ''}
       </div>
 
       <div class="region-tabs">
@@ -1018,7 +1040,8 @@ function renderAppShell() {
           <span class="team-tag" style="background:${team.color};color:${team.color2};font-size:13px;padding:7px 10px;">${team.tag}</span>
           <div>
             <div style="font-weight:800;font-size:13.5px;">${team.name}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${team.region} • Prestij ${team.prestige}</div>
+            <div style="font-size:11px;color:var(--gold-bright);font-weight:600;">Koç ${state.managerName || 'Koç'}</div>
+            <div style="font-size:10.5px;color:var(--text-muted);">${team.region} • Prestij ${team.prestige}</div>
           </div>
         </div>
         <nav class="sidebar-nav">
@@ -1046,6 +1069,18 @@ function renderAppShell() {
       </aside>
 
       <div class="main-area">
+        <div class="mobile-header-bar">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <img src="./assets/icon.jpg" alt="Icon" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(200,155,60,0.4);" />
+            <span class="team-tag" style="background:${team.color};color:${team.color2};">${team.tag}</span>
+            <span style="font-weight:800;font-size:12.5px;">${state.managerName || 'Koç'}</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-ghost btn-sm" id="btnMobMayhem" title="Worlds Mayhem">${icon('flame', 13)}</button>
+            <button class="btn-primary btn-sm" id="btnMobSave" title="Kaydet / Yükle">${icon('save', 13)}</button>
+            <button class="btn-ghost btn-sm" id="btnMobMenu" title="Ana Menü">${icon('arrowLeft', 13)}</button>
+          </div>
+        </div>
         <header class="topbar">
           <div class="topbar-meta">
             <div class="meta-chip">${icon('calendar', 13)} <b>${formatTurkishDate(state.currentDate)}</b></div>
@@ -1067,6 +1102,21 @@ function renderAppShell() {
         <main class="content">${bodyHtml}</main>
       </div>
     </div>
+    <nav class="mobile-nav">
+      ${[
+        ['dashboard', 'home', 'Genel'],
+        ['roster', 'users', 'Kadro'],
+        ['transfers', 'search', 'Transfer'],
+        ['league', 'trophy', 'Ligler'],
+        ['club', 'briefcase', 'Kulüp'],
+        ['inbox', 'inbox', 'Kutu'],
+      ].map(([id, ic, lbl]) => `
+        <button class="mobile-nav-btn ${ui.tab === id ? 'active' : ''}" data-nav="${id}">
+          ${icon(ic, 16)}
+          <span>${lbl}</span>
+        </button>
+      `).join('')}
+    </nav>
     ${renderNegotiationModal()}
     ${renderDramaModal()}
   `;
@@ -1090,13 +1140,28 @@ function launchUserMatch() {
 function bindAppEvents() {
   root.querySelector('#btnStartMayhem')?.addEventListener('click', openWorldsMayhemModal);
   root.querySelector('#btnSideMayhem')?.addEventListener('click', openWorldsMayhemModal);
+  root.querySelector('#btnMobMayhem')?.addEventListener('click', openWorldsMayhemModal);
+
+  // Manager Nickname Input & Quick Resume on Start Screen
+  root.querySelector('#managerNameInput')?.addEventListener('input', (e) => {
+    ui.managerName = e.target.value;
+    try { localStorage.setItem('lol_mgr_nickname', ui.managerName); } catch (_) {}
+  });
+  root.querySelector('#btnQuickResume')?.addEventListener('click', () => {
+    const loaded = loadFromSlot('autosave');
+    if (loaded) {
+      state = loaded;
+      ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId)?.region || 'LCK';
+      ui.tab = 'dashboard';
+      render();
+      showToast(`Tekrar hoş geldin ${state.managerName || 'Koç'}!`);
+    }
+  });
 
   // Save / Load Manager Modal Events
-  root.querySelector('#btnOpenSaveManager')?.addEventListener('click', () => {
-    ui.saveNameDraft = '';
-    ui.saveModalOpen = true;
-    render();
-  });
+  const openSaveMgr = () => { ui.saveNameDraft = ''; ui.saveModalOpen = true; render(); };
+  root.querySelector('#btnOpenSaveManager')?.addEventListener('click', openSaveMgr);
+  root.querySelector('#btnMobSave')?.addEventListener('click', openSaveMgr);
   root.querySelector('#btnCloseSaveModal')?.addEventListener('click', () => {
     ui.saveModalOpen = false;
     render();
@@ -1176,12 +1241,15 @@ function bindAppEvents() {
   });
   root.querySelectorAll('[data-pick-club]').forEach(btn => {
     btn.addEventListener('click', () => {
-      state = createNewCareer(btn.dataset.pickClub);
+      const nick = (root.querySelector('#managerNameInput')?.value || ui.managerName || 'Koç').trim() || 'Koç';
+      ui.managerName = nick;
+      try { localStorage.setItem('lol_mgr_nickname', nick); } catch (_) {}
+      state = createNewCareer(btn.dataset.pickClub, nick);
       ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId).region;
       ui.tab = 'dashboard';
       saveGame(state);
       render();
-      showToast('Kariyerin başladı. Başarılar koç.');
+      showToast(`Hoş geldin ${nick}! Kariyerin başladı.`);
     });
   });
 
@@ -1194,6 +1262,7 @@ function bindAppEvents() {
     showToast(`Fearless Draft ${state.fearlessEnabled ? 'AÇILDI' : 'KAPATILDI'}.`);
   });
   root.querySelector('#btnMainMenu')?.addEventListener('click', () => { saveGame(state); state = null; render(); });
+  root.querySelector('#btnMobMenu')?.addEventListener('click', () => { saveGame(state); state = null; render(); });
 
   root.querySelector('#btnPlayMatchLive')?.addEventListener('click', launchUserMatch);
   root.querySelector('#btnTopPlay')?.addEventListener('click', launchUserMatch);
@@ -1319,6 +1388,10 @@ function bindAppEvents() {
     if (sp) { uTeam.sponsor = sp; saveGame(state); render(); showToast(`${sp.name} ile anlaşıldı.`); }
   }));
 }
+
+// Safety auto-save if user accidentally closes tab or switches app on mobile
+window.addEventListener('beforeunload', () => { if (state) saveGame(state); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) saveGame(state); });
 
 // Football Manager Spacebar shortcut to advance 1 day!
 window.addEventListener('keydown', (e) => {

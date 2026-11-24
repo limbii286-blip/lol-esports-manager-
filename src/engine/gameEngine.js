@@ -274,7 +274,8 @@ export function skipToNextKeyDay(state) {
   return last;
 }
 
-export function createNewCareer(userTeamId) {
+export function createNewCareer(userTeamId, managerName = 'Koç') {
+  const cleanName = (managerName || 'Koç').trim() || 'Koç';
   const { teams, players } = createInitialDatabase();
   const { schedules, standings } = createRegionalSchedules(teams);
   const userTeam = teams.find(t => t.id === userTeamId);
@@ -283,6 +284,7 @@ export function createNewCareer(userTeamId) {
   const state = {
     season: 2026,
     currentDate: '2026-01-12',
+    managerName: cleanName,
     phase: 'SPRING_SPLIT',
     week: 1,
     patchIndex: 0,
@@ -307,10 +309,10 @@ export function createNewCareer(userTeamId) {
   };
 
   addInboxMessage(state, {
-    title: `${userTeam.name} Yönetim Kurulu'na Hoş Geldin!`,
+    title: `Hoş Geldin ${cleanName} — ${userTeam.name} Görev Başlangıcı`,
     sender: 'Yönetim Kurulu',
     category: 'BOARD',
-    body: `${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. Fearless Draft aktif! Hedefimiz ${userTeam.region} şampiyonluğu, MSI ve 16 takımlı Worlds kupası!`,
+    body: `Hoş geldin ${cleanName}! ${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. Hedefimiz ${userTeam.region} şampiyonluğu, MSI ve Worlds 2026 kupası!`,
   });
 
   const p0 = PATCHES[0];
@@ -416,6 +418,7 @@ export function quickSimSeries(state, match) {
 // ==================== DRAMA & PRESS CONFERENCE EVENTS ====================
 function maybeTriggerDramaEvent(state) {
   if (state.pendingEvent || Math.random() > 0.42) return;
+  const mgr = state.managerName || 'Koç';
   const team = state.teams.find(t => t.id === state.userTeamId);
   const roster = getTeamRoster(state, team.id);
   const p1 = roster[Math.floor(Math.random() * roster.length)];
@@ -424,7 +427,7 @@ function maybeTriggerDramaEvent(state) {
   const templates = [
     {
       title: 'Gece Yarısı Yayın Krizi',
-      desc: `${p1.name}, önemli maç haftasında sabah 4'e kadar SoloQ yayını yaptığı için antrenmana uykusuz geldi. Nasıl tepki vereceksin?`,
+      desc: `${mgr}, ${p1.name} önemli maç haftasında sabah 4'e kadar SoloQ yayını yaptığı için antrenmana uykusuz geldi. Nasıl tepki vereceksin?`,
       choices: [
         { label: 'Para Cezası & Disiplin (Form +2, Moral -8, Bütçe +$15K)', effect: () => { p1.form = Math.min(99, p1.form + 2); p1.morale = Math.max(30, p1.morale - 8); team.budget += 15000; } },
         { label: 'Birebir Uyarı Konuşması (Yorgunluk -5, Moral -2)', effect: () => { p1.fatigue = Math.max(0, p1.fatigue - 5); p1.morale = Math.max(30, p1.morale - 2); } },
@@ -433,7 +436,7 @@ function maybeTriggerDramaEvent(state) {
     },
     {
       title: 'Scrim Sonrası Tartışma',
-      desc: `Scrim değerlendirmesinde ${p1.name} ve ${p2.name} harita çağrısı yüzünden sertçe tartıştı. Takım atmosferi gergin!`,
+      desc: `${mgr}, scrim değerlendirmesinde ${p1.name} ve ${p2.name} harita çağrısı yüzünden sertçe tartıştı. Takım atmosferi gergin!`,
       choices: [
         { label: 'Takım Yemeği Düzenle (-$20K, Sinerji +5, Moral +6)', effect: () => { team.budget -= 20000; team.synergy = Math.min(100, team.synergy + 5); roster.forEach(p => { p.morale = Math.min(100, p.morale + 6); }); } },
         { label: `${p1.name}'ı Haklı Bul (${p1.name} Moral +6, ${p2.name} Moral -7)`, effect: () => { p1.morale = Math.min(100, p1.morale + 6); p2.morale = Math.max(30, p2.morale - 7); } },
@@ -442,7 +445,7 @@ function maybeTriggerDramaEvent(state) {
     },
     {
       title: 'Basın Toplantısı & Trash Talk',
-      desc: `Rakip koç, röportajda ${team.name} için "Sadece şansla kazanıyorlar, bizi asla yenemezler" dedi. Mikrofon sende!`,
+      desc: `Rakip koç, röportajda ${team.name} için "Sadece şansla kazanıyorlar" dedi. ${mgr}, basın toplantısında mikrofon sende!`,
       choices: [
         { label: 'Sert Trash Talk Yap (Taraftar +3, Takım Moral +5)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 3); roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); }); } },
         { label: 'Vadi\'de Cevap Vereceğiz (Sinerji +3, Form +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 3); roster.forEach(p => { p.form = Math.min(99, p.form + 2); }); } },
@@ -450,7 +453,7 @@ function maybeTriggerDramaEvent(state) {
     },
     {
       title: 'Sponsor Reklam Çekimi',
-      desc: `Ana sponsorunuz hafta ortasında tam günlük reklam çekimi talep ediyor. Kabul ederseniz nakit prim var ama antrenman aksayacak.`,
+      desc: `${mgr}, ana sponsorunuz hafta ortasında tam günlük reklam çekimi talep ediyor. Kabul ederseniz nakit prim var ama antrenman aksayacak.`,
       choices: [
         { label: 'Çekimi Kabul Et (Bütçe +$85K, Yorgunluk +9)', effect: () => { team.budget += 85000; roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 9); }); } },
         { label: 'Reddet & Antrenmana Odaklan (Form +3, Sinerji +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 2); roster.forEach(p => { p.form = Math.min(99, p.form + 3); }); } },
@@ -1336,6 +1339,7 @@ function buildSlotRecord(state, customName) {
   const copy = { ...state, pendingEvent: null };
   return {
     name: customName || `${team?.name || 'Kariyer'} — S${state.season}`,
+    managerName: state.managerName || 'Koç',
     savedAt: new Date().toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     teamName: team?.name || 'Bilinmeyen',
     teamTag: team?.tag || '?',
