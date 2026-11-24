@@ -1625,7 +1625,7 @@ function renderAppShell() {
   else if (ui.tab === 'meta') bodyHtml = renderMeta();
 
   return `
-    <div class="app-shell">
+    <div class="app-shell" style="--club-color:${team.color};">
       <aside class="sidebar">
         <div style="padding:13px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:rgba(200,155,60,0.04);">
           <img src="./assets/icon.jpg" alt="LoL Esports Manager" style="width:28px;height:28px;border-radius:7px;border:1px solid rgba(200,155,60,0.4);object-fit:cover;" />
@@ -1955,7 +1955,7 @@ function bindAppEvents() {
   root.querySelectorAll('[data-open-profile]').forEach(el => el.addEventListener('click', () => { ui.profilePlayerId = el.dataset.openProfile; render(); }));
   root.querySelector('#btnCloseProfile')?.addEventListener('click', () => { ui.profilePlayerId = null; render(); });
   root.querySelectorAll('[data-talk-1on1]').forEach(btn => btn.addEventListener('click', () => {
-    const res = talkToPlayer1on1(state, ui.profilePlayerId, btn.dataset.talk1on1);
+    const res = talkToPlayer1on1(state, ui.profilePlayerId, btn.getAttribute('data-talk-1on1'));
     autoSaveNow(); render(); showToast(res.reason);
   }));
   root.querySelector('#btnProfileToNego')?.addEventListener('click', () => {
