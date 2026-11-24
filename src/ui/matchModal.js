@@ -8,7 +8,7 @@ import {
 import {
   createLiveMatchState, stepMatchMinute, finishMatchInstantly, applyMatchOutcomeToPlayers
 } from '../engine/matchEngine.js';
-import { getTeamRoster, getCurrentPatch, recordSeriesResult } from '../engine/gameEngine.js';
+import { getTeamRoster, getCurrentPatch, recordSeriesResult, TEAM_TALK_OPTIONS, applyPostMatchTeamTalk } from '../engine/gameEngine.js';
 import { icon } from './icons.js';
 
 export function openSeriesModal(gameState, match, onSeriesComplete) {
@@ -24,6 +24,8 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
   const rivalry = getRivalryName(match.blueId, match.redId);
   const highStakes = (gameState.phase !== 'SPRING_SPLIT' && gameState.phase !== 'SUMMER_SPLIT') || !!rivalry;
 
+  const scrimIntel = gameState.scrimIntel?.[oppTeam.id] || null;
+
   const series = {
     gameNum: 1,
     blueScore: 0,
@@ -32,6 +34,9 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     phase: 'DRAFT',
     draft: null,
     liveMatch: null,
+    teamTalk: 'none',
+    postTalkDone: false,
+    postTalkMsg: '',
     roleFilter: 'ALL',
     search: '',
     speed: 1,
@@ -83,7 +88,8 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     series.paused = false;
     series.liveMatch = createLiveMatchState(
       blueTeam, redTeam, blueRoster, redRoster,
-      series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes
+      series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes,
+      { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel }
     );
     box.scrollTop = 0;
     render();
@@ -274,8 +280,21 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       </div>
     `;
 
+    const talkBar = `
+      <div class="card" style="padding:9px 12px;margin-bottom:10px;border-color:rgba(200,155,60,0.35);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:11.5px;font-weight:800;color:var(--gold-bright);">${icon('users', 13)} Maç Önü Soyunma Odası Konuşması:</span>
+          <div class="tactic-btn-group">
+            ${TEAM_TALK_OPTIONS.map(t => `<button class="tactic-btn ${series.teamTalk === t.id ? 'active' : ''}" data-pre-talk="${t.id}" title="${t.desc}">${t.name.split(' (')[0]}</button>`).join('')}
+          </div>
+        </div>
+        ${scrimIntel ? `<span class="badge tier-S" title="Scrim İstihbaratı: Plan ${scrimIntel.gameplan}, Odak ${scrimIntel.laneFocus}">${icon('target', 11)} Scrim İstihbaratı Aktif (+1.2) • Plan: ${scrimIntel.gameplan}</span>` : ''}
+      </div>
+    `;
+
     return `
       ${renderHeader()}
+      ${talkBar}
       ${scoutingHtml}
       <div class="draft-layout">
         ${renderSideColumn('blue', blueTeam, blueRoster, d.blueBans, d.bluePicks, blueAn)}
@@ -432,6 +451,21 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
               : `<button class="btn-primary" id="btnNextGame" style="padding:10px 18px;">Maç ${series.gameNum + 1} Draft'ına Geç ${icon('arrowRight', 14)}</button>`}
           </div>
         </div>
+        ${seriesOver ? `
+          <div class="card" style="margin-top:10px;border-color:rgba(56,189,248,0.4);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div style="font-size:12px;">
+              <strong style="color:var(--blue);">${icon('users', 13)} Maç Sonu Soyunma Odası Konuşması:</strong>
+              ${series.postTalkDone ? `<span style="color:var(--green);margin-left:6px;">${series.postTalkMsg}</span>` : '<span style="color:var(--text-muted);margin-left:6px;">Takıma ne söyleyeceksin?</span>'}
+            </div>
+            ${!series.postTalkDone ? `
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-green btn-sm" data-post-talk="praise">Tebrik Et (+Moral)</button>
+                <button class="btn-danger btn-sm" data-post-talk="criticize">Sert Eleştir (+Form)</button>
+                <button class="btn-blue btn-sm" data-post-talk="calm">Sakinleştir (-Yorgunluk)</button>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
         ${m.coachReport ? `
           <div class="card" style="margin-top:10px;border-color:var(--border-strong);background:var(--bg-card);">
             <div class="card-header" style="margin-bottom:8px;padding-bottom:6px;">
@@ -574,11 +608,22 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       });
     });
 
+    box.querySelectorAll('[data-pre-talk]').forEach(btn => {
+      btn.addEventListener('click', () => { series.teamTalk = btn.dataset.preTalk; render(); });
+    });
+    box.querySelectorAll('[data-post-talk]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        series.postTalkMsg = applyPostMatchTeamTalk(gameState, btn.dataset.postTalk);
+        series.postTalkDone = true;
+        render();
+      });
+    });
+
     box.querySelector('#btnStartLiveMatch')?.addEventListener('click', startLiveMatch);
     box.querySelector('#btnInstantMatch')?.addEventListener('click', () => {
       cleanupTimers();
       series.phase = 'MATCH';
-      series.liveMatch = createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes);
+      series.liveMatch = createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes, { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel });
       finishMatchInstantly(series.liveMatch);
       box.scrollTop = 0;
       onGameEnded();

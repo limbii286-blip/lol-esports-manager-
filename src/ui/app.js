@@ -2,10 +2,11 @@
 import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier } from '../data/champions.js';
 import { ROLES, REGIONS, TRAITS, getRivalryName, createInitialDatabase } from '../data/teamsAndPlayers.js';
 import {
-  SPONSORS, FACILITY_INFO, TRAINING_MODES,
-  createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
+  SPONSORS, FACILITY_INFO, STAFF_INFO, TRAINING_MODES, TRAINING_INTENSITIES,
+  createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR, getTeamDuoSynergy, ensureTeamExtras,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
-  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
+  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
+  getRenewalDemand, negotiateContractRenewal, setPlayerIndividualTraining, upgradeStaff, getLeagueStatLeaders,
   getBoardConfidence, getTransferRoomOpportunities, resignFromClub, acceptJobOffer, dismissManagerJobOffer,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
@@ -30,6 +31,8 @@ let ui = {
   transferSearch: '',
   transferMinOvr: 72,
   negotiatingPlayerId: null,
+  renewingPlayerId: null,
+  trainingPlayerId: null,
   selectedInboxId: null,
   saveModalOpen: false,
   saveNameDraft: '',
@@ -459,7 +462,12 @@ function renderRoster() {
                     <strong>${p.name}</strong> <span style="font-size:11px;color:var(--text-muted);">(${p.nat})</span>
                     ${tr ? `<span class="badge tier-A" title="${tr.desc}" style="margin-left:4px;">${tr.label}</span>` : ''}
                     ${p.importWeeksLeft > 0 ? `<span class="badge tier-C" title="Dil bariyeri adaptasyon süresi" style="margin-left:4px;">${icon('globe', 10)} Uyum ${p.importWeeksLeft}h</span>` : ''}
-                    <div style="font-size:10.5px;color:var(--text-dim);margin-top:2px;">İmza: ${p.sigChamps.slice(0, 3).map(id => CHAMPION_MAP[id]?.name).join(', ')}</div>
+                    ${(p.injuredWeeks || 0) > 0 ? `<span class="badge tier-C" title="Aşırı yorgunluk/bilek zorlanması (-4.5 maç puanı)" style="margin-left:4px;background:var(--red-soft);color:#fda4af;">Sakat ${p.injuredWeeks}h</span>` : ''}
+                    <div style="font-size:10.5px;color:var(--text-dim);margin-top:2px;">
+                      İmza: ${p.sigChamps.slice(0, 4).map(id => CHAMPION_MAP[id]?.name).join(', ')}
+                      ${p.learningChampId ? ` • <span style="color:var(--blue);">Öğreniyor: ${CHAMPION_MAP[p.learningChampId]?.name || p.learningChampId} (%${p.learningProgress || 0})</span>` : ''}
+                      ${p.indFocus ? ` • <span style="color:var(--gold-bright);">Odak: ${p.indFocus.toUpperCase()}</span>` : ''}
+                    </div>
                   </td>
                   <td>${p.age}</td>
                   <td><span class="ovr-pill ${ovrClass(p.ovr)}">${p.ovr}</span> <span style="font-size:11px;color:var(--text-dim);">/${p.pot}</span></td>
@@ -469,11 +477,12 @@ function renderRoster() {
                     <div>F:${p.form} ${barHtml(p.form, '#38bdf8')}</div>
                     <div>Y:${p.fatigue} ${barHtml(p.fatigue, p.fatigue > 65 ? '#f43f5e' : '#f59e0b')}</div>
                   </td>
-                  <td style="font-size:12px;">${formatMoney(p.salary)}<br><span style="color:${p.contractYears <= 1 ? 'var(--amber)' : 'var(--text-dim)'};">${p.contractYears <= 0 ? 'Bitti' : `${p.contractYears} yıl`}</span></td>
+                  <td style="font-size:12px;">${formatMoney(p.salary)}<br><span style="color:${p.contractYears <= 1 ? 'var(--amber)' : 'var(--text-dim)'};">${p.contractYears <= 0 ? 'Bitti!' : `${p.contractYears} yıl`}</span></td>
                   <td>
-                    <div style="display:flex;gap:4px;">
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
                       ${!p.isStarter ? `<button class="btn-blue btn-sm" data-set-starter="${p.id}">İlk 5</button>` : ''}
-                      ${p.contractYears <= 1 ? `<button class="btn-green btn-sm" data-renew-player="${p.id}">Yenile</button>` : ''}
+                      <button class="btn-ghost btn-sm" data-open-plan="${p.id}" title="Bireysel Antrenman & Şampiyon Öğrenme">Plan</button>
+                      ${p.contractYears <= 1 ? `<button class="btn-green btn-sm" data-open-renew="${p.id}">Pazarlık</button>` : ''}
                       <button class="btn-danger btn-sm" data-release-player="${p.id}">Sal</button>
                     </div>
                   </td>
@@ -487,7 +496,13 @@ function renderRoster() {
 
     <div class="grid-3">
       <div class="card">
-        <div class="card-header"><span class="card-title">${icon('target', 14)} Haftalık Antrenman</span></div>
+        <div class="card-header"><span class="card-title">${icon('target', 14)} Haftalık Antrenman & Yoğunluk</span></div>
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Antrenman Yoğunluğu (Burnout / Gelişim Dengesi)</div>
+          <div class="tactic-btn-group">
+            ${TRAINING_INTENSITIES.map(ti => `<button class="tactic-btn ${(team.trainingIntensity || 'normal') === ti.id ? 'active' : ''}" data-set-intensity="${ti.id}" title="${ti.desc}">${ti.name}</button>`).join('')}
+          </div>
+        </div>
         ${TRAINING_MODES.map(tm => `
           <div data-set-training="${tm.id}" style="padding:8px 10px;border-radius:7px;margin-bottom:6px;cursor:pointer;background:${team.trainingFocus === tm.id ? 'var(--gold-soft)' : 'var(--bg)'};border:1px solid ${team.trainingFocus === tm.id ? 'var(--gold)' : 'var(--border)'};">
             <div style="font-size:12.5px;font-weight:700;color:${team.trainingFocus === tm.id ? 'var(--gold-bright)' : 'var(--text)'};">${tm.name}</div>
@@ -540,9 +555,19 @@ function renderRoster() {
       </div>
 
       <div class="card">
-        <div class="card-header"><span class="card-title">${icon('sword', 14)} Haftalık Hazırlık Maçı (Scrim)</span></div>
+        <div class="card-header"><span class="card-title">${icon('sword', 14)} Scrim & İkili Sinerji</span></div>
+        ${(() => {
+          const duo = getTeamDuoSynergy(team, getTeamRoster(state, team.id));
+          return `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px;margin-bottom:10px;font-size:11.5px;">
+              <div style="font-weight:800;color:var(--gold-bright);margin-bottom:5px;">İkili Sinerji (Maç İçi Bonus)</div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span><b>JGL+MID:</b> ${duo.jglMid.names}</span><span class="badge tier-A">${duo.jglMid.label} (${duo.jglMid.score}/30)</span></div>
+              <div style="display:flex;justify-content:space-between;"><span><b>BOT+SUP:</b> ${duo.botSup.names}</span><span class="badge tier-A">${duo.botSup.label} (${duo.botSup.score}/30)</span></div>
+            </div>
+          `;
+        })()}
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
-          7 bölgeden istediğin takımla scrim yapıp sinerji (+2/+4) ve form kazanabilirsin (Yorgunluk +7).
+          Scrim yaparak sinerji (+2/+4), ikili uyum ve rakibin gizli <b>Taktik İstihbaratını (+1.2)</b> açabilirsin.
         </p>
         <select id="scrimSelect" style="width:100%;margin-bottom:10px;">
           ${scrimOpponents.map(o => `<option value="${o.id}">[${o.region}] ${o.name} (OVR ${getTeamOVR(state, o.id)})</option>`).join('')}
@@ -550,6 +575,12 @@ function renderRoster() {
         <button class="btn-blue" id="btnPlayScrim" style="width:100%;" ${state.scrimDoneThisWeek ? 'disabled' : ''}>
           ${state.scrimDoneThisWeek ? `${icon('check', 13)} Bu Haftanın Scrim'i Yapıldı` : `${icon('sword', 13)} Scrim Maçı Yap`}
         </button>
+        ${Object.keys(state.scrimIntel || {}).length ? `
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;">
+            <div style="font-weight:700;color:var(--blue);margin-bottom:4px;">Aktif Rakip İstihbaratları:</div>
+            ${Object.values(state.scrimIntel).slice(-4).map(it => `<div style="color:var(--text-muted);margin-bottom:2px;">• <b>${it.oppTag}</b>: ${it.gameplan} (Odak: ${it.laneFocus})</div>`).join('')}
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -558,7 +589,9 @@ function renderRoster() {
 // ==================== TRANSFERS, CHALLENGER SCOUTING & OFFERS ====================
 function renderTransfers() {
   const team = state.teams.find(t => t.id === state.userTeamId);
-  const scoutCost = team.facilities.analystDesk >= 3 ? 'Ücretsiz (Analist Sv.3)' : '$15K';
+  ensureTeamExtras(team);
+  const scoutCostNum = (team.facilities.analystDesk >= 3 || team.staff.headScout >= 3) ? 0 : (team.staff.headScout >= 2 ? 7500 : 15000);
+  const scoutCost = scoutCostNum === 0 ? 'Ücretsiz (Sv.3)' : formatMoney(scoutCostNum);
   const winSt = getTransferWindowStatus(state);
 
   const windowBanner = `
@@ -577,6 +610,7 @@ function renderTransfers() {
       <button class="region-tab ${ui.transferSubTab === 'market' ? 'active' : ''}" data-tr-sub="market">${icon('globe', 14)} Transfer Pazarı</button>
       <button class="region-tab ${ui.transferSubTab === 'challenger' ? 'active' : ''}" data-tr-sub="challenger">${icon('star', 14)} SoloQ Challenger Scouting (${state.challengerPool.length})</button>
       <button class="region-tab ${ui.transferSubTab === 'offers' ? 'active' : ''}" data-tr-sub="offers">${icon('briefcase', 14)} Gelen Teklifler (${state.incomingOffers.length})</button>
+      <button class="region-tab ${ui.transferSubTab === 'feed' ? 'active' : ''}" data-tr-sub="feed">${icon('inbox', 14)} AI Transfer Haberleri (${(state.transferFeed || []).length})</button>
     </div>
   `;
 
@@ -606,7 +640,7 @@ function renderTransfers() {
                 <td>${formatMoney(p.signingFee)}</td>
                 <td>
                   <div style="display:flex;gap:6px;">
-                    ${!p.scouted ? `<button class="btn-blue btn-sm" data-scout-chal="${p.id}">${icon('search', 12)} Scout (${scoutCost === '$15K' ? '$15K' : 'Ücretsiz'})</button>` : ''}
+                    ${!p.scouted ? `<button class="btn-blue btn-sm" data-scout-chal="${p.id}">${icon('search', 12)} Scout (${scoutCostNum === 0 ? 'Ücretsiz' : formatMoney(scoutCostNum)})</button>` : ''}
                     <button class="btn-green btn-sm" data-sign-chal="${p.id}" ${winSt.open ? '' : 'disabled'}>${winSt.open ? 'İmzala' : 'Kilitli'}</button>
                   </div>
                 </td>
@@ -614,6 +648,30 @@ function renderTransfers() {
             `).join('')}
           </tbody>
         </table>
+      </div>
+    `;
+  }
+
+  if (ui.transferSubTab === 'feed') {
+    const feed = state.transferFeed || [];
+    return `
+      ${subTabs}
+      <div class="card">
+        <div class="card-header"><span class="card-title">${icon('inbox', 14)} Canlı AI Transfer Akışı (Dünya Geneli)</span></div>
+        ${feed.length === 0
+          ? '<p style="font-size:13px;color:var(--text-muted);">Transfer pencereleri açıldıkça ve sezon aralarında diğer kulüplerin yaptığı büyük transfer hamleleri burada listelenecek.</p>'
+          : feed.map(f => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:7px;flex-wrap:wrap;gap:8px;">
+              <div>
+                <span class="team-tag" style="background:${f.buyerColor};color:${f.buyerColor2};margin-right:6px;">${f.buyerTag}</span>
+                <span class="badge role-${f.role}">${f.role}</span> <strong>${f.playerName}</strong> <span class="ovr-pill ${ovrClass(f.ovr)}" style="font-size:11px;">${f.ovr}</span>
+                <span style="font-size:12px;color:var(--text-muted);margin-left:6px;">← ${f.fromTag === 'FA' ? 'Serbest Oyuncu' : f.fromTag}</span>
+              </div>
+              <div class="num" style="font-size:12px;color:var(--text-muted);">
+                ${f.fee ? `<b style="color:var(--green);">${formatMoney(f.fee)}</b> • ` : '<b style="color:var(--blue);">Bedelsiz</b> • '}S${f.season} ${f.phase}
+              </div>
+            </div>
+          `).join('')}
       </div>
     `;
   }
@@ -890,11 +948,28 @@ function renderLeague() {
         </div>
 
         <div class="card">
-          <div class="card-header"><span class="card-title">${icon('star', 14)} Sezon Ödülleri & Şampiyonlar</span></div>
+          <div class="card-header"><span class="card-title">${icon('star', 14)} Sezon Ödülleri, Rekorlar & Hall of Fame</span></div>
+          ${(() => {
+            ensureCalendarState(state);
+            const rec = state.records;
+            return `
+              <div style="display:flex;gap:12px;flex-wrap:wrap;padding:7px 9px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:8px;font-size:11.5px;">
+                <span>Kariyer: <b style="color:var(--green);">${rec.careerWins}G</b> - <b style="color:var(--red);">${rec.careerLosses}M</b></span>
+                <span>Aktif Seri: <b style="color:var(--blue);">${rec.currentStreak}G</b></span>
+                <span>En Uzun Seri: <b style="color:var(--gold-bright);">${rec.bestStreak}G</b></span>
+              </div>
+              ${rec.hallOfFame.length ? `
+                <div style="margin-bottom:8px;font-size:11.5px;">
+                  <div style="font-weight:800;color:var(--gold-bright);margin-bottom:3px;">HALL OF FAME (WORLDS EFSANELERİ)</div>
+                  ${rec.hallOfFame.slice(0, 5).map(h => `<div style="padding:2px 0;"><b>${h.name}</b> (${h.role} • ${h.tag}) — ${h.note}${h.titles > 1 ? ` (${h.titles}x)` : ''}</div>`).join('')}
+                </div>
+              ` : ''}
+            `;
+          })()}
           ${state.awards.length === 0 && state.history.length === 0
             ? '<p style="font-size:12.5px;color:var(--text-muted);">Mevsimler tamamlandıkça MVP, All-Pro 1. Takım ve MSI/Worlds şampiyonları burada listelenecek.</p>'
             : `
-              ${state.history.map(h => `<div style="padding:4px 0;font-size:12.5px;"><b style="color:var(--gold-bright);">${h.event} ${h.season}:</b> ${h.winner} (${h.tag})</div>`).join('')}
+              ${state.history.map(h => `<div style="padding:4px 0;font-size:12.5px;"><b style="color:var(--gold-bright);">${h.event} ${h.season}:</b> ${h.winner} (${h.tag})${h.mvp ? ` • <span style="color:var(--text-muted);">MVP: ${h.mvp}</span>` : ''}</div>`).join('')}
               ${state.awards.map(a => `<div style="padding:6px 0;border-top:1px solid var(--border);font-size:12px;"><b>${a.split} ${a.season}:</b> MVP: <b style="color:var(--gold-bright);">${a.mvp}</b> • Çaylak: ${a.rookie}<div style="font-size:11px;color:var(--text-muted);">${a.allPro}</div></div>`).join('')}
             `}
         </div>
@@ -940,6 +1015,25 @@ function renderClub() {
             </div>
           `;
         }).join('')}
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+          <div class="card-header" style="margin-bottom:6px;padding-bottom:6px;"><span class="card-title">${icon('users', 14)} Teknik Ekip (Staff)</span></div>
+          ${(() => {
+            ensureTeamExtras(team);
+            return Object.entries(STAFF_INFO).map(([key, info]) => {
+              const lvl = team.staff[key] || 1;
+              const nextCost = lvl < 3 ? info.costs[lvl] : null;
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:10px;">
+                  <div>
+                    <div style="font-weight:700;font-size:13px;">${info.name} <span class="badge tier-A">Sv. ${lvl}/3</span> <span class="num" style="font-size:11px;color:var(--text-dim);">(${formatMoney(info.wages[lvl])}/hf)</span></div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${info.desc}</div>
+                  </div>
+                  <button class="btn-blue btn-sm" data-upgrade-staff="${key}" ${lvl >= 3 ? 'disabled' : ''}>${lvl >= 3 ? 'MAKS' : `İşe Al (${formatMoney(nextCost)})`}</button>
+                </div>
+              `;
+            }).join('');
+          })()}
+        </div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">${icon('briefcase', 14)} Sponsorluk Anlaşmaları</span></div>
@@ -1026,6 +1120,81 @@ function renderNegotiationModal() {
         <div style="display:flex;gap:10px;justify-content:flex-end;">
           <button class="btn-ghost" id="btnCancelNego">İptal</button>
           <button class="btn-primary" id="btnSubmitNego">Teklifi Gönder ${icon('arrowRight', 13)}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRenewalModal() {
+  if (!ui.renewingPlayerId) return '';
+  const p = state.players.find(x => x.id === ui.renewingPlayerId);
+  if (!p) return '';
+  const demand = getRenewalDemand(state, p.id);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box modal-sm">
+        <div class="card-header">
+          <span class="card-title">${icon('briefcase', 14)} Sözleşme Yenileme Pazarlığı</span>
+          <button class="btn-ghost btn-sm" id="btnCloseRenew">${icon('x', 14)}</button>
+        </div>
+        <div style="margin-bottom:10px;">
+          <span class="badge role-${p.role}">${p.role}</span> <strong style="font-size:15px;margin-left:4px;">${p.name}</strong>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">OVR ${p.ovr} • Yaş ${p.age} • Moral ${p.morale} • Mevcut: ${formatMoney(p.salary)}/hf</div>
+        </div>
+        <div style="padding:8px 10px;border-radius:6px;margin-bottom:12px;font-size:12px;background:var(--blue-soft);border:1px solid var(--border-strong);">
+          <b>Oyuncu Beklentisi:</b> Haftalık ~<b>${formatMoney(demand.minSalary)}</b>${demand.wantsStar ? ' ve <b>İlk 5 (Yıldız)</b> rol garantisi' : ' (Rotasyon rolüne açık)'}.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+          <div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Teklif Edilen Haftalık Maaş</label><input type="number" id="renewSalary" value="${demand.minSalary}" step="500" style="width:100%;" /></div>
+          <div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Kontrat Süresi</label><select id="renewYears" style="width:100%;"><option value="1">1 Yıl</option><option value="2" selected>2 Yıl</option><option value="3">3 Yıl</option></select></div>
+          <div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Kadro Rolü Sözü</label><select id="renewRole" style="width:100%;"><option value="STAR" ${demand.wantsStar ? 'selected' : ''}>İlk 5 (Yıldız Oyuncu)</option><option value="ROTATION" ${!demand.wantsStar ? 'selected' : ''}>Rotasyon / Yedek</option></select></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn-ghost" id="btnCancelRenew">İptal</button>
+          <button class="btn-green" id="btnSubmitRenew">Sözleşmeyi İmzala ${icon('check', 13)}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlayerPlanModal() {
+  if (!ui.trainingPlayerId) return '';
+  const p = state.players.find(x => x.id === ui.trainingPlayerId);
+  if (!p) return '';
+  const roleChamps = CHAMPIONS.filter(c => c.roles.includes(p.role) && !p.sigChamps.includes(c.id));
+  const attrLabels = [['', 'Takım Antrenmanına Uy'], ['mechanics', 'Mekanik (MEK)'], ['laning', 'Koridor (KOR)'], ['macro', 'Makro (MAK)'], ['teamfight', 'Takım Savaşı (TS)'], ['clutch', 'Clutch (CLU)'], ['pool', 'Şampiyon Havuzu (HAV)']];
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box modal-sm">
+        <div class="card-header">
+          <span class="card-title">${icon('target', 14)} Bireysel Antrenman & Şampiyon Öğrenme</span>
+          <button class="btn-ghost btn-sm" id="btnClosePlan">${icon('x', 14)}</button>
+        </div>
+        <div style="margin-bottom:12px;">
+          <span class="badge role-${p.role}">${p.role}</span> <strong style="font-size:15px;margin-left:4px;">${p.name}</strong>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Mevcut İmza Şampiyonlar: ${p.sigChamps.map(id => CHAMPION_MAP[id]?.name || id).join(', ')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Bireysel Özellik Odağı</label>
+            <select id="planFocus" style="width:100%;">
+              ${attrLabels.map(([val, lbl]) => `<option value="${val}" ${(p.indFocus || '') === val ? 'selected' : ''}>${lbl}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Yeni İmza Şampiyon Öğren (~3-4 Hafta)</label>
+            <select id="planChamp" style="width:100%;">
+              <option value="">-- Seçme --</option>
+              ${roleChamps.map(c => `<option value="${c.id}" ${p.learningChampId === c.id ? 'selected' : ''}>${c.name} (${c.classTag})</option>`).join('')}
+            </select>
+            ${p.learningChampId ? `<div style="font-size:11px;color:var(--blue);margin-top:4px;">Mevcut İlerleme: %${p.learningProgress || 0}</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn-ghost" id="btnCancelPlan">İptal</button>
+          <button class="btn-primary" id="btnSubmitPlan">Planı Kaydet</button>
         </div>
       </div>
     </div>
@@ -1310,6 +1479,8 @@ function renderAppShell() {
       `).join('')}
     </nav>
     ${renderNegotiationModal()}
+    ${renderRenewalModal()}
+    ${renderPlayerPlanModal()}
     ${renderDramaModal()}
   `;
 }
@@ -1523,7 +1694,34 @@ function bindAppEvents() {
 
   const uTeam = state.teams.find(t => t.id === state.userTeamId);
   root.querySelectorAll('[data-set-starter]').forEach(btn => btn.addEventListener('click', () => { setStarter(state, btn.dataset.setStarter); saveGame(state); render(); showToast('İlk 5 güncellendi.'); }));
-  root.querySelectorAll('[data-renew-player]').forEach(btn => btn.addEventListener('click', () => { const res = renewContract(state, btn.dataset.renewPlayer, 2); saveGame(state); render(); showToast(res.reason); }));
+  root.querySelectorAll('[data-open-renew]').forEach(btn => btn.addEventListener('click', () => { ui.renewingPlayerId = btn.dataset.openRenew; render(); }));
+  root.querySelector('#btnCloseRenew')?.addEventListener('click', () => { ui.renewingPlayerId = null; render(); });
+  root.querySelector('#btnCancelRenew')?.addEventListener('click', () => { ui.renewingPlayerId = null; render(); });
+  root.querySelector('#btnSubmitRenew')?.addEventListener('click', () => {
+    const res = negotiateContractRenewal(state, ui.renewingPlayerId, Number(root.querySelector('#renewSalary').value) || 0, Number(root.querySelector('#renewYears').value) || 2, root.querySelector('#renewRole').value);
+    if (res.ok) ui.renewingPlayerId = null;
+    saveGame(state); render(); showToast(res.reason);
+  });
+
+  root.querySelectorAll('[data-open-plan]').forEach(btn => btn.addEventListener('click', () => { ui.trainingPlayerId = btn.dataset.openPlan; render(); }));
+  root.querySelector('#btnClosePlan')?.addEventListener('click', () => { ui.trainingPlayerId = null; render(); });
+  root.querySelector('#btnCancelPlan')?.addEventListener('click', () => { ui.trainingPlayerId = null; render(); });
+  root.querySelector('#btnSubmitPlan')?.addEventListener('click', () => {
+    const res = setPlayerIndividualTraining(state, ui.trainingPlayerId, root.querySelector('#planFocus').value, root.querySelector('#planChamp').value);
+    if (res.ok) ui.trainingPlayerId = null;
+    saveGame(state); render(); showToast(res.reason);
+  });
+
+  root.querySelectorAll('[data-set-intensity]').forEach(b => b.addEventListener('click', () => {
+    uTeam.trainingIntensity = b.dataset.setIntensity;
+    saveGame(state); render(); showToast('Antrenman yoğunluğu güncellendi.');
+  }));
+
+  root.querySelectorAll('[data-upgrade-staff]').forEach(b => b.addEventListener('click', () => {
+    const res = upgradeStaff(state, b.dataset.upgradeStaff);
+    saveGame(state); render(); showToast(res.reason);
+  }));
+
   root.querySelectorAll('[data-release-player]').forEach(btn => btn.addEventListener('click', () => { const res = releasePlayer(state, btn.dataset.releasePlayer); saveGame(state); render(); showToast(res.reason); }));
   root.querySelectorAll('[data-set-training]').forEach(el => el.addEventListener('click', () => { uTeam.trainingFocus = el.dataset.setTraining; saveGame(state); render(); showToast('Antrenman güncellendi.'); }));
   root.querySelectorAll('[data-def-plan]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.gameplan = b.dataset.defPlan; render(); }));
@@ -1653,7 +1851,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || !state) return;
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
-  if (ui.saveModalOpen || ui.negotiatingPlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
+  if (ui.saveModalOpen || ui.negotiatingPlayerId || ui.renewingPlayerId || ui.trainingPlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
   e.preventDefault();
   if (isMatchDay(state)) {
     launchUserMatch();

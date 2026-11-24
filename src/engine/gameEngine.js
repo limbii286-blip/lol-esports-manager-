@@ -1,5 +1,5 @@
 // LoL Esports Manager v2.0 — Career Engine (7 Regions, 16-Team Swiss Worlds, Drama Events, Challenger Scouting, AI Bids, Language Barrier & Awards)
-import { PATCHES } from '../data/champions.js';
+import { PATCHES, CHAMPION_MAP } from '../data/champions.js';
 import {
   ROLES, REGIONS, REGION_LANG, getRivalryName,
   createInitialDatabase, calcOVR, calcMarketValue, calcWeeklySalary,
@@ -23,6 +23,52 @@ export const FACILITY_INFO = {
   youthAcademy: { name: 'Gençlik Akademisi', desc: 'Daha yüksek potansiyelli genç yetenekler üretir.', costs: [0, 300000, 650000, 1200000] },
   psychologist: { name: 'Spor Psikoloğu', desc: 'Moral düşüşlerini önler ve dil/uyum sürecini hızlandırır.', costs: [0, 280000, 600000, 1100000] },
 };
+
+export const STAFF_INFO = {
+  draftAnalyst: { name: 'Baş Draft Analisti', desc: 'Maç içi taktik & draft verimini artırır (+0.5/sv).', costs: [0, 260000, 620000, 1200000], wages: [0, 8000, 18000, 34000] },
+  perfCoach: { name: 'Performans & Sağlık Koçu', desc: 'Yorgunluk birikimini ve bilek/burnout sakatlık riskini azaltır.', costs: [0, 240000, 560000, 1100000], wages: [0, 7000, 16000, 30000] },
+  headScout: { name: 'Baş Gözlemci (Head Scout)', desc: 'Challenger yetenek havuzunun kalitesini artırır ve scouting maliyetini düşürür.', costs: [0, 220000, 520000, 1000000], wages: [0, 6500, 15000, 28000] },
+};
+
+export const TRAINING_INTENSITIES = [
+  { id: 'light', name: 'Hafif', desc: 'Yorgunluk hızlı düşer, sakatlık riski yok, gelişim yavaş.' },
+  { id: 'normal', name: 'Dengeli', desc: 'Normal gelişim ve kontrollü yorgunluk.' },
+  { id: 'intense', name: 'Yoğun', desc: '+45% hızlı gelişim ve şampiyon öğrenimi, ancak yüksek yorgunluk/burnout riski.' },
+];
+
+export const TEAM_TALK_OPTIONS = [
+  { id: 'none', name: 'Standart Hazırlık', desc: 'Ekstra risk yok, normal maç odağı.' },
+  { id: 'pressure', name: 'Baskı Kur ("Kazanmak zorundayız!")', desc: 'Clutch ve Lider oyunculara büyük güç (+2.2), Tilt olanlara risk (-1.6).' },
+  { id: 'calm', name: 'Rahat Bırak ("Kendi oyununuzu oynayın")', desc: 'Tilt riskini pozitife çevirir (+1.8), stres/yorgunluğu azaltır.' },
+  { id: 'praise', name: 'Övgü & Güven ("Size güveniyorum")', desc: 'Tüm takıma dengeli moral ve sinerji bonusu (+1.1).' },
+  { id: 'fire', name: 'Hırslandır ("Onlara gününü gösterin!")', desc: 'Derbi, Playoff ve Uluslararası maçlarda ekstra +2.4 ateşleme!' },
+];
+
+export function ensureTeamExtras(team) {
+  if (!team) return;
+  if (!team.staff) team.staff = { draftAnalyst: 1, perfCoach: 1, headScout: 1 };
+  if (!team.trainingIntensity) team.trainingIntensity = 'normal';
+  if (!team.duoSynergy) team.duoSynergy = {};
+}
+
+export function getDuoPairKey(idA, idB) {
+  return [idA, idB].sort().join('|');
+}
+
+export function getTeamDuoSynergy(team, roster) {
+  ensureTeamExtras(team);
+  const jgl = roster.find(p => p.role === 'JGL');
+  const mid = roster.find(p => p.role === 'MID');
+  const bot = roster.find(p => p.role === 'BOT');
+  const sup = roster.find(p => p.role === 'SUP');
+  const jmScore = (jgl && mid) ? (team.duoSynergy[getDuoPairKey(jgl.id, mid.id)] || 0) : 0;
+  const bsScore = (bot && sup) ? (team.duoSynergy[getDuoPairKey(bot.id, sup.id)] || 0) : 0;
+  const label = (v) => v >= 20 ? 'Ölümcül İkili' : v >= 10 ? 'Uyumlu İkili' : v >= 4 ? 'Gelişiyor' : 'Yeni';
+  return {
+    jglMid: { score: Math.min(30, Math.round(jmScore)), label: label(jmScore), names: jgl && mid ? `${jgl.name} + ${mid.name}` : '-' },
+    botSup: { score: Math.min(30, Math.round(bsScore)), label: label(bsScore), names: bot && sup ? `${bot.name} + ${sup.name}` : '-' },
+  };
+}
 
 export const TRAINING_MODES = [
   { id: 'balanced', name: 'Dengeli Antrenman', desc: 'Tüm özelliklerde dengeli gelişim, normal yorgunluk.' },
@@ -58,7 +104,12 @@ export function getTeamOVR(state, teamId) {
 }
 
 export function getTeamWeeklyWages(state, teamId) {
-  return state.players.filter(p => p.teamId === teamId).reduce((s, p) => s + p.salary, 0);
+  const playerWages = state.players.filter(p => p.teamId === teamId).reduce((s, p) => s + p.salary, 0);
+  const team = state.teams.find(t => t.id === teamId);
+  if (!team) return playerWages;
+  ensureTeamExtras(team);
+  const staffWages = Object.entries(STAFF_INFO).reduce((s, [k, info]) => s + (info.wages[team.staff[k] || 1] || 0), 0);
+  return playerWages + staffWages;
 }
 
 function generateRoundRobin(teamIds, bestOf = 3) {
@@ -160,6 +211,11 @@ const TR_DAYS_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
 
 export function ensureCalendarState(state) {
   if (!state.currentDate) state.currentDate = `${state.season || 2026}-01-12`; // Monday
+  if (!state.scrimIntel) state.scrimIntel = {};
+  if (!state.transferFeed) state.transferFeed = [];
+  if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
+  const ut = state.teams?.find(t => t.id === state.userTeamId);
+  if (ut) ensureTeamExtras(ut);
 }
 
 function parseISO(iso) {
@@ -306,6 +362,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   const { schedules, standings } = createRegionalSchedules(teams);
   const userTeam = teams.find(t => t.id === userTeamId);
   userTeam.sponsor = SPONSORS[0];
+  teams.forEach(t => ensureTeamExtras(t));
 
   const state = {
     season: 2026,
@@ -327,6 +384,9 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     challengerPool: generateChallengerProspects(),
     incomingOffers: [],
     managerJobOffers: [],
+    scrimIntel: {},
+    transferFeed: [],
+    records: { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] },
     pendingEvent: null,
     boardWarnings: 0,
     sackedState: null,
@@ -395,6 +455,19 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
   match.redScore = redScore;
   match.played = true;
   match.winnerId = blueScore > redScore ? match.blueId : match.redId;
+
+  // Career records & streak tracking for user team
+  if (match.blueId === state.userTeamId || match.redId === state.userTeamId) {
+    ensureCalendarState(state);
+    if (match.winnerId === state.userTeamId) {
+      state.records.careerWins++;
+      state.records.currentStreak++;
+      if (state.records.currentStreak > state.records.bestStreak) state.records.bestStreak = state.records.currentStreak;
+    } else {
+      state.records.careerLosses++;
+      state.records.currentStreak = 0;
+    }
+  }
 
   // Derby fanbase bonus
   if (getRivalryName(match.blueId, match.redId)) {
@@ -619,8 +692,10 @@ export function respondIncomingOffer(state, offerId, accept) {
 
 // ==================== WEEKLY TICK ====================
 function runWeeklyClubTick(state) {
+  ensureCalendarState(state);
   state.scrimDoneThisWeek = false;
   for (const team of state.teams) {
+    ensureTeamExtras(team);
     const wages = getTeamWeeklyWages(state, team.id);
     const roster = state.players.filter(p => p.teamId === team.id);
     const streamerBonus = roster.filter(p => p.trait === 'Streamer').length * 18000;
@@ -630,27 +705,79 @@ function runWeeklyClubTick(state) {
     if (team.id !== state.userTeamId && team.budget < 250000) team.budget = 250000;
 
     const focus = team.trainingFocus || 'balanced';
+    const intensity = team.trainingIntensity || 'normal';
+    const perfLvl = team.staff?.perfCoach || 1;
+    const intensityGrowth = intensity === 'intense' ? 1.45 : intensity === 'light' ? 0.6 : 1.0;
+    const intensityFatigue = intensity === 'intense' ? 7 : intensity === 'light' ? -6 : 0;
+
     for (const p of roster) {
+      // Injury / Burnout recovery
+      if ((p.injuredWeeks || 0) > 0) {
+        p.injuredWeeks = Math.max(0, p.injuredWeeks - 1);
+        p.fatigue = Math.max(0, p.fatigue - 16);
+      }
+
       // Language adaptation decay
       if (p.importWeeksLeft > 0) {
         p.importWeeksLeft = Math.max(0, p.importWeeksLeft - (team.facilities.psychologist >= 2 ? 2 : 1));
       }
-      // Ego players dislike being benched
-      if (p.trait === 'Ego' && !p.isStarter) {
-        p.morale = Math.max(25, p.morale - 6);
+
+      // Bench unhappiness (FM role promise / high OVR sub dissatisfaction)
+      if (!p.isStarter) {
+        p.benchWeeks = (p.benchWeeks || 0) + 1;
+        if (p.trait === 'Ego') p.morale = Math.max(25, p.morale - 6);
+        else if ((p.rolePromise === 'STAR' || p.ovr >= 78) && p.benchWeeks >= 3) {
+          p.morale = Math.max(25, p.morale - 5);
+          if (team.id === state.userTeamId && p.benchWeeks === 3) {
+            addInboxMessage(state, {
+              title: `Kadro Memnuniyetsizliği: ${p.name}`,
+              sender: p.name,
+              category: 'NEWS',
+              body: `Koç, ${p.benchWeeks} haftadır yedek bekliyorum. İlk 5'te süre alamayacaksam transfer listesine konulmak istiyorum.`,
+            });
+          }
+        }
+      } else {
+        p.benchWeeks = 0;
       }
 
       const grinderMult = p.trait === 'Grinder' ? 1.4 : 1.0;
-      const growthChance = (p.ovr < p.pot ? (p.age <= 21 ? 0.35 : p.age <= 24 ? 0.22 : 0.10) : 0.03) * grinderMult;
+      const growthChance = (p.ovr < p.pot ? (p.age <= 21 ? 0.35 : p.age <= 24 ? 0.22 : 0.10) : 0.03) * grinderMult * intensityGrowth;
       const psychBonus = (team.facilities.psychologist - 1) * 1.5;
 
       if (focus === 'rest') {
-        p.fatigue = Math.max(0, p.fatigue - 22 - team.facilities.gamingHouse * 3);
+        p.fatigue = Math.max(0, p.fatigue - 22 - team.facilities.gamingHouse * 3 - (perfLvl - 1) * 3);
         p.morale = Math.min(100, p.morale + 6 + psychBonus);
       } else {
-        p.fatigue = Math.max(0, p.fatigue - (6 + team.facilities.gamingHouse * 2) + (focus === 'mechanics' ? 8 : 4));
+        const netFatigue = -(6 + team.facilities.gamingHouse * 2 + (perfLvl - 1) * 2) + (focus === 'mechanics' ? 8 : 4) + intensityFatigue;
+        p.fatigue = Math.max(0, Math.min(100, p.fatigue + netFatigue));
+
+        // Individual Champion Learning Progress (User roster)
+        if (p.learningChampId && !p.sigChamps.includes(p.learningChampId)) {
+          const step = Math.round((24 + (focus === 'pool' ? 10 : 0)) * intensityGrowth);
+          p.learningProgress = Math.min(100, (p.learningProgress || 0) + step);
+          if (p.learningProgress >= 100) {
+            p.sigChamps.push(p.learningChampId);
+            const cName = CHAMPION_MAP[p.learningChampId]?.name || p.learningChampId;
+            p.learningChampId = null;
+            p.learningProgress = 0;
+            p.attrs.pool = Math.min(99, p.attrs.pool + 1);
+            p.ovr = calcOVR(p.attrs);
+            if (team.id === state.userTeamId) {
+              addInboxMessage(state, {
+                title: `Yeni İmza Şampiyon Öğrenildi: ${p.name} (${cName})`,
+                sender: 'Antrenör Ekibi',
+                category: 'NEWS',
+                body: `${p.name}, bireysel antrenman programını tamamladı ve ${cName} şampiyonunu artık profesyonel imza havuzuna ekledi!`,
+              });
+            }
+          }
+        }
+
         if (Math.random() < growthChance) {
-          if (focus === 'mechanics') { p.attrs.mechanics = Math.min(99, p.attrs.mechanics + 1); p.attrs.laning = Math.min(99, p.attrs.laning + 1); }
+          if (p.indFocus && p.attrs[p.indFocus] !== undefined) {
+            p.attrs[p.indFocus] = Math.min(99, p.attrs[p.indFocus] + 1);
+          } else if (focus === 'mechanics') { p.attrs.mechanics = Math.min(99, p.attrs.mechanics + 1); p.attrs.laning = Math.min(99, p.attrs.laning + 1); }
           else if (focus === 'macro') { p.attrs.macro = Math.min(99, p.attrs.macro + 1); p.attrs.teamfight = Math.min(99, p.attrs.teamfight + 1); team.synergy = Math.min(100, team.synergy + 1); }
           else if (focus === 'pool') { p.attrs.pool = Math.min(99, p.attrs.pool + 1); }
           else {
@@ -662,7 +789,29 @@ function runWeeklyClubTick(state) {
           p.marketValue = calcMarketValue(p.ovr, p.age, p.pot);
         }
       }
+
+      // Burnout / Wrist Strain injury risk when over-fatigued
+      if (p.fatigue >= 82 && !(p.injuredWeeks > 0)) {
+        const injChance = Math.max(0.03, (p.fatigue - 78) * 0.012 - (perfLvl - 1) * 0.035);
+        if (Math.random() < injChance) {
+          p.injuredWeeks = Math.random() < 0.6 ? 1 : 2;
+          p.morale = Math.max(30, p.morale - 6);
+          if (team.id === state.userTeamId) {
+            addInboxMessage(state, {
+              title: `SAĞLIK RAPORU: ${p.name} Bilek Zorlanması / Burnout`,
+              sender: 'Performans & Sağlık Ekibi',
+              category: 'BOARD',
+              body: `${p.name} aşırı yorgunluk (%${p.fatigue}) nedeniyle ${p.injuredWeeks} hafta süreyle hafif bilek zorlanması / tükenmişlik yaşayacak. Yedek oyuncu oynatabilir veya antrenman yoğunluğunu düşürebilirsin.`,
+            });
+          }
+        }
+      }
     }
+  }
+
+  // Living Mid-Season AI Transfers while transfer window is open!
+  if (isTransferWindowOpen(state) && (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT')) {
+    runLivingAITransfers(state, 2);
   }
 }
 
@@ -1005,11 +1154,13 @@ function finishBracketAndTransition(state) {
       champs.push(`${fm.region}: ${champ.tag}`);
       champByRegion[fm.region] = champ.id;
     }
+    state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
+    const msiPatch = getCurrentPatch(state);
     addInboxMessage(state, {
-      title: 'Bahar Şampiyonları Belli Oldu — MSI Başlıyor!',
+      title: `Bahar Şampiyonları Belli Oldu — MSI Yaması ${msiPatch.version} (${msiPatch.name})`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `Bölge Şampiyonları: ${champs.join(' • ')}. Şimdi 7 bölgenin şampiyonu + LCK #2 MSI kupası için karşı karşıya!`,
+      body: `Bölge Şampiyonları: ${champs.join(' • ')}. MSI Özel Yaması (${msiPatch.version}): ${msiPatch.desc}`,
     });
     state.phase = 'MSI';
     state.week = 1;
@@ -1024,7 +1175,8 @@ function finishBracketAndTransition(state) {
     msiWinner.budget += 650000;
     msiWinner.prestige = Math.min(99, msiWinner.prestige + 2);
     msiWinner.trophies.push(`MSI ${state.season}`);
-    state.history.push({ season: state.season, event: 'MSI', winner: msiWinner.name, tag: msiWinner.tag });
+    const msiMvp = getTeamRoster(state, msiWinner.id).sort((a, b) => (b.stats.mvps * 10 + b.ovr) - (a.stats.mvps * 10 + a.ovr))[0];
+    state.history.push({ season: state.season, event: 'MSI', winner: msiWinner.name, tag: msiWinner.tag, mvp: msiMvp?.name || '-' });
 
     state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
     const { schedules, standings } = createRegionalSchedules(state.teams);
@@ -1036,12 +1188,13 @@ function finishBracketAndTransition(state) {
     setCalendarToMonday(state, 6, 5); // June Summer Split!
     state.academyPromotedThisSplit = false;
     state.challengerPool = generateChallengerProspects();
+    const sumPatch = getCurrentPatch(state);
 
     addInboxMessage(state, {
-      title: `MSI ${state.season} Şampiyonu: ${msiWinner.name}!`,
+      title: `MSI ${state.season} Şampiyonu: ${msiWinner.name} (Finals MVP: ${msiMvp?.name || '-'})`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds ${state.season} için +1 bonus slot kazandırdı! Yeni Yama ${getCurrentPatch(state).version} ile Yaz Mevsimi başlıyor.`,
+      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds ${state.season} için +1 bonus slot kazandırdı! Yeni Yaz Yaması ${sumPatch.version} (${sumPatch.name}): ${sumPatch.desc}`,
     });
     return;
   }
@@ -1101,7 +1254,17 @@ function finishBracketAndTransition(state) {
     worldsWinner.budget += 1500000;
     worldsWinner.prestige = Math.min(99, worldsWinner.prestige + 3);
     worldsWinner.trophies.push(`WORLDS ${state.season}`);
-    state.history.push({ season: state.season, event: 'WORLDS', winner: worldsWinner.name, tag: worldsWinner.tag });
+    const worldsMvp = getTeamRoster(state, worldsWinner.id).sort((a, b) => (b.stats.mvps * 12 + b.ovr) - (a.stats.mvps * 12 + a.ovr))[0];
+    state.history.push({ season: state.season, event: 'WORLDS', winner: worldsWinner.name, tag: worldsWinner.tag, mvp: worldsMvp?.name || '-' });
+
+    // Record Hall of Fame inductee
+    ensureCalendarState(state);
+    if (worldsMvp) {
+      const existing = state.records.hallOfFame.find(h => h.name === worldsMvp.name);
+      if (existing) { existing.titles++; existing.lastSeason = state.season; }
+      else state.records.hallOfFame.unshift({ name: worldsMvp.name, role: worldsMvp.role, tag: worldsWinner.tag, titles: 1, lastSeason: state.season, note: `Worlds ${state.season} Finals MVP` });
+      if (state.records.hallOfFame.length > 20) state.records.hallOfFame.pop();
+    }
 
     const userTeam = state.teams.find(t => t.id === state.userTeamId);
     if (userTeam.sponsor && worldsWinner.id === userTeam.id) userTeam.budget += userTeam.sponsor.bonus;
@@ -1116,24 +1279,72 @@ function finishBracketAndTransition(state) {
 
     const mgr = state.managerName || 'Koç';
     addInboxMessage(state, {
-      title: `WORLDS ${state.season} Şampiyonu: ${worldsWinner.name}`,
+      title: `WORLDS ${state.season} Şampiyonu: ${worldsWinner.name} (Finals MVP: ${worldsMvp?.name || '-'})`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${worldsWinner.id === userTeam.id ? `TEBRİKLER ${mgr}! Sihirdar Kupası'nı kaldırdın! ` : ''}${worldsWinner.name} WORLDS ${state.season} şampiyonu oldu! Şimdi Sezon Arası Transfer Penceresi açıldı; AI kulüpleri büyük transfer hamleleri yapıyor. Hazır olduğunda ${state.season + 1} sezonuna başlayabilirsin.`,
+      body: `${worldsWinner.id === userTeam.id ? `TEBRİKLER ${mgr}! Sihirdar Kupası'nı kaldırdın! ` : ''}${worldsWinner.name} WORLDS ${state.season} şampiyonu oldu (Finals MVP: ${worldsMvp?.name || '-'})! Şimdi Sezon Arası Transfer Penceresi açıldı; AI kulüpleri büyük transfer hamleleri yapıyor. Hazır olduğunda ${state.season + 1} sezonuna başlayabilirsin.`,
     });
   }
+}
+
+function runLivingAITransfers(state, maxMoves = 8) {
+  ensureCalendarState(state);
+  const aiMoves = [];
+  const richAITeams = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= 1100000).sort(() => Math.random() - 0.5).slice(0, maxMoves * 2);
+  for (const buyer of richAITeams) {
+    if (aiMoves.length >= maxMoves) break;
+    const roster = getTeamRoster(state, buyer.id);
+    if (roster.length < 5) continue;
+    const weakest = [...roster].sort((a, b) => a.ovr - b.ovr)[0];
+    const target = state.players
+      .filter(p => p.role === weakest.role && p.teamId !== buyer.id && p.teamId !== state.userTeamId && p.ovr >= weakest.ovr + 2 && p.marketValue <= buyer.budget * 0.65)
+      .sort((a, b) => b.ovr - a.ovr)[0];
+    if (target) {
+      const oldClub = target.teamId ? state.teams.find(t => t.id === target.teamId) : null;
+      const fee = oldClub ? target.marketValue : 0;
+      if (oldClub) {
+        buyer.budget -= fee;
+        oldClub.budget += fee;
+        weakest.teamId = oldClub.id;
+        weakest.isStarter = true;
+      } else {
+        weakest.teamId = null;
+        weakest.isStarter = false;
+      }
+      target.teamId = buyer.id;
+      target.isStarter = true;
+      target.contractYears = 2;
+      const text = `${buyer.tag}, ${oldClub ? oldClub.tag + ' takımından' : 'serbest piyasadan'} ${target.name} (${target.role}, ${target.ovr}) transfer etti${fee ? ` (${formatMoney(fee)})` : ''}`;
+      aiMoves.push(text);
+      state.transferFeed.unshift({
+        season: state.season,
+        phase: getPhaseLabel(state.phase),
+        buyerTag: buyer.tag,
+        buyerColor: buyer.color,
+        buyerColor2: buyer.color2,
+        fromTag: oldClub ? oldClub.tag : 'FA',
+        playerName: target.name,
+        role: target.role,
+        ovr: target.ovr,
+        fee,
+      });
+      if (state.transferFeed.length > 35) state.transferFeed.pop();
+    }
+  }
+  return aiMoves;
 }
 
 function runOffSeasonProgression(state) {
   const retiredNames = [];
   const remainingPlayers = [];
+  const expiringUserNames = [];
 
   for (const p of state.players) {
     p.age++;
     p.fatigue = 5;
+    p.injuredWeeks = 0;
     p.stats = { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 };
 
-    // Realistic retirements for veterans (32+, higher chance each year; never retire user's last starter silently without freeing slot)
     const retireProb = p.age >= 35 ? 0.75 : p.age >= 33 ? 0.42 : p.age >= 32 ? 0.22 : 0;
     if (retireProb > 0 && p.teamId !== state.userTeamId && Math.random() < retireProb) {
       if (p.ovr >= 80) retiredNames.push(`${p.name} (${p.age})`);
@@ -1154,52 +1365,29 @@ function runOffSeasonProgression(state) {
       if (p.contractYears <= 0 && p.teamId !== state.userTeamId) {
         if (Math.random() < 0.65) p.contractYears = 2;
         else { p.teamId = null; p.isStarter = false; }
+      } else if (p.contractYears <= 0 && p.teamId === state.userTeamId) {
+        expiringUserNames.push(`${p.name} (${p.role}, ${p.ovr})`);
       }
     }
     remainingPlayers.push(p);
   }
   state.players = remainingPlayers;
 
-  // Generate 25 fresh young regens across all 7 regions so 2030+ stays vibrant!
   for (let i = 0; i < 25; i++) {
     const reg = REGIONS[i % REGIONS.length].id;
     state.players.push(generateRegenPlayer(ROLES[i % ROLES.length], reg, Math.random() < 0.3 ? 3 : 2, null));
   }
   state.challengerPool = generateChallengerProspects();
-
-  // 1. Living AI-to-AI Blockbuster Transfers (Rich AI clubs buy upgrades from other AI clubs!)
-  const aiMoves = [];
-  const richAITeams = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= 1600000).sort(() => Math.random() - 0.5).slice(0, 12);
-  for (const buyer of richAITeams) {
-    const roster = getTeamRoster(state, buyer.id);
-    if (roster.length < 5) continue;
-    const weakest = [...roster].sort((a, b) => a.ovr - b.ovr)[0];
-    // Look for a better player in same role at another AI club or Free Agency
-    const target = state.players
-      .filter(p => p.role === weakest.role && p.teamId !== buyer.id && p.teamId !== state.userTeamId && p.ovr >= weakest.ovr + 2 && p.marketValue <= buyer.budget * 0.65)
-      .sort((a, b) => b.ovr - a.ovr)[0];
-    if (target) {
-      const oldClub = target.teamId ? state.teams.find(t => t.id === target.teamId) : null;
-      if (oldClub) {
-        buyer.budget -= target.marketValue;
-        oldClub.budget += target.marketValue;
-        // Swap weakest to oldClub or free agency so oldClub stays valid
-        weakest.teamId = oldClub.id;
-        weakest.isStarter = true;
-      } else {
-        weakest.teamId = null;
-        weakest.isStarter = false;
-      }
-      target.teamId = buyer.id;
-      target.isStarter = true;
-      target.contractYears = 2;
-      if (aiMoves.length < 7) {
-        aiMoves.push(`${buyer.tag}, ${oldClub ? oldClub.tag + ' takımından' : 'serbest piyasadan'} ${target.name} (${target.role}, ${target.ovr}) transfer etti`);
-      }
-    }
+  // Head Scout bonus boosts Challenger pool potential
+  const uTeam = state.teams.find(t => t.id === state.userTeamId);
+  ensureTeamExtras(uTeam);
+  const hsBonus = (uTeam?.staff?.headScout || 1) - 1;
+  if (hsBonus > 0) {
+    state.challengerPool.forEach(c => { c.pot = Math.min(98, c.pot + hsBonus * 2); });
   }
 
-  // 2. Ensure every AI team has 5 valid starters
+  const aiMoves = runLivingAITransfers(state, 9);
+
   for (const team of state.teams) {
     if (team.id === state.userTeamId) continue;
     for (const role of ROLES) {
@@ -1213,22 +1401,59 @@ function runOffSeasonProgression(state) {
     }
   }
 
+  if (expiringUserNames.length) {
+    addInboxMessage(state, {
+      title: `Sözleşmesi Biten Oyuncuların Var (${expiringUserNames.length})!`,
+      sender: 'Sportif Direktör',
+      category: 'BOARD',
+      body: `Yeni sezon başlamadan sözleşme yenilemezsen şu oyuncular bedelsiz (Free Agent) ayrılacak: ${expiringUserNames.join(', ')}. Kadro ekranından pazarlık masasına oturabilirsin.`,
+    });
+  }
+
   if (aiMoves.length || retiredNames.length) {
     addInboxMessage(state, {
       title: `${state.season} Sezon Arası Transfer & Emeklilik Özeti`,
       sender: 'Esports Insider',
       category: 'TRANSFER',
-      body: `${aiMoves.length ? 'Öne Çıkan AI Transferleri: ' + aiMoves.join(' • ') + '.' : ''}${retiredNames.length ? ' Emekli Olan Efsaneler: ' + retiredNames.slice(0, 6).join(', ') + '.' : ''}`,
+      body: `${aiMoves.length ? 'Öne Çıkan AI Transferleri: ' + aiMoves.slice(0, 7).join(' • ') + '.' : ''}${retiredNames.length ? ' Emekli Olan Efsaneler: ' + retiredNames.slice(0, 6).join(', ') + '.' : ''}`,
     });
   }
 }
 
 export function startNewSeason(state) {
+  // Any user player whose contract expired and wasn't renewed leaves as Free Agent (auto-filled by academy if needed!)
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const departed = [];
+  for (const p of state.players) {
+    if (p.teamId === state.userTeamId && p.contractYears <= 0) {
+      p.teamId = null;
+      p.isStarter = false;
+      departed.push(p.name);
+    }
+  }
+  if (departed.length) {
+    for (const role of ROLES) {
+      const has = state.players.some(p => p.teamId === state.userTeamId && p.role === role);
+      if (!has) {
+        const regen = generateRegenPlayer(role, userTeam.region, userTeam.facilities.youthAcademy, userTeam.id);
+        regen.isStarter = true;
+        state.players.push(regen);
+      }
+    }
+    addInboxMessage(state, {
+      title: `Bedelsiz Ayrılan Oyuncular (Free Agency)`,
+      sender: 'Sportif Direktör',
+      category: 'TRANSFER',
+      body: `Sözleşmesi yenilenmeyen ${departed.join(', ')} serbest oyuncu oldu. Boşalan roller akademi oyuncularıyla dolduruldu.`,
+    });
+  }
+
   state.season++;
   setCalendarToMonday(state, 1, 10); // Early January of New Year!
   state.phase = 'SPRING_SPLIT';
   state.week = 1;
   state.patchIndex = 0;
+  state.scrimIntel = {};
   state.academyPromotedThisSplit = false;
   const { schedules, standings } = createRegionalSchedules(state.teams);
   state.schedules = schedules;
@@ -1251,7 +1476,8 @@ export function scoutChallengerProspect(state, prospectId) {
   const team = state.teams.find(t => t.id === state.userTeamId);
   if (!p) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   if (p.scouted) return { ok: false, reason: 'Bu oyuncu zaten scoutlandı.' };
-  const cost = team.facilities.analystDesk >= 3 ? 0 : 15000;
+  ensureTeamExtras(team);
+  const cost = (team.facilities.analystDesk >= 3 || team.staff.headScout >= 3) ? 0 : (team.staff.headScout >= 2 ? 7500 : 15000);
   if (team.budget < cost) return { ok: false, reason: `Scout raporu için ${formatMoney(cost)} gerekli.` };
   team.budget -= cost;
   p.scouted = true;
@@ -1437,10 +1663,83 @@ export function renewContract(state, playerId, years = 2) {
   const team = state.teams.find(t => t.id === state.userTeamId);
   if (!p || p.teamId !== team?.id) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   const newSalary = Math.round((Math.max(p.salary, calcWeeklySalary(p.ovr, team.prestige)) * 1.08) / 500) * 500;
-  p.salary = newSalary;
-  p.contractYears = years;
-  p.morale = Math.min(100, p.morale + 6);
-  return { ok: true, reason: `${p.name} ile ${years} yıllık yeni sözleşme imzalandı (${formatMoney(newSalary)}/hf).` };
+  return negotiateContractRenewal(state, playerId, newSalary, years, p.isStarter ? 'STAR' : 'ROTATION');
+}
+
+export function getRenewalDemand(state, playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return null;
+  const base = Math.max(p.salary, calcWeeklySalary(p.ovr, team.prestige));
+  const moraleMult = p.morale < 65 ? 1.18 : p.morale >= 85 ? 1.03 : 1.08;
+  const minSalary = Math.round((base * moraleMult) / 500) * 500;
+  const wantsStar = p.ovr >= 80 || p.trait === 'Ego' || p.isStarter;
+  return { minSalary, wantsStar };
+}
+
+export function negotiateContractRenewal(state, playerId, offeredSalary, years = 2, rolePromise = 'STAR') {
+  const p = state.players.find(x => x.id === playerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || p.teamId !== team?.id) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  const demand = getRenewalDemand(state, playerId);
+  let reqSalary = demand.minSalary;
+  if (demand.wantsStar && rolePromise !== 'STAR') {
+    if (p.ovr >= 85 || p.trait === 'Ego') {
+      return { ok: false, reason: `${p.name} ilk 5 (Yıldız Oyuncu) sözü olmadan yeni sözleşme imzalamayı reddetti!` };
+    }
+    reqSalary = Math.round((reqSalary * 1.15) / 500) * 500;
+  }
+  if (offeredSalary < reqSalary) {
+    return { ok: false, reason: `${p.name} maaş teklifini düşük buldu (En az ${formatMoney(reqSalary)}/hf talep ediyor).` };
+  }
+  p.salary = offeredSalary;
+  p.contractYears = Number(years) || 2;
+  p.rolePromise = rolePromise;
+  p.morale = Math.min(100, p.morale + 8);
+  return { ok: true, reason: `${p.name} ile ${p.contractYears} yıllık yeni sözleşme imzalandı (${formatMoney(offeredSalary)}/hf, Rol: ${rolePromise === 'STAR' ? 'İlk 5 Yıldız' : 'Rotasyon'}).` };
+}
+
+export function setPlayerIndividualTraining(state, playerId, indFocus, learningChampId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p || p.teamId !== state.userTeamId) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  p.indFocus = indFocus || null;
+  if (learningChampId && learningChampId !== p.learningChampId) {
+    if (p.sigChamps.includes(learningChampId)) {
+      p.learningChampId = null;
+      p.learningProgress = 0;
+    } else {
+      p.learningChampId = learningChampId;
+      p.learningProgress = 0;
+    }
+  } else if (!learningChampId) {
+    p.learningChampId = null;
+    p.learningProgress = 0;
+  }
+  return { ok: true, reason: `${p.name} bireysel antrenman planı güncellendi.` };
+}
+
+export function applyPostMatchTeamTalk(state, talkType) {
+  const roster = getTeamRoster(state, state.userTeamId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!team) return '';
+  if (talkType === 'praise') {
+    roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); });
+    team.synergy = Math.min(100, team.synergy + 1);
+    return 'Takımı tebrik ettin: Moral +5, Sinerji +1.';
+  }
+  if (talkType === 'criticize') {
+    roster.forEach(p => {
+      p.form = Math.min(99, p.form + 3);
+      p.morale = Math.max(30, p.morale + (p.trait === 'Tilt' ? -6 : -2));
+    });
+    return 'Sert eleştiri yaptın: Form +3 (disiplin artışı), bazı oyuncularda hafif moral düşüşü.';
+  }
+  // calm / reset
+  roster.forEach(p => {
+    p.morale = Math.min(100, p.morale + 2);
+    p.fatigue = Math.max(0, p.fatigue - 4);
+  });
+  return 'Takımı sakinleştirdin: Yorgunluk -4, Moral +2.';
 }
 
 export function getBoardConfidence(state) {
@@ -1642,22 +1941,69 @@ export function promoteAcademyPlayer(state, role) {
 
 export function playWeeklyScrim(state, opponentTeamId) {
   if (state.scrimDoneThisWeek) return { ok: false, reason: 'Bu hafta zaten hazırlık maçı (Scrim) yaptın.' };
+  ensureCalendarState(state);
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const oppTeam = state.teams.find(t => t.id === opponentTeamId);
-  const { match: m } = quickSimulateGame(userTeam, oppTeam, getTeamRoster(state, userTeam.id), getTeamRoster(state, oppTeam.id), getCurrentPatch(state));
+  const userRoster = getTeamRoster(state, userTeam.id);
+  const oppRoster = getTeamRoster(state, oppTeam.id);
+  const { match: m } = quickSimulateGame(userTeam, oppTeam, userRoster, oppRoster, getCurrentPatch(state));
   state.scrimDoneThisWeek = true;
 
   const won = m.winner === 'blue';
   userTeam.synergy = Math.min(100, userTeam.synergy + (won ? 4 : 2));
-  for (const p of getTeamRoster(state, userTeam.id)) {
-    p.form = Math.min(99, Math.max(45, p.form + (won ? 3 : 1)));
-    p.fatigue = Math.min(100, p.fatigue + 7);
+  ensureTeamExtras(userTeam);
+  // Scrim builds Duo Synergy & Champion Learning progress too!
+  const jgl = userRoster.find(p => p.role === 'JGL');
+  const mid = userRoster.find(p => p.role === 'MID');
+  const bot = userRoster.find(p => p.role === 'BOT');
+  const sup = userRoster.find(p => p.role === 'SUP');
+  if (jgl && mid) {
+    const k = getDuoPairKey(jgl.id, mid.id);
+    userTeam.duoSynergy[k] = Math.min(30, (userTeam.duoSynergy[k] || 0) + 1.5);
   }
+  if (bot && sup) {
+    const k = getDuoPairKey(bot.id, sup.id);
+    userTeam.duoSynergy[k] = Math.min(30, (userTeam.duoSynergy[k] || 0) + 1.5);
+  }
+
+  for (const p of userRoster) {
+    p.form = Math.min(99, Math.max(45, p.form + (won ? 3 : 1)));
+    p.fatigue = Math.min(100, p.fatigue + Math.max(3, 7 - ((userTeam.staff?.perfCoach || 1) - 1) * 1.5));
+    if (p.learningChampId) p.learningProgress = Math.min(99, (p.learningProgress || 0) + 12);
+  }
+
+  // Unlock Scrim Intel against this opponent!
+  const planMap = { aggressive: 'Erken Baskı', balanced: 'Dengeli', scaling: 'Scaling', split: 'Split-Push' };
+  const topSigs = oppRoster.slice(0, 3).map(p => `${p.name}: ${CHAMPION_MAP[p.sigChamps[0]]?.name || p.sigChamps[0]}`).join(', ');
+  state.scrimIntel[oppTeam.id] = {
+    season: state.season,
+    week: state.week,
+    oppTag: oppTeam.tag,
+    oppName: oppTeam.name,
+    gameplan: planMap[oppTeam.tactics?.gameplan] || 'Dengeli',
+    laneFocus: oppTeam.tactics?.laneFocus || 'MID',
+    topSigs,
+  };
+
   return {
     ok: true,
     won,
-    text: `Scrim Sonucu: ${userTeam.tag} ${m.blueKills} - ${m.redKills} ${oppTeam.tag} (${m.minute} dk) — ${won ? 'GALİBİYET! (+4 Sinerji, +3 Form)' : 'MAĞLUBİYET (+2 Sinerji, +1 Form)'}`,
+    text: `Scrim Sonucu: ${userTeam.tag} ${m.blueKills} - ${m.redKills} ${oppTeam.tag} (${m.minute} dk) — ${won ? 'GALİBİYET! (+4 Sinerji, +3 Form)' : 'MAĞLUBİYET (+2 Sinerji, +1 Form)'} • ${oppTeam.tag} Taktik İstihbaratı Açıldı!`,
   };
+}
+
+export function upgradeStaff(state, staffKey) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  ensureTeamExtras(team);
+  const info = STAFF_INFO[staffKey];
+  if (!info) return { ok: false, reason: 'Geçersiz personel.' };
+  const lvl = team.staff[staffKey] || 1;
+  if (lvl >= 3) return { ok: false, reason: 'Bu teknik ekip pozisyonu zaten maksimum seviyede (Sv. 3).' };
+  const cost = info.costs[lvl];
+  if (team.budget < cost) return { ok: false, reason: `Yetersiz bütçe (${formatMoney(cost)} gerekli).` };
+  team.budget -= cost;
+  team.staff[staffKey] = lvl + 1;
+  return { ok: true, reason: `${info.name} Seviye ${lvl + 1} oldu! (Haftalık maaş: ${formatMoney(info.wages[lvl + 1])})` };
 }
 
 export function upgradeFacility(state, facilityKey) {

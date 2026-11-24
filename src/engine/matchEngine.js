@@ -38,8 +38,9 @@ export function getEffectivePlayerRating(player, champId, oppChampId, patch, tea
   const moraleMod = (player.morale - 75) * 0.08;
   const fatiguePen = Math.max(0, player.fatigue - 55) * 0.16;
   const synMod = (team.synergy - 70) * 0.10;
-  const facilityMod = (team.facilities.analystDesk - 1) * 0.5;
+  const facilityMod = (team.facilities.analystDesk - 1) * 0.5 + ((team.staff?.draftAnalyst || 1) - 1) * 0.5;
   const importPen = (player.importWeeksLeft || 0) > 0 ? -2.4 : 0;
+  const injuryPen = (player.injuredWeeks || 0) > 0 ? -4.5 : 0;
 
   let traitMod = 0;
   if (player.trait === 'Clutch' && ctx.highStakes) traitMod += 2.6;
@@ -49,10 +50,29 @@ export function getEffectivePlayerRating(player, champId, oppChampId, patch, tea
     else if ((ctx.goldDiff || 0) > 3500) traitMod += 1.4;
   }
 
-  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + synMod + facilityMod + importPen + traitMod;
+  // Pre-match Team Talk modifier
+  let talkMod = 0;
+  if (ctx.teamTalk === 'pressure') {
+    if (player.trait === 'Clutch' || player.trait === 'Leader') talkMod += 2.2;
+    else if (player.trait === 'Tilt') talkMod -= 1.6;
+    else talkMod += 0.5;
+  } else if (ctx.teamTalk === 'calm') {
+    if (player.trait === 'Tilt') talkMod += 1.8;
+    else talkMod += 0.4;
+  } else if (ctx.teamTalk === 'praise') {
+    talkMod += 1.1;
+  } else if (ctx.teamTalk === 'fire') {
+    talkMod += ctx.highStakes ? 2.4 : 0.9;
+  }
+
+  // Duo Synergy (JGL+MID & BOT+SUP bond)
+  const duoMod = ctx.duoBonus || 0;
+  const intelMod = ctx.hasScrimIntel ? 1.2 : 0;
+
+  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + synMod + facilityMod + importPen + injuryPen + traitMod + talkMod + duoMod + intelMod;
 }
 
-export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, bluePicks, redPicks, patch, userSide = null, highStakes = false) {
+export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, bluePicks, redPicks, patch, userSide = null, highStakes = false, options = {}) {
   const makePlayers = (roster, picks, oppPicks, side) =>
     ROLES.map(role => {
       const p = roster.find(x => x.role === role) || roster[0];
@@ -102,6 +122,8 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     winner: null,
     userSide,
     highStakes,
+    teamTalk: options.teamTalk || 'none',
+    hasScrimIntel: !!options.hasScrimIntel,
     patch,
     blueTeam,
     redTeam,
@@ -167,11 +189,27 @@ function getMatchStrengthPair(state) {
     const tactics = side === 'blue' ? state.blueTactics : state.redTactics;
     const myGoldDiff = side === 'blue' ? goldDiff : -goldDiff;
 
+    const duoMap = team.duoSynergy || {};
+    const pairKey = (a, b) => [a, b].sort().join('|');
+    const jgl = players.find(x => x.role === 'JGL');
+    const mid = players.find(x => x.role === 'MID');
+    const bot = players.find(x => x.role === 'BOT');
+    const sup = players.find(x => x.role === 'SUP');
+    const jmVal = (jgl && mid) ? (duoMap[pairKey(jgl.playerId, mid.playerId)] || 0) : 0;
+    const bsVal = (bot && sup) ? (duoMap[pairKey(bot.playerId, sup.playerId)] || 0) : 0;
+    const isUser = state.userSide === side;
+
     let avg = 0;
     for (const pl of players) {
+      let duoBonus = 0;
+      if (pl.role === 'JGL' || pl.role === 'MID') duoBonus = Math.min(2.2, jmVal * 0.09);
+      if (pl.role === 'BOT' || pl.role === 'SUP') duoBonus = Math.min(2.2, bsVal * 0.09);
       avg += getEffectivePlayerRating(pl.playerRef, pl.champId, pl.oppChampId, state.patch, team, {
         highStakes: state.highStakes,
         goldDiff: myGoldDiff,
+        teamTalk: isUser ? state.teamTalk : 'none',
+        hasScrimIntel: isUser && state.hasScrimIntel,
+        duoBonus,
       });
     }
     avg /= 5;
@@ -722,10 +760,22 @@ export function applyMatchOutcomeToPlayers(matchState) {
       const moraleDelta = won ? 4 : (hasLeader ? -2 : -4);
       p.morale = clamp(p.morale + moraleDelta, 30, 100);
       p.form = clamp(p.form + (mp.rating >= 7.8 ? 3 : mp.rating <= 5.6 ? -3 : 0), 45, 99);
-      const restReduction = (team.facilities.gamingHouse - 1) * 1.5;
-      p.fatigue = Math.min(100, Math.round(p.fatigue + Math.max(4, 9 - restReduction)));
+      const perfReduction = ((team.staff?.perfCoach || 1) - 1) * 1.6;
+      const calmReduction = (matchState.teamTalk === 'calm' && matchState.userSide === (team.id === matchState.blueTeam.id ? 'blue' : 'red')) ? 2 : 0;
+      const restReduction = (team.facilities.gamingHouse - 1) * 1.5 + perfReduction + calmReduction;
+      p.fatigue = Math.min(100, Math.round(p.fatigue + Math.max(3, 9 - restReduction)));
     }
     team.synergy = clamp(team.synergy + (won ? 1.5 : (hasLeader ? 0 : -0.5)), 40, 100);
+    // Grow JGL+MID and BOT+SUP Duo Synergy!
+    if (!team.duoSynergy) team.duoSynergy = {};
+    const pk = (a, b) => [a, b].sort().join('|');
+    const jgl = players.find(x => x.role === 'JGL');
+    const mid = players.find(x => x.role === 'MID');
+    const bot = players.find(x => x.role === 'BOT');
+    const sup = players.find(x => x.role === 'SUP');
+    const delta = won ? 1.5 : 0.8;
+    if (jgl && mid) { const k = pk(jgl.playerId, mid.playerId); team.duoSynergy[k] = Math.min(30, (team.duoSynergy[k] || 0) + delta); }
+    if (bot && sup) { const k = pk(bot.playerId, sup.playerId); team.duoSynergy[k] = Math.min(30, (team.duoSynergy[k] || 0) + delta); }
   };
 
   applySide(matchState.bluePlayers, matchState.winner === 'blue', matchState.blueTeam);
