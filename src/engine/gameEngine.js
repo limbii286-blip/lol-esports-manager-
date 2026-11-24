@@ -44,11 +44,104 @@ export const TEAM_TALK_OPTIONS = [
   { id: 'fire', name: 'Hırslandır ("Onlara gününü gösterin!")', desc: 'Derbi, Playoff ve Uluslararası maçlarda ekstra +2.4 ateşleme!' },
 ];
 
+export const TACTIC_PRESETS = [
+  {
+    id: 'snowball',
+    name: 'Erken Kartopu (LPL Aggro)',
+    desc: 'Erken baskı, Top Carry, Roaming Support ve agresif dive.',
+    tactics: { gameplan: 'aggressive', laneFocus: 'TOP', objective: 'baron', topStyle: 'carry', supStyle: 'roam', adcStyle: 'aggressive', aheadPlan: 'dive', behindPlan: 'pick' },
+  },
+  {
+    id: 'protect_adc',
+    name: 'Hypercarry Koruma (Protect ADC)',
+    desc: 'Geç oyun scaling, Weakside Top, Peel Support ve güvenli ADC.',
+    tactics: { gameplan: 'scaling', laneFocus: 'BOT', objective: 'dragon', topStyle: 'weakside', supStyle: 'peel', adcStyle: 'safe', aheadPlan: 'choke', behindPlan: 'scale' },
+  },
+  {
+    id: 'lck_macro',
+    name: 'LCK Makro Boğma (1-3-1)',
+    desc: 'Dengeli tempo, Mid/Ejder kontrolü ve harita boğma.',
+    tactics: { gameplan: 'balanced', laneFocus: 'MID', objective: 'dragon', topStyle: 'balanced', supStyle: 'balanced', adcStyle: 'balanced', aheadPlan: 'choke', behindPlan: 'crossmap' },
+  },
+];
+
+export const MATCH_PREP_OPTIONS = [
+  { id: 'none', name: 'Standart Hazırlık', desc: 'Dengeli maç hazırlığı.' },
+  { id: 'laning', name: 'Koridor Hakimiyeti (0-15 dk)', desc: 'İlk 15 dakikada +1.4 koridor ve baskın üstünlüğü.' },
+  { id: 'objectives', name: 'Objektif & Ejder Kontrolü', desc: 'Ejder, Vadi Alameti ve Baron savaşlarında +1.4 üstünlük.' },
+  { id: 'teamfight', name: '5v5 Takım Savaşı (15+ dk)', desc: 'Orta ve geç oyun takım savaşlarında +1.4 güç.' },
+  { id: 'comeback', name: 'Savunma & Comeback Planı', desc: 'Gerideyken (-1.5k+) +1.8 savunma ve pusu direnci.' },
+];
+
 export function ensureTeamExtras(team) {
   if (!team) return;
   if (!team.staff) team.staff = { draftAnalyst: 1, perfCoach: 1, headScout: 1 };
   if (!team.trainingIntensity) team.trainingIntensity = 'normal';
   if (!team.duoSynergy) team.duoSynergy = {};
+  if (!team.matchPrep) team.matchPrep = 'none';
+}
+
+export function getSquadDynamics(state) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!team) return null;
+  const all = state.players.filter(p => p.teamId === team.id);
+  const starters = getTeamRoster(state, team.id);
+  const avgMorale = all.length ? Math.round(all.reduce((s, p) => s + p.morale, 0) / all.length) : 75;
+  const atmosphere = Math.max(25, Math.min(100, Math.round(avgMorale * 0.65 + team.synergy * 0.35)));
+  const conf = getBoardConfidence(state);
+  const managerSupport = Math.max(25, Math.min(100, Math.round(avgMorale * 0.55 + conf.score * 0.45)));
+  const captain = [...starters].sort((a, b) => ((b.trait === 'Leader' ? 20 : 0) + b.ovr + b.age * 0.5) - ((a.trait === 'Leader' ? 20 : 0) + a.ovr + a.age * 0.5))[0];
+  const unhappyCount = all.filter(p => p.morale < 62).length;
+  return { atmosphere, managerSupport, captain, unhappyCount };
+}
+
+export function getBoardObjectives(state) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const st = getSortedStandings(state, team.region);
+  const rank = st.findIndex(r => r.teamId === team.id) + 1;
+  const targetRank = team.prestige >= 88 ? 2 : team.prestige >= 80 ? 3 : team.prestige >= 74 ? 4 : 5;
+  const intlGoal = team.prestige >= 86 ? 'Worlds Çeyrek Final / Kupa' : team.prestige >= 78 ? 'Playoff Finali / Uluslararası Bilet' : 'Playoff (İlk 4) Mücadelesi';
+  const wonTrophy = team.trophies.some(t => t.includes(String(state.season)));
+  return [
+    {
+      title: `${team.region} Lig Sıralaması: İlk ${targetRank}`,
+      status: rank <= targetRank ? 'ON_TRACK' : rank <= targetRank + 1 ? 'WARN' : 'RISK',
+      detail: `Mevcut Sıra: #${rank}`,
+    },
+    {
+      title: `Sezon Hedefi: ${intlGoal}`,
+      status: wonTrophy ? 'DONE' : rank <= 4 ? 'ON_TRACK' : 'WARN',
+      detail: wonTrophy ? 'Bu sezon kupa kazanıldı!' : 'Playoff & Uluslararası yarış devam ediyor',
+    },
+    {
+      title: 'Finansal Disiplin: Bütçeyi Artıda Tut',
+      status: team.budget >= 250000 ? 'ON_TRACK' : team.budget >= 0 ? 'WARN' : 'RISK',
+      detail: `Mevcut Bütçe: ${formatMoney(team.budget)}`,
+    },
+  ];
+}
+
+export function talkToPlayer1on1(state, playerId, action) {
+  const p = state.players.find(x => x.id === playerId && x.teamId === state.userTeamId);
+  if (!p) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  const key = `${state.season}_${state.phase}_${state.week}`;
+  if (p.lastTalkWeek === key) {
+    return { ok: false, reason: `${p.name} ile bu hafta zaten birebir görüştün.` };
+  }
+  p.lastTalkWeek = key;
+  if (action === 'praise') {
+    p.morale = Math.min(100, p.morale + 6);
+    return { ok: true, reason: `${p.name} övgünden çok memnun oldu (Moral +6).` };
+  }
+  if (action === 'push') {
+    p.form = Math.min(99, p.form + 4);
+    p.morale = Math.max(30, p.morale - (p.trait === 'Grinder' ? 0 : 3));
+    return { ok: true, reason: `${p.name} antrenman temposunu artırdı (Form +4${p.trait === 'Grinder' ? ', Grinder olduğu için moral kaybetmedi' : ', Moral -3'}).` };
+  }
+  // rest/calm
+  p.fatigue = Math.max(0, p.fatigue - 8);
+  p.morale = Math.min(100, p.morale + 3);
+  return { ok: true, reason: `${p.name} üzerindeki baskı azaldı (Yorgunluk -8, Moral +3).` };
 }
 
 export function getDuoPairKey(idA, idB) {
@@ -218,6 +311,7 @@ export function ensureCalendarState(state) {
   if (!state.incomingOffers) state.incomingOffers = [];
   if (!state.recentEventIds) state.recentEventIds = [];
   if (!state.recentNewsIds) state.recentNewsIds = [];
+  if (!state.financeLog) state.financeLog = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
 }
@@ -959,7 +1053,18 @@ function runWeeklyClubTick(state) {
     const streamerBonus = roster.filter(p => p.trait === 'Streamer').length * 18000;
     const fanIncome = team.fanbase * 950 + streamerBonus;
     const sponsorIncome = team.sponsor ? team.sponsor.weekly : 45000;
-    team.budget += (fanIncome + sponsorIncome - wages);
+    const netCash = fanIncome + sponsorIncome - wages;
+    team.budget += netCash;
+    if (team.id === state.userTeamId) {
+      state.financeLog.unshift({
+        label: `S${state.season} ${getPhaseLabel(state.phase).split(' ')[0]} H${state.week}`,
+        income: fanIncome + sponsorIncome,
+        expenses: wages,
+        net: netCash,
+        balance: team.budget,
+      });
+      if (state.financeLog.length > 16) state.financeLog.pop();
+    }
     if (team.id !== state.userTeamId && team.budget < 250000) team.budget = 250000;
 
     const focus = team.trainingFocus || 'balanced';

@@ -246,7 +246,15 @@ function getMatchStrengthPair(state) {
     const elderMod = state.elderBuffSide === side && m <= state.elderBuffUntil ? 6.5 : 0;
     const soulMod = state.soulSide === side ? 3.2 : 0;
 
-    return avg + phaseScore * 0.95 + tacticMod + baronMod + elderMod + soulMod;
+    // Weekly Match Preparation Focus bonus!
+    let prepMod = 0;
+    const prep = team.matchPrep || 'none';
+    if (prep === 'laning' && m < 15) prepMod = 1.4;
+    else if (prep === 'objectives' && (m === 6 || m === 11 || m === 15 || m >= state.dragonTimer - 1 || m >= state.baronTimer - 1)) prepMod = 1.4;
+    else if (prep === 'teamfight' && m >= 15) prepMod = 1.4;
+    else if (prep === 'comeback' && myGoldDiff < -1500) prepMod = 1.8;
+
+    return avg + phaseScore * 0.95 + tacticMod + baronMod + elderMod + soulMod + prepMod;
   };
 
   const bBase = sideBase('blue');

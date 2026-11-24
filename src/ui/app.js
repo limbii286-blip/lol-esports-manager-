@@ -2,8 +2,9 @@
 import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier } from '../data/champions.js';
 import { ROLES, REGIONS, TRAITS, getRivalryName, createInitialDatabase } from '../data/teamsAndPlayers.js';
 import {
-  SPONSORS, FACILITY_INFO, STAFF_INFO, TRAINING_MODES, TRAINING_INTENSITIES,
+  SPONSORS, FACILITY_INFO, STAFF_INFO, TRAINING_MODES, TRAINING_INTENSITIES, TACTIC_PRESETS, MATCH_PREP_OPTIONS,
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR, getTeamDuoSynergy, ensureTeamExtras,
+  getSquadDynamics, getBoardObjectives, talkToPlayer1on1,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
   getRenewalDemand, negotiateContractRenewal, setPlayerIndividualTraining, upgradeStaff, getLeagueStatLeaders,
@@ -35,6 +36,7 @@ let ui = {
   negotiatingPlayerId: null,
   renewingPlayerId: null,
   trainingPlayerId: null,
+  profilePlayerId: null,
   selectedInboxId: null,
   saveModalOpen: false,
   saveNameDraft: '',
@@ -450,6 +452,19 @@ function renderRoster() {
       </div>
     </div>
 
+    ${(() => {
+      const dyn = getSquadDynamics(state);
+      if (!dyn) return '';
+      return `
+        <div class="grid-4" style="margin-bottom:14px;">
+          <div class="card kpi-card"><div class="kpi-label">Soyunma Odası Atmosferi</div><div class="kpi-val" style="color:${dyn.atmosphere >= 75 ? 'var(--green)' : dyn.atmosphere >= 55 ? 'var(--amber)' : 'var(--red)'};">%${dyn.atmosphere}</div></div>
+          <div class="card kpi-card"><div class="kpi-label">Koç Desteği</div><div class="kpi-val" style="color:${dyn.managerSupport >= 75 ? 'var(--blue)' : 'var(--amber)'};">%${dyn.managerSupport}</div></div>
+          <div class="card kpi-card"><div class="kpi-label">Takım Lideri / Kaptan</div><div class="kpi-val" style="font-size:15px;color:var(--gold-bright);">${dyn.captain ? `${dyn.captain.name} (${dyn.captain.role})` : '-'}</div></div>
+          <div class="card kpi-card"><div class="kpi-label">Kadro Huzuru</div><div class="kpi-val" style="font-size:15px;color:${dyn.unhappyCount === 0 ? 'var(--green)' : 'var(--red)'};">${dyn.unhappyCount === 0 ? 'Tam Uyum' : `${dyn.unhappyCount} Mutsuz Oyuncu`}</div></div>
+        </div>
+      `;
+    })()}
+
     <div class="card" style="margin-bottom:16px;">
       <div class="card-header">
         <span class="card-title">${icon('users', 14)} Kadro, Kişilikler & Özellikler (${myPlayers.length} Oyuncu)</span>
@@ -472,7 +487,7 @@ function renderRoster() {
                   <td>${p.isStarter ? '<span class="badge tier-S">İLK 5</span>' : '<span class="badge tier-B">YEDEK</span>'}</td>
                   <td><span class="badge role-${p.role}">${p.role}</span></td>
                   <td>
-                    <strong>${p.name}</strong> <span style="font-size:11px;color:var(--text-muted);">(${p.nat})</span>
+                    <strong data-open-profile="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(200,155,60,0.45);text-underline-offset:2px;" title="Oyuncu Profilini & Radar Grafiğini Aç">${p.name}</strong> <span style="font-size:11px;color:var(--text-muted);">(${p.nat})</span>
                     ${tr ? `<span class="badge tier-A" title="${tr.desc}" style="margin-left:4px;">${tr.label}</span>` : ''}
                     ${p.importWeeksLeft > 0 ? `<span class="badge tier-C" title="Dil bariyeri adaptasyon süresi" style="margin-left:4px;">${icon('globe', 10)} Uyum ${p.importWeeksLeft}h</span>` : ''}
                     ${(p.injuredWeeks || 0) > 0 ? `<span class="badge tier-C" title="Aşırı yorgunluk/bilek zorlanması (-4.5 maç puanı)" style="margin-left:4px;background:var(--red-soft);color:#fda4af;">Sakat ${p.injuredWeeks}h</span>` : ''}
@@ -525,7 +540,15 @@ function renderRoster() {
       </div>
 
       <div class="card">
-        <div class="card-header"><span class="card-title">${icon('sliders', 14)} Varsayılan Takım & Rol Taktikleri</span></div>
+        <div class="card-header"><span class="card-title">${icon('sliders', 14)} Taktik Şablonları, Maç Hazırlığı & Rol Emirleri</span></div>
+        <div style="font-size:11px;color:var(--gold-bright);font-weight:700;margin-bottom:4px;">Pro Taktik Şablonları (Tek Tık)</div>
+        <div class="tactic-btn-group" style="margin-bottom:9px;">
+          ${TACTIC_PRESETS.map(pr => `<button class="tactic-btn" data-apply-preset="${pr.id}" title="${pr.desc}">${pr.name.split(' (')[0]}</button>`).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--blue);font-weight:700;margin-bottom:4px;">Haftalık Maç Hazırlığı (+1.4 Maç İçi Bonus)</div>
+        <div class="tactic-btn-group" style="margin-bottom:9px;">
+          ${MATCH_PREP_OPTIONS.map(mp => `<button class="tactic-btn ${(team.matchPrep || 'none') === mp.id ? 'active' : ''}" data-set-prep="${mp.id}" title="${mp.desc}">${mp.name.split(' (')[0]}</button>`).join('')}
+        </div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Oyun Planı</div>
         <div class="tactic-btn-group" style="margin-bottom:9px;">
           ${[['aggressive', 'Erken Baskı'], ['balanced', 'Dengeli'], ['scaling', 'Scaling'], ['split', 'Split']].map(([k, lbl]) =>
@@ -788,7 +811,7 @@ function renderTransfers() {
               return `
                 <tr>
                   <td><span class="badge role-${p.role}">${p.role}</span></td>
-                  <td><strong>${p.name}</strong> <span style="font-size:11px;color:var(--text-muted);">(${p.nat})</span></td>
+                  <td><strong data-open-profile="${p.id}" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(56,189,248,0.45);text-underline-offset:2px;" title="Oyuncu Profilini Gör">${p.name}</strong> <span style="font-size:11px;color:var(--text-muted);">(${p.nat})</span></td>
                   <td>${club ? `<span class="team-tag" style="background:${club.color};color:${club.color2};">${club.tag}</span>` : '<span class="badge tier-A">SERBEST</span>'}</td>
                   <td>${p.age}</td>
                   <td><span class="ovr-pill ${ovrClass(p.ovr)}">${p.ovr}</span> <span style="font-size:11px;color:var(--text-dim);">/${p.pot}</span></td>
@@ -1078,13 +1101,52 @@ function renderClub() {
       <div class="card kpi-card"><div class="kpi-label">Haftalık Gelir (Sponsor + Taraftar + Yayın)</div><div class="kpi-val" style="color:var(--blue);">+${formatMoney(spRev + fanRev)}</div></div>
       <div class="card kpi-card"><div class="kpi-label">Haftalık Maaş Gideri</div><div class="kpi-val" style="color:var(--red);">-${formatMoney(wages)}</div></div>
     </div>
-    <div class="card" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-weight:800;font-size:13.5px;">Yönetim Kurulu Güveni: <span style="color:var(--gold-bright);">${getBoardConfidence(state).grade} (%${getBoardConfidence(state).score})</span></div>
-        <div style="font-size:12px;color:var(--text-muted);">Güven puanın %45'in altına düşerse önce ültimatom alırsın, toparlayamazsan görevine son verilir.</div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header" style="margin-bottom:10px;">
+        <span class="card-title">${icon('trophy', 14)} Yönetim Kurulu Vizyonu & Sezon Hedefleri</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:800;font-size:13px;">Güven: <span style="color:var(--gold-bright);">${getBoardConfidence(state).grade} (%${getBoardConfidence(state).score})</span></span>
+          <button class="btn-danger btn-sm" id="btnResignClub">İstifa Et & Kulüp Değiştir</button>
+        </div>
       </div>
-      <button class="btn-danger btn-sm" id="btnResignClub">İstifa Et & Kulüp Değiştir</button>
+      <div class="grid-3" style="gap:10px;">
+        ${getBoardObjectives(state).map(obj => {
+          const bCls = obj.status === 'DONE' ? 'tier-S' : obj.status === 'ON_TRACK' ? 'tier-A' : obj.status === 'WARN' ? 'tier-B' : 'tier-C';
+          const bLbl = obj.status === 'DONE' ? 'TAMAMLANDI' : obj.status === 'ON_TRACK' ? 'YOLUNDA' : obj.status === 'WARN' ? 'DİKKAT' : 'RİSKLİ';
+          return `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;">
+                <strong style="font-size:12px;">${obj.title}</strong>
+                <span class="badge ${bCls}">${bLbl}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text-muted);">${obj.detail}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
     </div>
+
+    ${(state.financeLog || []).length ? `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><span class="card-title">${icon('briefcase', 14)} Haftalık Finans Defteri (Son ${Math.min(8, state.financeLog.length)} Hafta)</span></div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Dönem</th><th>Gelir (Sponsor+Taraftar)</th><th>Maaş Gideri (Kadro+Staff)</th><th>Net Akış</th><th>Kalan Bütçe</th></tr></thead>
+            <tbody>
+              ${state.financeLog.slice(0, 8).map(f => `
+                <tr>
+                  <td><b>${f.label}</b></td>
+                  <td class="num" style="color:var(--green);">+${formatMoney(f.income)}</td>
+                  <td class="num" style="color:var(--red);">-${formatMoney(f.expenses)}</td>
+                  <td class="num" style="color:${f.net >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${f.net >= 0 ? '+' : ''}${formatMoney(f.net)}</td>
+                  <td class="num"><b>${formatMoney(f.balance)}</b></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
     <div class="grid-2">
       <div class="card">
         <div class="card-header"><span class="card-title">${icon('shield', 14)} Kulüp Tesisleri</span></div>
@@ -1282,6 +1344,111 @@ function renderPlayerPlanModal() {
           <button class="btn-ghost" id="btnCancelPlan">İptal</button>
           <button class="btn-primary" id="btnSubmitPlan">Planı Kaydet</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlayerProfileModal() {
+  if (!ui.profilePlayerId) return '';
+  const p = state.players.find(x => x.id === ui.profilePlayerId);
+  if (!p) return '';
+  const club = p.teamId ? state.teams.find(t => t.id === p.teamId) : null;
+  const isMine = p.teamId === state.userTeamId;
+  const tr = TRAITS[p.trait];
+  const g = p.stats?.games || 0;
+  const wr = g > 0 ? Math.round((p.stats.wins / g) * 100) : 0;
+  const kda = g > 0 ? ((p.stats.kills + p.stats.assists) / Math.max(1, p.stats.deaths)).toFixed(2) : '-';
+
+  // 6-Axis SVG Radar Chart
+  const axes = [
+    ['MEK', p.attrs.mechanics],
+    ['KOR', p.attrs.laning],
+    ['MAK', p.attrs.macro],
+    ['TS', p.attrs.teamfight],
+    ['CLU', p.attrs.clutch],
+    ['HAV', p.attrs.pool],
+  ];
+  const cx = 100, cy = 100, maxR = 72;
+  const pt = (idx, val) => {
+    const ang = -Math.PI / 2 + (idx * Math.PI * 2) / 6;
+    const r = (Math.max(30, Math.min(99, val)) / 100) * maxR;
+    return [+(cx + r * Math.cos(ang)).toFixed(1), +(cy + r * Math.sin(ang)).toFixed(1)];
+  };
+  const polyPts = axes.map(([, v], i) => pt(i, v).join(',')).join(' ');
+  const gridRings = [50, 75, 100].map(pct => {
+    const pts = axes.map((_, i) => pt(i, pct).join(',')).join(' ');
+    return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,0.2)" stroke-width="1" />`;
+  }).join('');
+  const axisLines = axes.map(([lbl, v], i) => {
+    const [x, y] = pt(i, 100);
+    const [lx, ly] = pt(i, 122);
+    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(148,163,184,0.2)" stroke-width="1" />
+      <text x="${lx}" y="${ly + 3}" font-size="9.5" fill="#cbd5e1" text-anchor="middle" font-weight="700">${lbl} ${v}</text>`;
+  }).join('');
+
+  const masteryEntries = Object.entries(p.mastery || {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box" style="max-width:660px;">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="badge role-${p.role}">${p.role}</span>
+            <strong style="font-size:17px;">${p.name}</strong>
+            <span style="font-size:12px;color:var(--text-muted);">(${p.nat} • ${p.age} Yaş)</span>
+            ${tr ? `<span class="badge tier-A">${tr.label}</span>` : ''}
+          </div>
+          <button class="btn-ghost btn-sm" id="btnCloseProfile">${icon('x', 14)}</button>
+        </div>
+
+        <div class="grid-2" style="gap:14px;align-items:center;margin-bottom:14px;">
+          <div style="text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;">
+            <svg viewBox="0 0 200 200" style="width:190px;height:190px;max-width:100%;">
+              ${gridRings}
+              ${axisLines}
+              <polygon points="${polyPts}" fill="rgba(200,155,60,0.28)" stroke="#c89b3c" stroke-width="2" />
+            </svg>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span>Kulüp: <b>${club ? `${club.name} (${club.region})` : 'Serbest Oyuncu'}</b></span>
+              <span class="ovr-pill ${ovrClass(p.ovr)}" style="font-size:15px;padding:4px 10px;">${p.ovr} / ${p.pot}</span>
+            </div>
+            <div class="num" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg);padding:9px;border-radius:7px;border:1px solid var(--border);">
+              <div>Piyasa: <b style="color:var(--gold-bright);">${formatMoney(p.marketValue)}</b></div>
+              <div>Maaş: <b>${formatMoney(p.salary)}/hf</b></div>
+              <div>Kontrat: <b>${p.contractYears <= 0 ? 'Bitti' : `${p.contractYears} yıl`}</b></div>
+              <div>Durum: <b>${p.isStarter ? 'İlk 5' : 'Yedek'}</b></div>
+              <div>Maç / G%: <b>${g} (${wr}%)</b></div>
+              <div>KDA / MVP: <b>${kda} / ${p.stats?.mvps || 0}</b></div>
+            </div>
+            <div style="font-size:11.5px;">
+              <div>Moral: <b>${p.morale}</b> ${barHtml(p.morale, '#10b981')}</div>
+              <div>Form: <b>${p.form}</b> ${barHtml(p.form, '#38bdf8')}</div>
+              <div>Yorgunluk: <b>${p.fatigue}</b> ${barHtml(p.fatigue, p.fatigue > 65 ? '#f43f5e' : '#f59e0b')}</div>
+            </div>
+            <div style="font-size:11.5px;color:var(--text-muted);">
+              <b>İmza Şampiyonlar:</b> ${p.sigChamps.map(id => CHAMPION_MAP[id]?.name || id).join(', ')}
+              ${masteryEntries.length ? `<div style="margin-top:3px;"><b>Ustalık:</b> ${masteryEntries.map(([cid, lv]) => `${CHAMPION_MAP[cid]?.name || cid} (U${Math.floor(lv)})`).join(', ')}</div>` : ''}
+            </div>
+          </div>
+        </div>
+
+        ${isMine ? `
+          <div style="background:var(--bg);border:1px solid var(--border-strong);border-radius:8px;padding:10px 12px;">
+            <div style="font-size:11.5px;font-weight:800;color:var(--gold-bright);margin-bottom:7px;">Birebir Koç Görüşmesi (Haftada 1 Kez)</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-green btn-sm" data-talk-1on1="praise">Performansını Öv (+6 Moral)</button>
+              <button class="btn-primary btn-sm" data-talk-1on1="push">Daha Çok Çalışmasını İste (+4 Form)</button>
+              <button class="btn-blue btn-sm" data-talk-1on1="rest">Baskıyı Azalt (-8 Yorgunluk, +3 Moral)</button>
+            </div>
+          </div>
+        ` : `
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn-primary btn-sm" id="btnProfileToNego" ${getTransferWindowStatus(state).open ? '' : 'disabled'}>${getTransferWindowStatus(state).open ? 'Transfer Görüşmesi Başlat' : 'Transfer Penceresi Kilitli'}</button>
+          </div>
+        `}
       </div>
     </div>
   `;
@@ -1568,6 +1735,7 @@ function renderAppShell() {
     ${renderNegotiationModal()}
     ${renderRenewalModal()}
     ${renderPlayerPlanModal()}
+    ${renderPlayerProfileModal()}
     ${renderDramaModal()}
   `;
 }
@@ -1784,6 +1952,31 @@ function bindAppEvents() {
 
   const uTeam = state.teams.find(t => t.id === state.userTeamId);
   root.querySelectorAll('[data-set-starter]').forEach(btn => btn.addEventListener('click', () => { setStarter(state, btn.dataset.setStarter); saveGame(state); render(); showToast('İlk 5 güncellendi.'); }));
+  root.querySelectorAll('[data-open-profile]').forEach(el => el.addEventListener('click', () => { ui.profilePlayerId = el.dataset.openProfile; render(); }));
+  root.querySelector('#btnCloseProfile')?.addEventListener('click', () => { ui.profilePlayerId = null; render(); });
+  root.querySelectorAll('[data-talk-1on1]').forEach(btn => btn.addEventListener('click', () => {
+    const res = talkToPlayer1on1(state, ui.profilePlayerId, btn.dataset.talk1on1);
+    autoSaveNow(); render(); showToast(res.reason);
+  }));
+  root.querySelector('#btnProfileToNego')?.addEventListener('click', () => {
+    ui.negotiatingPlayerId = ui.profilePlayerId;
+    ui.profilePlayerId = null;
+    render();
+  });
+
+  root.querySelectorAll('[data-apply-preset]').forEach(btn => btn.addEventListener('click', () => {
+    const pr = TACTIC_PRESETS.find(x => x.id === btn.dataset.applyPreset);
+    if (pr) {
+      uTeam.tactics = { ...uTeam.tactics, ...pr.tactics };
+      autoSaveNow(); render(); showToast(`Taktik şablonu uygulandı: ${pr.name}`);
+    }
+  }));
+  root.querySelectorAll('[data-set-prep]').forEach(btn => btn.addEventListener('click', () => {
+    ensureTeamExtras(uTeam);
+    uTeam.matchPrep = btn.dataset.setPrep;
+    autoSaveNow(); render(); showToast('Haftalık maç hazırlığı güncellendi.');
+  }));
+
   root.querySelectorAll('[data-open-renew]').forEach(btn => btn.addEventListener('click', () => { ui.renewingPlayerId = btn.dataset.openRenew; render(); }));
   root.querySelector('#btnCloseRenew')?.addEventListener('click', () => { ui.renewingPlayerId = null; render(); });
   root.querySelector('#btnCancelRenew')?.addEventListener('click', () => { ui.renewingPlayerId = null; render(); });
@@ -1834,7 +2027,7 @@ function bindAppEvents() {
   root.querySelectorAll('[data-gs-player]').forEach(el => {
     el.addEventListener('click', () => {
       ui.globalSearch = '';
-      ui.negotiatingPlayerId = el.dataset.gsPlayer;
+      ui.profilePlayerId = el.dataset.gsPlayer;
       render();
     });
   });
@@ -1961,7 +2154,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || !state) return;
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
-  if (ui.saveModalOpen || ui.negotiatingPlayerId || ui.renewingPlayerId || ui.trainingPlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
+  if (ui.saveModalOpen || ui.negotiatingPlayerId || ui.renewingPlayerId || ui.trainingPlayerId || ui.profilePlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
   e.preventDefault();
   if (isMatchDay(state)) {
     launchUserMatch();
