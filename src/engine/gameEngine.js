@@ -2441,20 +2441,39 @@ export function offerPlayerToClubs(state, playerId, askingPrice) {
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   if (!p || !userTeam) return { ok: false, reason: 'Oyuncu kadroda bulunamadı.', offers: [] };
 
-  const ask = Math.max(25000, Number(askingPrice) || p.marketValue);
-  if (ask > p.marketValue * 1.85) {
-    return { ok: true, reason: 'İstediğin bonservis piyasa değerinin çok üzerinde — hiçbir kulüp teklif vermedi. Fiyatı biraz düşür.', offers: [] };
+  const ask = Math.max(20000, Number(askingPrice) || p.marketValue);
+  // Real FM valuation: shopping a player signals you want to sell; bench/veteran players have lower resale value
+  const benchMod = p.isStarter ? 1.0 : 0.82;
+  const ageMod = p.age >= 29 ? 0.72 : p.age >= 27 ? 0.85 : 1.0;
+  const formMod = p.form < 68 ? 0.88 : p.form >= 86 ? 1.06 : 1.0;
+  const fairValue = Math.max(20000, Math.round((p.marketValue * benchMod * ageMod * formMod) / 5000) * 5000);
+
+  if (ask > fairValue * 1.32) {
+    return {
+      ok: true,
+      reason: `İstediğin bonservis (${formatMoney(ask)}) piyasa talebinin üzerinde (gerçekçi değer ~${formatMoney(fairValue)}). Hiçbir kulüp teklif vermedi.`,
+      offers: [],
+    };
   }
 
+  // Only clubs that genuinely NEED this player (real upgrade or elite wonderkid) & can afford them will bid!
   const interested = state.teams.filter(t => {
     if (t.id === userTeam.id) return false;
-    if (t.budget < ask * 0.72) return false;
+    if (t.budget < ask * 0.85) return false;
     const starter = getTeamRoster(state, t.id).find(x => x.role === p.role);
-    const starterOvr = starter ? starter.ovr : 70;
-    const goodFit = p.ovr >= starterOvr - 3 || (p.age <= 21 && p.pot >= starterOvr + 3);
-    if (!goodFit) return false;
-    // Realistic league/prestige check
-    if ((t.region === 'LCK' || t.region === 'LPL') && p.ovr < 81 && !(p.age <= 20 && p.pot >= 89)) return false;
+    const starterOvr = starter ? starter.ovr : 65;
+    const isRealUpgrade = p.ovr >= starterOvr + 1;
+    const isHotProspect = p.age <= 20 && p.pot >= starterOvr + 6;
+    if (!isRealUpgrade && !isHotProspect) return false;
+
+    // Cross-region & league prestige realism
+    const sameReg = t.region === userTeam.region;
+    if (!sameReg) {
+      if ((t.region === 'LCK' || t.region === 'LPL') && p.ovr < 82 && !(p.age <= 20 && p.pot >= 89)) return false;
+      if (p.ovr < 74 && !(p.age <= 20 && p.pot >= 84)) return false;
+    }
+    // Check player would even be willing to join buyer
+    if (!evaluateTransferInterest(state, p, t).willing) return false;
     return true;
   }).sort((a, b) => {
     const sameA = a.region === userTeam.region ? 1 : 0;
@@ -2462,16 +2481,35 @@ export function offerPlayerToClubs(state, playerId, askingPrice) {
     return (sameB - sameA) || (b.budget - a.budget);
   });
 
-  const picked = interested.slice(0, 4);
+  // Not every player finds a buyer! Older/low-OVR players have real market friction
+  const maxClubs = p.ovr >= 84 ? 3 : p.ovr >= 76 ? 2 : 1;
+  const marketDemandChance = p.ovr >= 82 ? 0.92 : p.ovr >= 74 ? 0.68 : p.age >= 28 ? 0.35 : 0.48;
+  const picked = [];
+  for (const club of interested) {
+    if (picked.length >= maxClubs) break;
+    if (Math.random() < marketDemandChance) picked.push(club);
+  }
+
   if (picked.length === 0) {
-    return { ok: true, reason: 'Şu an bu fiyata talip olan bir kulüp çıkmadı. İstenen bedeli biraz düşürüp tekrar önerebilirsin.', offers: [] };
+    return {
+      ok: true,
+      reason: `Şu an ${p.name} için ${formatMoney(ask)} bedelle ilgilenen kulüp çıkmadı. Fiyatı düşürebilir (${formatMoney(Math.round((fairValue * 0.72) / 5000) * 5000)} civarı) veya oyuncuyu serbest bırakabilirsin.`,
+      offers: [],
+    };
   }
 
   const offers = picked.map(club => {
-    const ratio = ask / Math.max(25000, p.marketValue);
-    const mult = ratio <= 0.9 ? 1.0 : ratio <= 1.15 ? (0.88 + Math.random() * 0.14) : (0.76 + Math.random() * 0.12);
-    const amount = Math.min(Math.floor(club.budget * 0.8), Math.max(25000, Math.round((ask * mult) / 5000) * 5000));
-    const maxWilling = Math.min(Math.floor(club.budget * 0.85), Math.round((p.marketValue * (1.18 + Math.random() * 0.18)) / 5000) * 5000);
+    // Buyers negotiate from below fairValue (68%..90%) and cap tightly around 92%..108% of fairValue
+    const baseRatio = 0.68 + Math.random() * 0.22;
+    const amount = Math.min(
+      ask,
+      Math.floor(club.budget * 0.65),
+      Math.max(20000, Math.round((fairValue * baseRatio) / 5000) * 5000)
+    );
+    const maxWilling = Math.min(
+      Math.floor(club.budget * 0.72),
+      Math.max(amount, Math.round((fairValue * (0.92 + Math.random() * 0.16)) / 5000) * 5000)
+    );
     return {
       buyerTeamId: club.id,
       buyerName: club.name,
@@ -2480,17 +2518,22 @@ export function offerPlayerToClubs(state, playerId, askingPrice) {
       buyerColor: club.color,
       buyerColor2: club.color2,
       amount,
-      maxWilling: Math.max(amount, maxWilling),
+      maxWilling,
       status: 'OPEN', // OPEN | COUNTERED | WALKED
-      note: `${club.name} (${club.region}) masada!`,
+      note: `${club.name} (${club.region}) teklif sundu.`,
     };
   });
 
-  return { ok: true, reason: `${offers.length} kulüp ${p.name} için teklif sundu!`, offers };
+  return { ok: true, reason: `${offers.length} kulüp ${p.name} için masaya oturdu.`, offers };
 }
 
 export function negotiateSaleCounter(offer, counterAmount) {
-  const counter = Math.max(25000, Math.round((Number(counterAmount) || 0) / 5000) * 5000);
+  const counter = Math.max(20000, Math.round((Number(counterAmount) || 0) / 5000) * 5000);
+  if (offer.status === 'COUNTERED' && counter > offer.amount) {
+    offer.status = 'WALKED';
+    offer.note = 'Son teklifi reddettin — görüşmeden çekildiler.';
+    return { ok: false, accepted: false, reason: `${offer.buyerName} son teklifinden yukarı çıkmayı reddetti ve masadan kalktı.` };
+  }
   if (counter <= offer.amount) {
     offer.amount = counter;
     offer.status = 'OPEN';
@@ -2499,16 +2542,16 @@ export function negotiateSaleCounter(offer, counterAmount) {
   }
   if (counter <= offer.maxWilling) {
     offer.amount = counter;
-    offer.status = 'OPEN';
-    offer.note = `${formatMoney(counter)} kabul edildi!`;
-    return { ok: true, accepted: true, reason: `${offer.buyerName} pazarlığı kabul etti ve teklifini ${formatMoney(counter)} seviyesine çıkardı!` };
+    offer.status = 'COUNTERED';
+    offer.note = `${formatMoney(counter)} kabul edildi (Son fiyat).`;
+    return { ok: true, accepted: true, reason: `${offer.buyerName} pazarlığı kabul etti ve teklifini ${formatMoney(counter)} yaptı!` };
   }
-  if (counter <= offer.maxWilling * 1.18) {
+  if (counter <= offer.maxWilling * 1.12) {
     const mid = Math.round(((offer.amount + offer.maxWilling) / 2) / 5000) * 5000;
     offer.amount = Math.max(offer.amount, mid);
     offer.status = 'COUNTERED';
     offer.note = `Son teklifleri: ${formatMoney(offer.amount)}`;
-    return { ok: true, accepted: false, reason: `${offer.buyerName} o kadar çıkmadı ama son teklifini ${formatMoney(offer.amount)} olarak güncelledi.` };
+    return { ok: true, accepted: false, reason: `${offer.buyerName} o fiyata çıkmadı; son teklifleri ${formatMoney(offer.amount)}.` };
   }
   offer.status = 'WALKED';
   offer.note = 'Çok yüksek fiyat — masadan kalktılar.';
