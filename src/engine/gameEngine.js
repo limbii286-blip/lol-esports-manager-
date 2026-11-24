@@ -214,9 +214,10 @@ export function ensureCalendarState(state) {
   if (!state.scrimIntel) state.scrimIntel = {};
   if (!state.transferFeed) state.transferFeed = [];
   if (!state.tournamentArchive) state.tournamentArchive = [];
+  if (!state.managerJobOffers) state.managerJobOffers = [];
+  if (!state.incomingOffers) state.incomingOffers = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
-  const ut = state.teams?.find(t => t.id === state.userTeamId);
-  if (ut) ensureTeamExtras(ut);
+  if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
 }
 
 function parseISO(iso) {
@@ -2117,7 +2118,9 @@ export function saveToSlot(state, slotId, customName = '') {
 export function loadFromSlot(slotId) {
   try {
     const slots = readAllSlots();
-    return slots[slotId]?.data || null;
+    const data = slots[slotId]?.data || null;
+    if (data) ensureCalendarState(data);
+    return data;
   } catch (e) {
     return null;
   }

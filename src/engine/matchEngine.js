@@ -693,7 +693,7 @@ export function stepMatchMinute(state) {
       || (m >= 44 && blueAdv < 0);
 
     const isStomp = Math.abs(blueAdv) >= 12000;
-    const endChance = m >= 38 ? 0.65 : isStomp ? 0.52 : (blueHasBuff || redHasBuff) ? 0.36 : 0.24;
+    const endChance = m >= 50 ? 1.0 : m >= 38 ? 0.65 : isStomp ? 0.52 : (blueHasBuff || redHasBuff) ? 0.36 : 0.24;
 
     if ((blueCanEnd || redCanEnd) && Math.random() < endChance) {
       let winner;

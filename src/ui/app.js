@@ -1660,8 +1660,11 @@ function bindAppEvents() {
           showToast('Geçersiz kayıt dosyası.');
           return;
         }
+        ensureCalendarState(parsed);
         state = parsed;
         ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId)?.region || 'LCK';
+        ui.leagueFixtureWeek = 'CURRENT';
+        ui.selectedArchiveIdx = 0;
         ui.tab = 'dashboard';
         ui.saveModalOpen = false;
         saveGame(state);
