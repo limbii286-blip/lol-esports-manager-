@@ -1,4 +1,8 @@
-# 🏆 LoL Esports Manager v2.0 — Football Manager Edition
+<p align="center">
+  <img src="./assets/icon.jpg" alt="LoL Esports Manager Icon" width="128" style="border-radius: 22px;" />
+</p>
+
+# LoL Esports Manager — Football Manager Edition
 
 **League of Legends** espor sahnesi için **Football Manager** derinliğinde, tarayıcıda çalışan, harici bağımlılık gerektirmeyen kulüp yönetim ve maç simülasyonu oyunu.
 

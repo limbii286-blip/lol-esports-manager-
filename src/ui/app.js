@@ -64,9 +64,12 @@ function renderStartScreen() {
   return `
     <div class="start-screen">
       <div class="start-header">
-        <div>
-          <div class="brand-title">${icon('trophy', 22)} <span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span> <span class="badge tier-A">v2.1</span></div>
-          <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • 16 Takımlı Swiss Worlds • Wonderkid Scouting</div>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <img src="./assets/icon.jpg" alt="LoL Esports Manager Icon" style="width:52px;height:52px;border-radius:12px;border:1px solid rgba(200,155,60,0.45);box-shadow:0 4px 16px rgba(0,0,0,0.45);object-fit:cover;" />
+          <div>
+            <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span> <span class="badge tier-A">v2.1</span></div>
+            <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • 16 Takımlı Swiss Worlds • Wonderkid Scouting</div>
+          </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn-blue" id="btnStartMayhem" style="padding:10px 16px;">${icon('flame', 15)} Worlds Mayhem</button>
