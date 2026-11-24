@@ -8,7 +8,8 @@ import {
   advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
-  resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot
+  resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot,
+  ensureCalendarState, formatTurkishDate, getWeekCalendarDays, isMatchDay, advanceOneDay, skipToNextKeyDay
 } from '../engine/gameEngine.js';
 import { openSeriesModal } from './matchModal.js';
 import { openWorldsMayhemModal } from './mayhemModal.js';
@@ -123,10 +124,13 @@ function renderStartScreen() {
 
 // ==================== DASHBOARD ====================
 function renderDashboard() {
+  ensureCalendarState(state);
   const team = state.teams.find(t => t.id === state.userTeamId);
   const ovr = getTeamOVR(state, team.id);
   const patch = getCurrentPatch(state);
   const nextMatch = getUserNextMatch(state);
+  const matchToday = isMatchDay(state);
+  const calDays = getWeekCalendarDays(state);
   const standings = getSortedStandings(state, team.region);
   const userRank = standings.findIndex(r => r.teamId === team.id) + 1;
   const wages = getTeamWeeklyWages(state, team.id);
@@ -184,8 +188,14 @@ function renderDashboard() {
           </div>
         </div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
-          <button class="btn-primary" id="btnPlayMatchLive">${icon('play', 14)} Draft & Canlı Maça Gir</button>
-          <button class="btn-ghost" id="btnQuickSimMatch">${icon('fast', 14)} Hızlı Simüle Et</button>
+          ${matchToday ? `
+            <button class="btn-primary" id="btnPlayMatchLive">${icon('play', 14)} Draft & Canlı Maça Gir</button>
+            <button class="btn-ghost" id="btnQuickSimMatch">${icon('fast', 14)} Hızlı Simüle Et</button>
+          ` : `
+            <button class="btn-primary" id="btnDashAdvanceDay">${icon('arrowRight', 14)} Devam Et (+1 Gün)</button>
+            <button class="btn-blue" id="btnDashSkipMatchDay">${icon('fast', 14)} Maç Gününe Atla</button>
+            <span style="font-size:12px;color:var(--text-muted);align-self:center;">Maç Cumartesi günü oynanacak — hafta içi antrenman ve scrim yapabilirsin.</span>
+          `}
         </div>
       </div>
     `;
@@ -205,7 +215,23 @@ function renderDashboard() {
     `;
   }
 
+  const calStripHtml = `
+    <div class="cal-strip">
+      ${calDays.map(d => `
+        <div class="cal-day ${d.isToday ? 'today' : ''} ${d.isPast ? 'past' : ''} ${d.eventType === 'match' ? 'match-day' : ''}">
+          <div class="cal-day-top">
+            <span>${d.dayShort}</span>
+            <span>${d.isToday ? 'BUGÜN' : d.monthShort}</span>
+          </div>
+          <div class="cal-day-num">${d.dayNum}</div>
+          <div class="cal-day-ev">${d.eventLabel}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
   return `
+    ${calStripHtml}
     ${offersBanner}
     <div class="grid-4" style="margin-bottom:16px;">
       <div class="card kpi-card">
@@ -956,9 +982,11 @@ function renderSaveLoadModal() {
 
 // ==================== MAIN SHELL ====================
 function renderAppShell() {
+  ensureCalendarState(state);
   const team = state.teams.find(t => t.id === state.userTeamId);
   const unreadCount = state.inbox.filter(m => !m.read).length;
   const nextMatch = getUserNextMatch(state);
+  const matchToday = isMatchDay(state);
 
   const navItems = [
     ['dashboard', 'home', 'Genel Bakış'],
@@ -1016,14 +1044,20 @@ function renderAppShell() {
       <div class="main-area">
         <header class="topbar">
           <div class="topbar-meta">
-            <div class="meta-chip">${icon('calendar', 13)} <b>S${state.season}</b> • ${getPhaseLabel(state.phase)} (H${state.week})</div>
+            <div class="meta-chip">${icon('calendar', 13)} <b>${formatTurkishDate(state.currentDate)}</b></div>
+            <div class="meta-chip">${getPhaseLabel(state.phase)} (H${state.week})</div>
             <div class="meta-chip">${icon('sliders', 13)} Yama <b>${getCurrentPatch(state).version}</b></div>
             <div class="meta-chip num">${icon('briefcase', 13)} <b style="color:var(--green);">${formatMoney(team.budget)}</b></div>
           </div>
           <div class="topbar-actions">
-            ${nextMatch
-              ? `<button class="btn-primary" id="btnTopPlay">${icon('play', 14)} Maça Git (BO${nextMatch.bestOf})</button>`
-              : `<button class="btn-primary" id="btnTopAdvance">${state.phase === 'OFFSEASON' ? `Sezon ${state.season + 1}'e Başla` : 'İlerle'} ${icon('arrowRight', 14)}</button>`}
+            ${matchToday
+              ? `<button class="btn-primary" id="btnTopPlay">${icon('play', 14)} Maç Günü (BO${nextMatch.bestOf})</button>`
+              : state.phase === 'OFFSEASON'
+                ? `<button class="btn-primary" id="btnTopAdvance">Sezon ${state.season + 1}'e Başla ${icon('arrowRight', 14)}</button>`
+                : `
+                  <button class="btn-ghost btn-sm" id="btnTopSkipDay">${icon('fast', 13)} ${nextMatch ? 'Maç Gününe Atla' : 'Haftayı Bitir'}</button>
+                  <button class="btn-primary" id="btnTopNextDay" title="Kısayol: Spacebar">Devam Et (+1 Gün) ${icon('arrowRight', 14)}</button>
+                `}
           </div>
         </header>
         <main class="content">${bodyHtml}</main>
@@ -1043,10 +1077,9 @@ function launchUserMatch() {
   const m = getUserNextMatch(state);
   if (!m) return;
   openSeriesModal(state, m, () => {
-    advanceWeekOrRound(state);
     saveGame(state);
     render();
-    showToast('Seri tamamlandı ve hafta ilerletildi.');
+    showToast('Maç tamamlandı! Yeni haftaya geçmek için takvimi ilerlet.');
   });
 }
 
@@ -1166,11 +1199,28 @@ function bindAppEvents() {
     quickSimSeries(state, m);
     const bt = state.teams.find(t => t.id === m.blueId);
     const rt = state.teams.find(t => t.id === m.redId);
-    advanceWeekOrRound(state);
     saveGame(state);
     render();
-    showToast(`Sonuç: ${bt.tag} ${m.blueScore} - ${m.redScore} ${rt.tag}`);
+    showToast(`Maç Sonucu: ${bt.tag} ${m.blueScore} - ${m.redScore} ${rt.tag}`);
   });
+
+  const doNextDay = () => {
+    const res = advanceOneDay(state);
+    saveGame(state);
+    render();
+    if (res.msg) showToast(res.msg);
+  };
+  const doSkipDay = () => {
+    const res = skipToNextKeyDay(state);
+    saveGame(state);
+    render();
+    if (res.msg) showToast(res.msg);
+  };
+
+  root.querySelector('#btnTopNextDay')?.addEventListener('click', doNextDay);
+  root.querySelector('#btnDashAdvanceDay')?.addEventListener('click', doNextDay);
+  root.querySelector('#btnTopSkipDay')?.addEventListener('click', doSkipDay);
+  root.querySelector('#btnDashSkipMatchDay')?.addEventListener('click', doSkipDay);
 
   const doAdvance = () => {
     advanceWeekOrRound(state);
@@ -1265,5 +1315,22 @@ function bindAppEvents() {
     if (sp) { uTeam.sponsor = sp; saveGame(state); render(); showToast(`${sp.name} ile anlaşıldı.`); }
   }));
 }
+
+// Football Manager Spacebar shortcut to advance 1 day!
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || !state) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+  if (ui.saveModalOpen || ui.negotiatingPlayerId || state.pendingEvent || document.querySelector('.modal-backdrop')) return;
+  e.preventDefault();
+  if (isMatchDay(state)) {
+    launchUserMatch();
+  } else if (state.phase !== 'OFFSEASON') {
+    const res = advanceOneDay(state);
+    saveGame(state);
+    render();
+    if (res.msg) showToast(res.msg);
+  }
+});
 
 render();

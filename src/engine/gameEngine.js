@@ -136,6 +136,144 @@ export function getPhaseLabel(phase) {
   return map[phase] || phase;
 }
 
+const TR_MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+const TR_DAYS_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+
+export function ensureCalendarState(state) {
+  if (!state.currentDate) state.currentDate = `${state.season || 2026}-01-12`; // Monday
+}
+
+function parseISO(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function toISO(dt) {
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function addDaysISO(iso, days) {
+  const dt = parseISO(iso);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return toISO(dt);
+}
+
+export function formatTurkishDate(iso) {
+  const dt = parseISO(iso || '2026-01-12');
+  return `${dt.getUTCDate()} ${TR_MONTHS[dt.getUTCMonth()]} ${dt.getUTCFullYear()}, ${TR_DAYS[dt.getUTCDay()]}`;
+}
+
+export function isMatchDay(state) {
+  ensureCalendarState(state);
+  const dow = parseISO(state.currentDate).getUTCDay(); // 6 = Saturday
+  return dow === 6 && !!getUserNextMatch(state);
+}
+
+// Build 7-day Monday..Sunday strip for current week
+export function getWeekCalendarDays(state) {
+  ensureCalendarState(state);
+  const cur = parseISO(state.currentDate);
+  const dow = cur.getUTCDay(); // 0=Sun, 1=Mon..6=Sat
+  const offsetToMon = dow === 0 ? -6 : 1 - dow;
+  const mon = new Date(cur);
+  mon.setUTCDate(cur.getUTCDate() + offsetToMon);
+
+  const nextMatch = getUserNextMatch(state);
+  const oppId = nextMatch ? (nextMatch.blueId === state.userTeamId ? nextMatch.redId : nextMatch.blueId) : null;
+  const oppTag = oppId ? state.teams.find(t => t.id === oppId)?.tag : null;
+
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon);
+    d.setUTCDate(mon.getUTCDate() + i);
+    const iso = toISO(d);
+    const wd = d.getUTCDay();
+
+    let eventLabel = 'Antrenman';
+    let eventType = 'normal';
+    if (wd === 1) { eventLabel = 'Haftalık Finans'; eventType = 'finance'; }
+    else if (wd === 3) { eventLabel = state.week === 4 ? 'Yama & Scrim' : 'Scrim Günü'; eventType = 'scrim'; }
+    else if (wd === 4) { eventLabel = 'Basın / Scout'; eventType = 'news'; }
+    else if (wd === 6) {
+      if (nextMatch && oppTag) { eventLabel = `MAÇ: vs ${oppTag}`; eventType = 'match'; }
+      else if (state.phase === 'OFFSEASON') { eventLabel = 'Transfer Dönemi'; eventType = 'news'; }
+      else { eventLabel = 'Diğer Maçlar'; eventType = 'normal'; }
+    }
+    else if (wd === 0) { eventLabel = 'Dinlenme'; eventType = 'rest'; }
+
+    days.push({
+      iso,
+      dayNum: d.getUTCDate(),
+      monthShort: TR_MONTHS[d.getUTCMonth()].slice(0, 3),
+      dayShort: TR_DAYS_SHORT[wd],
+      isToday: iso === state.currentDate,
+      isPast: iso < state.currentDate,
+      eventLabel,
+      eventType,
+    });
+  }
+  return days;
+}
+
+// Advance 1 single day (FM Continue / Spacebar loop!)
+export function advanceOneDay(state) {
+  ensureCalendarState(state);
+  if (state.pendingEvent) return { status: 'EVENT', msg: 'Önce bekleyen karar olayını yanıtla.' };
+
+  const curDow = parseISO(state.currentDate).getUTCDay();
+
+  // If today is Match Day and user still has an unplayed match, stop!
+  if (curDow === 6 && getUserNextMatch(state)) {
+    return { status: 'MATCH_DAY', msg: 'Bugün Maç Günü! Önce karşılaşmanı oyna.' };
+  }
+
+  // Advance calendar by 1 day
+  state.currentDate = addDaysISO(state.currentDate, 1);
+  const newDow = parseISO(state.currentDate).getUTCDay();
+
+  // Daily light recovery for user roster
+  for (const p of state.players) {
+    if (p.teamId === state.userTeamId) {
+      p.fatigue = Math.max(0, p.fatigue - (newDow === 0 ? 4 : 1));
+    }
+  }
+
+  // Thursday (4): Mid-week Drama Event or AI Transfer Offer!
+  if (newDow === 4 && (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT')) {
+    maybeTriggerDramaEvent(state);
+    maybeGenerateIncomingOffer(state);
+    if (state.pendingEvent) return { status: 'EVENT', msg: `Gündem: ${state.pendingEvent.title}` };
+  }
+
+  // Saturday (6): Match Day arrived!
+  if (newDow === 6 && getUserNextMatch(state)) {
+    return { status: 'MATCH_DAY', msg: 'Maç Günü geldi! Takımın sahneye çıkmaya hazır.' };
+  }
+
+  // Monday (1): Week wrapped -> finish previous week's AI matches & advance phase/week!
+  if (newDow === 1) {
+    advanceWeekOrRound(state);
+    return { status: 'NEW_WEEK', msg: `Yeni hafta başladı: ${getPhaseLabel(state.phase)} H${state.week}` };
+  }
+
+  return { status: 'OK', msg: formatTurkishDate(state.currentDate) };
+}
+
+// Skip smoothly day-by-day until Match Day, Drama Event, or New Phase
+export function skipToNextKeyDay(state) {
+  ensureCalendarState(state);
+  let last = { status: 'OK', msg: '' };
+  for (let i = 0; i < 7; i++) {
+    last = advanceOneDay(state);
+    if (last.status === 'MATCH_DAY' || last.status === 'EVENT' || last.status === 'NEW_WEEK') break;
+  }
+  return last;
+}
+
 export function createNewCareer(userTeamId) {
   const { teams, players } = createInitialDatabase();
   const { schedules, standings } = createRegionalSchedules(teams);
@@ -144,6 +282,7 @@ export function createNewCareer(userTeamId) {
 
   const state = {
     season: 2026,
+    currentDate: '2026-01-12',
     phase: 'SPRING_SPLIT',
     week: 1,
     patchIndex: 0,
@@ -958,6 +1097,7 @@ function runOffSeasonProgression(state) {
 
 export function startNewSeason(state) {
   state.season++;
+  state.currentDate = `${state.season}-01-12`;
   state.phase = 'SPRING_SPLIT';
   state.week = 1;
   state.patchIndex = 0;
