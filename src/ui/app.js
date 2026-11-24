@@ -5,7 +5,7 @@ import {
   SPONSORS, FACILITY_INFO, STAFF_INFO, TRAINING_MODES, TRAINING_INTENSITIES, TACTIC_PRESETS, MATCH_PREP_OPTIONS,
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR, getTeamDuoSynergy, ensureTeamExtras,
   getSquadDynamics, getBoardObjectives, talkToPlayer1on1,
-  getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
+  getTeamWeeklyWages, getTeamWageCap, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract,
   getRenewalDemand, negotiateContractRenewal, renewAllExpiringContracts,
   offerPlayerToClubs, negotiateSaleCounter, completePlayerSale,
@@ -415,7 +415,10 @@ function renderInbox() {
   return `
     <div class="grid-2" style="grid-template-columns: 350px 1fr;">
       <div class="card" style="max-height:75vh;overflow-y:auto;">
-        <div class="card-header"><span class="card-title">${icon('inbox', 14)} Gelen Kutusu (${state.inbox.length})</span></div>
+        <div class="card-header">
+          <span class="card-title">${icon('inbox', 14)} Gelen Kutusu (${state.inbox.length})</span>
+          <button class="btn-ghost btn-sm" id="btnMarkAllRead">${icon('check', 12)} Tümünü Oku</button>
+        </div>
         ${state.inbox.map(m => `
           <div data-select-inbox="${m.id}" style="padding:10px;border-radius:7px;margin-bottom:6px;cursor:pointer;background:${selected?.id === m.id ? 'var(--bg-hover)' : 'var(--bg)'};border:1px solid ${selected?.id === m.id ? 'var(--gold)' : 'var(--border)'};">
             <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dim);text-transform:uppercase;">
@@ -811,9 +814,11 @@ function renderTransfers() {
     </div>
 
     <div class="card">
-      <div class="card-header">
+      <div class="card-header" style="flex-wrap:wrap;gap:8px;">
         <span class="card-title">${icon('search', 14)} Küresel Transfer Pazarı (${filtered.length} Oyuncu)</span>
-        <span class="num" style="font-size:13px;color:var(--green);font-weight:700;">Bütçe: ${formatMoney(team.budget)}</span>
+        <span class="num" style="font-size:12.5px;color:var(--text-muted);font-weight:700;">
+          Bütçe: <b style="color:var(--green);">${formatMoney(team.budget)}</b> • Maaş Tavanı: <b style="color:${getTeamWeeklyWages(state, team.id) > getTeamWageCap(team) * 0.9 ? 'var(--amber)' : 'var(--blue)'};">${formatMoney(getTeamWeeklyWages(state, team.id))} / ${formatMoney(getTeamWageCap(team))}</b>
+        </span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
         <input type="text" id="trSearch" placeholder="Oyuncu adı ara..." value="${ui.transferSearch}" style="min-width:170px;" />
@@ -2057,6 +2062,10 @@ function bindAppEvents() {
   });
 
   root.querySelectorAll('[data-open-msg]').forEach(el => el.addEventListener('click', () => { ui.selectedInboxId = el.dataset.openMsg; ui.tab = 'inbox'; render(); }));
+  root.querySelector('#btnMarkAllRead')?.addEventListener('click', () => {
+    state.inbox.forEach(m => { m.read = true; });
+    autoSaveNow(); render(); showToast('Tüm mesajlar okundu olarak işaretlendi.');
+  });
   root.querySelectorAll('[data-select-inbox]').forEach(el => el.addEventListener('click', () => { ui.selectedInboxId = el.dataset.selectInbox; render(); }));
 
   const uTeam = state.teams.find(t => t.id === state.userTeamId);

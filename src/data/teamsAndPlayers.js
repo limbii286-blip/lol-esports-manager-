@@ -883,7 +883,7 @@ export function createInitialDatabase() {
       region: rt.region,
       color: rt.color,
       color2: rt.color2,
-      budget: Math.round((rt.budget * 2.5) / 50000) * 50000,
+      budget: Math.round((rt.budget * 1.65) / 50000) * 50000,
       prestige: rt.prestige,
       fanbase: rt.fanbase,
       synergy: 68 + Math.floor(Math.random() * 14),

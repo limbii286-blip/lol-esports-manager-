@@ -12,9 +12,9 @@ export const SLOTS_KEY = 'lol_esports_manager_slots_v2';
 export const SAVE_SLOT_IDS = ['autosave', 'slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 export const SPONSORS = [
-  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 95000, bonus: 350000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti yüksek haftalık gelir, düşük baskı.' },
-  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 155000, bonus: 750000, goal: 'Bölge Finali Oyna', minPrestige: 76, desc: 'Güçlü haftalık gelir ve bölge finali primi.' },
-  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 240000, bonus: 1500000, goal: 'MSI veya Worlds Kupası', minPrestige: 85, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
+  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 85000, bonus: 300000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti dengeli haftalık gelir, düşük baskı.' },
+  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 135000, bonus: 650000, goal: 'Bölge Finali Oyna', minPrestige: 76, desc: 'Güçlü haftalık gelir ve bölge finali primi.' },
+  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 205000, bonus: 1300000, goal: 'MSI veya Worlds Kupası', minPrestige: 85, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
 ];
 
 export const FACILITY_INFO = {
@@ -194,6 +194,14 @@ export function getTeamOVR(state, teamId) {
   const roster = getTeamRoster(state, teamId);
   if (roster.length === 0) return 0;
   return Math.round(roster.reduce((s, p) => s + p.ovr, 0) / roster.length);
+}
+
+export function getTeamWageCap(team) {
+  if (!team) return 220000;
+  const p = team.prestige || 75;
+  const trophyBonus = Math.min(40000, (team.trophies?.length || 0) * 10000);
+  const base = p >= 93 ? 355000 : p >= 88 ? 305000 : p >= 82 ? 250000 : p >= 76 ? 200000 : 160000;
+  return base + trophyBonus;
 }
 
 export function getTeamWeeklyWages(state, teamId) {
@@ -1823,7 +1831,7 @@ function runOffSeasonProgression(state) {
   // Annual Board Transfer Budget Allocation for all clubs!
   let userGrant = 0;
   for (const t of state.teams) {
-    const grant = Math.round((t.prestige >= 90 ? 3500000 : t.prestige >= 82 ? 2500000 : t.prestige >= 75 ? 1800000 : 1300000) / 50000) * 50000;
+    const grant = Math.round((t.prestige >= 90 ? 2200000 : t.prestige >= 82 ? 1600000 : t.prestige >= 75 ? 1200000 : 900000) / 50000) * 50000;
     t.budget += grant;
     if (t.id === state.userTeamId) userGrant = grant;
   }
@@ -2104,6 +2112,17 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
   if (!player || !userTeam) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   if (offeredBuyout > userTeam.budget) return { ok: false, reason: 'Yeterli transfer bütçen yok.' };
 
+  // Enforce League Salary Cap (Maaş Tavanı) so no club can infinitely stack 93+ OVR superstars!
+  const currentWages = getTeamWeeklyWages(state, userTeam.id);
+  const wageCap = getTeamWageCap(userTeam);
+  if (currentWages + offeredSalary > wageCap) {
+    const room = Math.max(0, wageCap - currentWages);
+    return {
+      ok: false,
+      reason: `Haftalık Maaş Tavanı (Salary Cap: ${formatMoney(wageCap)}/hf) aşılıyor! Kalan maaş boşluğun: ${formatMoney(room)}/hf. Önce yüksek maaşlı bir oyuncuyu sat veya daha ekonomik bir hedef seç.`,
+    };
+  }
+
   // Check realistic player willingness first!
   const interest = evaluateTransferInterest(state, player, userTeam);
   if (!interest.willing) {
@@ -2120,17 +2139,20 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
 
   if (player.teamId && player.teamId !== userTeam.id) {
     const sellingTeam = state.teams.find(t => t.id === player.teamId);
+    const sameRegionRival = sellingTeam.region === userTeam.region && sellingTeam.prestige >= 82;
+    const rivalTax = sameRegionRival ? 1.2 : 1.0;
 
     // Elite clubs refuse to sell untouchable franchise superstars with 2+ years left
-    if (sellingTeam.prestige >= 88 && player.ovr >= 91 && player.isStarter && player.contractYears >= 2 && offeredBuyout < player.marketValue * 2.1) {
+    if (sellingTeam.prestige >= 88 && player.ovr >= 91 && player.isStarter && player.contractYears >= 2 && offeredBuyout < player.marketValue * 2.15 * rivalTax) {
       return {
         ok: false,
-        reason: `${sellingTeam.name}, kulübün franchise yıldızı ${player.name}'ı satılık listesine koymuyor (En az ~${formatMoney(Math.round(player.marketValue * 2.1 / 5000) * 5000)} serbest kalma bedeli gerekli).`,
+        reason: `${sellingTeam.name}, franchise yıldızı ${player.name}'ı bırakmak istemiyor (En az ~${formatMoney(Math.round(player.marketValue * 2.15 * rivalTax / 5000) * 5000)} serbest kalma bedeli gerekli).`,
       };
     }
 
-    const minBuyout = Math.round(player.marketValue * (player.isStarter ? 1.2 : 0.85));
-    if (offeredBuyout < minBuyout) return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu (En az ~${formatMoney(minBuyout)} istiyorlar).` };
+    const starterMult = !player.isStarter ? 0.85 : player.ovr >= 88 ? 1.55 : 1.25;
+    const minBuyout = Math.round((player.marketValue * starterMult * rivalTax) / 5000) * 5000;
+    if (offeredBuyout < minBuyout) return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu${sameRegionRival ? ' (lig rakibi primi dahil)' : ''} — en az ~${formatMoney(minBuyout)} istiyorlar.` };
     const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
     if (offeredSalary < minSalary) return { ok: false, reason: `${player.name}, ${userTeam.name} teklifini kabul etmek için haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
 
