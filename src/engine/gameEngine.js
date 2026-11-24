@@ -526,12 +526,37 @@ export function resolveDramaEvent(state, choiceIdx) {
 function maybeGenerateIncomingOffer(state) {
   if (!isTransferWindowOpen(state)) return;
   if (state.incomingOffers.length >= 2 || Math.random() > 0.28) return;
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const userPlayers = state.players.filter(p => p.teamId === state.userTeamId);
   if (userPlayers.length === 0) return;
   const target = userPlayers[Math.floor(Math.random() * userPlayers.length)];
-  const buyers = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= target.marketValue * 0.9);
+
+  const buyers = state.teams.filter(t => {
+    if (t.id === state.userTeamId) return false;
+    if (t.budget < target.marketValue * 0.9) return false;
+
+    // Buyer must actually need/want this player (upgrade over their starter or elite wonderkid!)
+    const buyerStarter = getTeamRoster(state, t.id).find(p => p.role === target.role);
+    const starterOvr = buyerStarter ? buyerStarter.ovr : 70;
+    const isUpgrade = target.ovr >= starterOvr - 1;
+    const isWonderkidTarget = target.age <= 20 && target.pot >= starterOvr + 5;
+    if (!isUpgrade && !isWonderkidTarget) return false;
+
+    // Regional & prestige realism: LCK/LPL giants don't bid on low-OVR minor-region players
+    const sameRegion = t.region === userTeam.region;
+    const prestigeDiff = t.prestige - userTeam.prestige;
+    if (!sameRegion) {
+      if ((t.region === 'LCK' || t.region === 'LPL') && target.ovr < 85 && !(target.age <= 20 && target.pot >= 91)) return false;
+      if (prestigeDiff > 12 && target.ovr < 82) return false;
+    }
+    return true;
+  });
+
   if (buyers.length === 0) return;
-  const buyer = buyers[Math.floor(Math.random() * buyers.length)];
+  // Prefer same-region clubs first (70% weight)
+  const sameRegBuyers = buyers.filter(b => b.region === userTeam.region);
+  const pool = (sameRegBuyers.length && Math.random() < 0.7) ? sameRegBuyers : buyers;
+  const buyer = pool[Math.floor(Math.random() * pool.length)];
   const offerAmount = Math.round((target.marketValue * (1.05 + Math.random() * 0.35)) / 5000) * 5000;
 
   state.incomingOffers.push({
