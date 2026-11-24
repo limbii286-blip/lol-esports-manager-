@@ -54,7 +54,7 @@ function showToast(msg) {
     ui.toastMsg = null;
     const t = document.querySelector('.toast');
     if (t) t.remove();
-  }, 3600);
+  }, 4600);
 }
 
 function ovrClass(ovr) {

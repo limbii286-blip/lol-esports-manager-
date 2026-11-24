@@ -216,6 +216,8 @@ export function ensureCalendarState(state) {
   if (!state.tournamentArchive) state.tournamentArchive = [];
   if (!state.managerJobOffers) state.managerJobOffers = [];
   if (!state.incomingOffers) state.incomingOffers = [];
+  if (!state.recentEventIds) state.recentEventIds = [];
+  if (!state.recentNewsIds) state.recentNewsIds = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
 }
@@ -318,8 +320,13 @@ export function advanceOneDay(state) {
     }
   }
 
+  // Tuesday (2), Wednesday (3), Friday (5): Living World News, Match Preview & Scouting Buzz!
+  if ((newDow === 2 || newDow === 3 || newDow === 5) && state.phase !== 'OFFSEASON') {
+    maybeGenerateLivingWorldNews(state, newDow);
+  }
+
   // Thursday (4): Mid-week Drama Event or AI Transfer Offer!
-  if (newDow === 4 && (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT')) {
+  if (newDow === 4 && state.phase !== 'OFFSEASON') {
     maybeTriggerDramaEvent(state);
     maybeGenerateIncomingOffer(state);
     if (state.pendingEvent) return { status: 'EVENT', msg: `Gündem: ${state.pendingEvent.title}` };
@@ -529,17 +536,134 @@ export function quickSimSeries(state, match) {
   recordSeriesResult(state, match, bScore, rScore);
 }
 
-// ==================== DRAMA & PRESS CONFERENCE EVENTS ====================
+// ==================== LIVING WORLD NEWS & MATCH PREVIEWS ====================
+function maybeGenerateLivingWorldNews(state, dow) {
+  ensureCalendarState(state);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!team) return;
+  const roster = getTeamRoster(state, team.id);
+  const recent = state.recentNewsIds;
+  const pickFresh = (id, fn) => {
+    if (recent.includes(id)) return false;
+    fn();
+    recent.push(id);
+    if (recent.length > 6) recent.shift();
+    return true;
+  };
+
+  // Friday (5): Pre-Match Preview & Key Lane Duel Hype (65% chance when a match is scheduled)
+  if (dow === 5 && Math.random() < 0.65) {
+    const nextM = getUserNextMatch(state);
+    if (nextM) {
+      const oppId = nextM.blueId === team.id ? nextM.redId : nextM.blueId;
+      const opp = state.teams.find(t => t.id === oppId);
+      const oppRoster = getTeamRoster(state, oppId);
+      const myStar = [...roster].sort((a, b) => b.ovr - a.ovr)[0];
+      const oppSame = oppRoster.find(p => p.role === myStar?.role) || oppRoster[0];
+      const riv = getRivalryName(nextM.blueId, nextM.redId);
+      addInboxMessage(state, {
+        title: riv ? `DERBİ ÖN İZLEME: ${riv} (${team.tag} vs ${opp.tag})` : `Maç Önü Analizi: ${team.tag} vs ${opp.tag}`,
+        sender: 'Esports Yayın Masası',
+        category: 'NEWS',
+        body: `Yarınki BO${nextM.bestOf} mücadelesi öncesi güç dengesi: ${team.tag} (OVR ${getTeamOVR(state, team.id)}) vs ${opp.tag} (OVR ${getTeamOVR(state, oppId)}). Günün kilit koridor düellosu ${myStar?.role} koridorunda ${myStar?.name} (${myStar?.ovr}) ile ${oppSame?.name} (${oppSame?.ovr}) arasında olacak!`,
+      });
+      return;
+    }
+  }
+
+  // Tuesday / Wednesday: Varied World & Club Stories (38% chance so inbox feels alive, not spammed)
+  if (Math.random() > 0.38) return;
+  const stories = [
+    {
+      id: 'power_rank',
+      run: () => {
+        const top5 = [...state.teams].sort((a, b) => getTeamOVR(state, b.id) - getTeamOVR(state, a.id)).slice(0, 5);
+        const myRank = [...state.teams].sort((a, b) => getTeamOVR(state, b.id) - getTeamOVR(state, a.id)).findIndex(t => t.id === team.id) + 1;
+        addInboxMessage(state, {
+          title: `Küresel Güç Sıralaması Güncellendi (${team.tag}: #${myRank})`,
+          sender: 'Global Power Rankings',
+          category: 'NEWS',
+          body: `Dünyanın en güçlü 5 takımı: ${top5.map((t, i) => `${i + 1}. ${t.tag} [${t.region}] (${getTeamOVR(state, t.id)})`).join(' • ')}. ${team.name} şu an küresel listede #${myRank} sırada.`,
+        });
+      },
+    },
+    {
+      id: 'soloq_radar',
+      run: () => {
+        const hot = [...(state.challengerPool || [])].sort((a, b) => b.lp - a.lp)[0];
+        if (!hot) return;
+        addInboxMessage(state, {
+          title: `SoloQ Radarı: ${hot.name} ${hot.server} Sunucusunda Zirvede!`,
+          sender: 'Baş Gözlemci Raporu',
+          category: 'NEWS',
+          body: `${hot.age} yaşındaki ${hot.role} yeteneği ${hot.name}, ${hot.server} Challenger'da ${hot.lp} LP'ye ulaştı (Tahmini OVR ${hot.ovr}). Transfer → Challenger Scouting sekmesinden rapor isteyebilirsin.`,
+        });
+      },
+    },
+    {
+      id: 'form_pulse',
+      run: () => {
+        const hotP = [...roster].sort((a, b) => b.form - a.form)[0];
+        const duo = getTeamDuoSynergy(team, roster);
+        addInboxMessage(state, {
+          title: `Antrenman Kampı Raporu: ${hotP?.name} Formda!`,
+          sender: 'Performans Koçu',
+          category: 'NEWS',
+          body: `Bu hafta scrimlerde ${hotP?.name} (Form ${hotP?.form}, Moral ${hotP?.morale}) takımın en keskin ismi oldu. İkili uyum durumu — JGL+MID: ${duo.jglMid.label} (${duo.jglMid.score}/30), BOT+SUP: ${duo.botSup.label} (${duo.botSup.score}/30).`,
+        });
+      },
+    },
+    {
+      id: 'regional_buzz',
+      run: () => {
+        const otherRegs = REGIONS.filter(r => r.id !== team.region);
+        const reg = otherRegs[Math.floor(Math.random() * otherRegs.length)];
+        const st = getSortedStandings(state, reg.id);
+        const leader = state.teams.find(t => t.id === st[0]?.teamId);
+        const bottom = state.teams.find(t => t.id === st[st.length - 1]?.teamId);
+        if (!leader || !bottom) return;
+        addInboxMessage(state, {
+          title: `${reg.name} Gündemi: ${leader.tag} Zirvede, ${bottom.tag} Krizde`,
+          sender: 'Esports Insider',
+          category: 'NEWS',
+          body: `${reg.name} liginde ${leader.name} (${st[0].wins}G-${st[0].losses}M) şampiyonluk yürüyüşünü sürdürürken, ${bottom.name} (${st[st.length - 1].wins}G-${st[st.length - 1].losses}M) taraftar baskısı altında.`,
+        });
+      },
+    },
+    {
+      id: 'patch_rumor',
+      run: () => {
+        const p = getCurrentPatch(state);
+        addInboxMessage(state, {
+          title: `Analist Masası: Yama ${p.version} (${p.name}) Meta Değerlendirmesi`,
+          sender: 'Baş Draft Analisti',
+          category: 'PATCH',
+          body: `Mevcut Yama ${p.version} verilerine göre ${p.buffedClasses.join(', ')} sınıfları yüksek kazanma oranına sahip. Draft ekranında bu sınıflara öncelik vermek büyük avantaj sağlıyor.`,
+        });
+      },
+    },
+  ].sort(() => Math.random() - 0.5);
+
+  for (const s of stories) {
+    if (pickFresh(s.id, s.run)) break;
+  }
+}
+
+// ==================== DRAMA & PRESS CONFERENCE EVENTS (16 UNIQUE FM EVENTS) ====================
 function maybeTriggerDramaEvent(state) {
-  if (state.pendingEvent || Math.random() > 0.42) return;
+  ensureCalendarState(state);
+  if (state.pendingEvent || Math.random() > 0.48) return;
   const mgr = state.managerName || 'Koç';
   const team = state.teams.find(t => t.id === state.userTeamId);
   const roster = getTeamRoster(state, team.id);
   const p1 = roster[Math.floor(Math.random() * roster.length)];
   const p2 = roster.find(p => p.id !== p1.id) || p1;
+  const star = [...roster].sort((a, b) => b.ovr - a.ovr)[0] || p1;
+  const youngest = [...roster].sort((a, b) => a.age - b.age)[0] || p1;
 
   const templates = [
     {
+      id: 'late_stream',
       title: 'Gece Yarısı Yayın Krizi',
       desc: `${mgr}, ${p1.name} önemli maç haftasında sabah 4'e kadar SoloQ yayını yaptığı için antrenmana uykusuz geldi. Nasıl tepki vereceksin?`,
       choices: [
@@ -549,6 +673,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
+      id: 'scrim_clash',
       title: 'Scrim Sonrası Tartışma',
       desc: `${mgr}, scrim değerlendirmesinde ${p1.name} ve ${p2.name} harita çağrısı yüzünden sertçe tartıştı. Takım atmosferi gergin!`,
       choices: [
@@ -558,6 +683,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
+      id: 'press_trash',
       title: 'Basın Toplantısı & Trash Talk',
       desc: `Rakip koç, röportajda ${team.name} için "Sadece şansla kazanıyorlar" dedi. ${mgr}, basın toplantısında mikrofon sende!`,
       choices: [
@@ -566,6 +692,7 @@ function maybeTriggerDramaEvent(state) {
       ],
     },
     {
+      id: 'sponsor_shoot',
       title: 'Sponsor Reklam Çekimi',
       desc: `${mgr}, ana sponsorunuz hafta ortasında tam günlük reklam çekimi talep ediyor. Kabul ederseniz nakit prim var ama antrenman aksayacak.`,
       choices: [
@@ -573,9 +700,127 @@ function maybeTriggerDramaEvent(state) {
         { label: 'Reddet & Antrenmana Odaklan (Form +3, Sinerji +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 2); roster.forEach(p => { p.form = Math.min(99, p.form + 3); }); } },
       ],
     },
+    {
+      id: 'star_raise',
+      title: `Yıldız Oyuncu Prim Talebi (${star.name})`,
+      desc: `${mgr}, ${star.name}'ın menajeri kapını çaldı: "Oyuncum takımın lokomotifi, sezon içi başarı primi veya maaş iyileştirmesi bekliyoruz."`,
+      choices: [
+        { label: 'Anında Prim Öde (-$45K, Moral +12, Form +3)', effect: () => { team.budget -= 45000; star.morale = Math.min(100, star.morale + 12); star.form = Math.min(99, star.form + 3); } },
+        { label: 'Sezon Sonu Kupa Sözü Ver (Moral +4)', effect: () => { star.morale = Math.min(100, star.morale + 4); } },
+        { label: 'Kontratına Sadık Kal De (Moral -9, Disiplin +2 Sinerji)', effect: () => { star.morale = Math.max(30, star.morale - 9); team.synergy = Math.min(100, team.synergy + 2); } },
+      ],
+    },
+    {
+      id: 'kr_bootcamp',
+      title: 'Kısa Süreli Yoğun Bootcamp Fırsatı',
+      desc: `${mgr}, rakip liglerden birkaç üst düzey takım hafta içi yoğun 3 günlük kapalı scrim bloğu (mini-bootcamp) önerdi. Katılalım mı?`,
+      choices: [
+        { label: 'Katıl (-$55K, Tüm Takım Form +4, Sinerji +4, Yorgunluk +11)', effect: () => { team.budget -= 55000; team.synergy = Math.min(100, team.synergy + 4); roster.forEach(p => { p.form = Math.min(99, p.form + 4); p.fatigue = Math.min(100, p.fatigue + 11); }); } },
+        { label: 'Sadece VOD Analizi Yap (Sinerji +2, Yorgunluk +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 2); roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 2); }); } },
+        { label: 'Reddet & Oyuncuları Dinlendir (Yorgunluk -8)', effect: () => { roster.forEach(p => { p.fatigue = Math.max(0, p.fatigue - 8); }); } },
+      ],
+    },
+    {
+      id: 'pocket_pick',
+      title: `SoloQ'da Gizli Meta Keşfi (${p1.name})`,
+      desc: `${p1.name}, Challenger'da rakiplerin hiç beklemediği gizli bir pocket-pick bulduğunu ve bu hafta buna çalışmak istediğini söyledi.`,
+      choices: [
+        { label: 'Özgürlük Tanı (Havuz +2, Form +3, Sinerji -1)', effect: () => { p1.attrs.pool = Math.min(99, p1.attrs.pool + 2); p1.ovr = calcOVR(p1.attrs); p1.form = Math.min(99, p1.form + 3); team.synergy = Math.max(40, team.synergy - 1); } },
+        { label: 'Standart Meta Planına Sadık Kal (Sinerji +3, Moral -3)', effect: () => { team.synergy = Math.min(100, team.synergy + 3); p1.morale = Math.max(30, p1.morale - 3); } },
+      ],
+    },
+    {
+      id: 'fan_meet',
+      title: 'Taraftar Buluşması & İmza Günü',
+      desc: `Pazarlama ekibi bu hafta sonu öncesi büyük bir taraftar imza günü ve forma satışı etkinliği düzenlemek istiyor.`,
+      choices: [
+        { label: 'Tüm Kadroyla Katıl (Bütçe +$50K, Taraftar +4, Yorgunluk +6)', effect: () => { team.budget += 50000; team.fanbase = Math.min(100, team.fanbase + 4); roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 6); }); } },
+        { label: 'Online Soru-Cevap Yap (Taraftar +2, Moral +3)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 2); roster.forEach(p => { p.morale = Math.min(100, p.morale + 3); }); } },
+        { label: 'İptal Et, Maça Odaklan (Form +2)', effect: () => { roster.forEach(p => { p.form = Math.min(99, p.form + 2); }); } },
+      ],
+    },
+    {
+      id: 'legend_consultant',
+      title: 'Eski Efsane Koçtan Danışmanlık',
+      desc: `Emekli bir Worlds şampiyonu analist, 1 haftalığına makro oyunlarınızı inceleyip özel brifing vermek istiyor.`,
+      choices: [
+        { label: 'Danışmanlığı Al (-$35K, Sinerji +4, Tüm Kadro Makro +1)', effect: () => { team.budget -= 35000; team.synergy = Math.min(100, team.synergy + 4); roster.forEach(p => { p.attrs.macro = Math.min(99, p.attrs.macro + 1); p.ovr = calcOVR(p.attrs); }); } },
+        { label: 'Kendi Ekibime Güveniyorum (Bütçe Korundu, Moral +2)', effect: () => { roster.forEach(p => { p.morale = Math.min(100, p.morale + 2); }); } },
+      ],
+    },
+    {
+      id: 'social_backlash',
+      title: `Sosyal Medya Eleştiri Dalgası (${p1.name})`,
+      desc: `${p1.name}'ın son maçtaki hatalı pozisyonu Reddit ve X'te viral oldu. Taraftarlar sosyal medyada sert tepki gösteriyor.`,
+      choices: [
+        { label: `Basında Oyuncuna Sahip Çık (${p1.name} Moral +10, Form +3, Taraftar -1)`, effect: () => { p1.morale = Math.min(100, p1.morale + 10); p1.form = Math.min(99, p1.form + 3); team.fanbase = Math.max(20, team.fanbase - 1); } },
+        { label: 'Sosyal Medya Detoksu Uygula (Yorgunluk -6, Moral +4)', effect: () => { p1.fatigue = Math.max(0, p1.fatigue - 6); p1.morale = Math.min(100, p1.morale + 4); } },
+        { label: 'Performans Uyarısı Ver (Form +4, Moral -7)', effect: () => { p1.form = Math.min(99, p1.form + 4); p1.morale = Math.max(30, p1.morale - 7); } },
+      ],
+    },
+    {
+      id: 'riot_doc',
+      title: 'Riot Belgesel Çekimi: "Zirveye Yolculuk"',
+      desc: `Riot prodüksiyon ekibi, ${team.name} kulüp içi hayatını anlatan özel bir mini belgesel çekmek için izin istiyor.`,
+      choices: [
+        { label: 'Kameralara İzin Ver (Prestij +1, Taraftar +4, Yorgunluk +5)', effect: () => { team.prestige = Math.min(99, team.prestige + 1); team.fanbase = Math.min(100, team.fanbase + 4); roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 5); }); } },
+        { label: 'Taktik Gizlilik İçin Reddet (Sinerji +3, Form +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 3); roster.forEach(p => { p.form = Math.min(99, p.form + 2); }); } },
+      ],
+    },
+    {
+      id: 'gh_hardware',
+      title: 'Gaming House Donanım & Fiber Yenilemesi',
+      desc: `Antrenman odasındaki monitörlerde ve fiber hatta hafif gecikme (ping) dalgalanmaları yaşanıyor. Oyuncular şikayetçi.`,
+      choices: [
+        { label: 'Acil Donanım & Hat Yükselt (-$30K, Moral +5, Form +3)', effect: () => { team.budget -= 30000; roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); p.form = Math.min(99, p.form + 3); }); } },
+        { label: 'Geçici Çözümle İdare Et (Yorgunluk +5, Moral -4)', effect: () => { roster.forEach(p => { p.fatigue = Math.min(100, p.fatigue + 5); p.morale = Math.max(30, p.morale - 4); }); } },
+      ],
+    },
+    {
+      id: 'young_shine',
+      title: `Genç Yıldız Antrenmanda Parladı (${youngest.name})`,
+      desc: `${youngest.age} yaşındaki ${youngest.name}, bu haftaki scrimlerde inanılmaz mekanik oyunlar sergiledi. Nasıl yaklaşacaksın?`,
+      choices: [
+        { label: 'Takım Önünde Öv (Moral +9, Form +4)', effect: () => { youngest.morale = Math.min(100, youngest.morale + 9); youngest.form = Math.min(99, youngest.form + 4); } },
+        { label: 'Ayakları Yere Bassın, Makro Çalıştır (Makro +1, Sinerji +2)', effect: () => { youngest.attrs.macro = Math.min(99, youngest.attrs.macro + 1); youngest.ovr = calcOVR(youngest.attrs); team.synergy = Math.min(100, team.synergy + 2); } },
+      ],
+    },
+    {
+      id: 'scrim_leak',
+      title: 'Rakip Takım Scrim Sızıntısı İddiası',
+      desc: `Analistlerin, geçen hafta scrim yaptığın bir rakibin draft notlarını dışarı sızdırdığından şüpheleniyor!`,
+      choices: [
+        { label: 'O Takımı Kara Listeye Al (Sinerji +4, Takım Hırsı: Form +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 4); roster.forEach(p => { p.form = Math.min(99, p.form + 2); }); } },
+        { label: 'Sahte Draft Deneyerek Tuzak Kur (Moral +4, Sinerji +2)', effect: () => { team.synergy = Math.min(100, team.synergy + 2); roster.forEach(p => { p.morale = Math.min(100, p.morale + 4); }); } },
+      ],
+    },
+    {
+      id: 'sleep_diet',
+      title: 'Beslenme & Uyku Programı Revizyonu',
+      desc: `Performans koçu, oyuncuların uyku düzeni ve beslenmesini optimize edecek profesyonel bir şef ve uyku programı öneriyor.`,
+      choices: [
+        { label: 'Programı Onayla (-$25K, Tüm Takım Yorgunluk -14, Form +2)', effect: () => { team.budget -= 25000; roster.forEach(p => { p.fatigue = Math.max(0, p.fatigue - 14); p.form = Math.min(99, p.form + 2); }); } },
+        { label: 'Mevcut Düzenle Devam Et (Değişiklik Yok)', effect: () => {} },
+      ],
+    },
+    {
+      id: 'charity_show',
+      title: 'Hayır Kurumu Gösteri Maçı Daveti',
+      desc: `Hafta sonu öncesi genç oyuncular için bağış toplayan bir gösteri maçına davet edildiniz.`,
+      choices: [
+        { label: 'Takımca Katıl (Taraftar +4, Moral +5, Yorgunluk +5)', effect: () => { team.fanbase = Math.min(100, team.fanbase + 4); roster.forEach(p => { p.morale = Math.min(100, p.morale + 5); p.fatigue = Math.min(100, p.fatigue + 5); }); } },
+        { label: 'Doğrudan Bağış Yap (-$25K, Taraftar +3, Prestij +1)', effect: () => { team.budget -= 25000; team.fanbase = Math.min(100, team.fanbase + 3); team.prestige = Math.min(99, team.prestige + 1); } },
+      ],
+    },
   ];
 
-  const chosen = templates[Math.floor(Math.random() * templates.length)];
+  // Pick a fresh event that hasn't appeared in the last 8 events!
+  const freshPool = templates.filter(t => !state.recentEventIds.includes(t.id));
+  const pool = freshPool.length ? freshPool : templates;
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  state.recentEventIds.push(chosen.id);
+  if (state.recentEventIds.length > 8) state.recentEventIds.shift();
+
   state.pendingEvent = {
     title: chosen.title,
     desc: chosen.desc,

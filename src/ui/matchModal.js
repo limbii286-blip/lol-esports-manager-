@@ -67,6 +67,14 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       (cn) => `"Bu maçta ${cn} ile koridoru domine edebilirim!"`,
       (cn) => `"${cn} metasını çok çalıştım, bana bırak!"`,
       (cn) => `"${cn} alırsak takım savaşını tek başıma taşırım!"`,
+      (cn) => `"Scrimlerde ${cn} ile kaybetmedim, rakip buna hazır değil!"`,
+      (cn) => `"Eğer ${cn} çekersek erken oyunda haritayı tamamen açarım."`,
+      (cn) => `"Koç bana güven, bu seride ${cn} fark yaratacak!"`,
+      (cn) => `"Rakibin kompozisyonuna karşı ${cn} tam panzehir olur."`,
+      (cn) => `"${cn} ile yan koridor baskısı kurup kuleleri eritirim!"`,
+      (cn) => `"Bugün elim çok sıcak, ${cn} ver bana şov yapayım!"`,
+      (cn) => `"Geç oyuna kalırsak ${cn} ile kimse beni durduramaz."`,
+      (cn) => `"${cn} seçimini kilitlersek objektif savaşlarında çok üstün oluruz!"`,
     ];
     const reqs = [];
     const usedIds = new Set(lockedSet);
@@ -139,7 +147,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
         if (move) applyDraftAction(series.draft, move.champId, move.role);
         render();
         scheduleAIDraftIfNeeded();
-      }, 480);
+      }, 750);
     }
   }
 
@@ -160,7 +168,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
 
   function startMatchLoop() {
     if (series.timerId) clearInterval(series.timerId);
-    const ms = series.speed === 4 ? 260 : series.speed === 2 ? 650 : series.speed === 0.5 ? 2200 : 1350;
+    const ms = series.speed === 4 ? 420 : series.speed === 2 ? 950 : series.speed === 0.5 ? 2800 : 1850;
     series.timerId = setInterval(() => {
       if (series.paused || series.liveMatch.finished) {
         if (series.liveMatch.finished) {
