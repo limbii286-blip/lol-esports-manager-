@@ -80,7 +80,7 @@ function renderStartScreen() {
       <div class="region-tabs">
         ${REGIONS.map(r => `
           <button class="region-tab ${ui.startRegion === r.id ? 'active' : ''}" data-start-region="${r.id}">
-            <span class="region-dot" style="background:${r.color};"></span> ${r.name}
+            <span class="region-dot" style="background:${r.color};"></span> ${r.name} <span style="font-size:10px;opacity:0.75;">(BO${r.splitBestOf} • ${r.worldsSlots}W)</span>
           </button>
         `).join('')}
       </div>
@@ -672,7 +672,12 @@ function renderLeague() {
 
     <div class="grid-2">
       <div class="card">
-        <div class="card-header"><span class="card-title">${icon('trophy', 14)} ${ui.leagueRegion} Puan Durumu</span><span style="font-size:11px;color:var(--text-muted);">İlk 4 Playoff</span></div>
+        <div class="card-header">
+          <span class="card-title">${icon('trophy', 14)} ${ui.leagueRegion} Puan Durumu</span>
+          <span style="font-size:11px;color:var(--text-muted);">
+            Lig: <b>BO${REGIONS.find(r => r.id === ui.leagueRegion)?.splitBestOf || 3}</b> • Worlds Slotu: <b>${REGIONS.find(r => r.id === ui.leagueRegion)?.worldsSlots || 1} Takım</b>
+          </span>
+        </div>
         <table>
           <thead><tr><th>#</th><th>Takım</th><th>G-M</th><th>Oyun</th><th>OVR</th><th>Kupalar</th></tr></thead>
           <tbody>

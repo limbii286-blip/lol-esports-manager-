@@ -61,7 +61,7 @@ export function getTeamWeeklyWages(state, teamId) {
   return state.players.filter(p => p.teamId === teamId).reduce((s, p) => s + p.salary, 0);
 }
 
-function generateRoundRobin(teamIds) {
+function generateRoundRobin(teamIds, bestOf = 3) {
   const arr = [...teamIds];
   const n = arr.length;
   const weeks = [];
@@ -74,8 +74,8 @@ function generateRoundRobin(teamIds) {
         id: `m_${round}_${i}_${t1}_${t2}`,
         blueId: round % 2 === 0 ? t1 : t2,
         redId: round % 2 === 0 ? t2 : t1,
-        bestOf: 3,
-        fearless: true,
+        bestOf,
+        fearless: bestOf > 1,
         blueScore: 0,
         redScore: 0,
         played: false,
@@ -93,7 +93,7 @@ function createRegionalSchedules(teams) {
   const standings = {};
   for (const reg of REGIONS) {
     const rTeams = teams.filter(t => t.region === reg.id);
-    schedules[reg.id] = generateRoundRobin(rTeams.map(t => t.id));
+    schedules[reg.id] = generateRoundRobin(rTeams.map(t => t.id), reg.splitBestOf || 3);
     standings[reg.id] = rTeams.map(t => ({
       teamId: t.id, wins: 0, losses: 0, gameWins: 0, gameLosses: 0,
     }));
@@ -128,6 +128,7 @@ export function getPhaseLabel(phase) {
     MSI: 'MSI Uluslararası',
     SUMMER_SPLIT: 'Yaz Mevsimi',
     SUMMER_PLAYOFFS: 'Yaz Playoff',
+    WORLDS_PLAYIN: 'WORLDS Ön Eleme (Play-In)',
     WORLDS_SWISS: 'WORLDS İsviçre Aşaması',
     WORLDS_KNOCKOUT: 'WORLDS Eleme Aşaması',
     OFFSEASON: 'Sezon Arası & Transfer',
@@ -153,7 +154,9 @@ export function createNewCareer(userTeamId) {
     schedules,
     standings,
     swiss: null,     // 16-team Worlds Swiss Stage state
-    bracket: null,   // Playoffs / MSI / Worlds Knockout
+    worldsDirectIds: [], // 14 direct Swiss seeds waiting for 2 Play-In winners
+    msiWinnerRegion: 'LCK',
+    bracket: null,   // Playoffs / MSI / Worlds Play-In / Worlds Knockout
     challengerPool: generateChallengerProspects(),
     incomingOffers: [],
     pendingEvent: null,
@@ -526,23 +529,66 @@ function createMSIBracket(state, champByRegion) {
   };
 }
 
-function createWorldsSwissStage(state) {
-  // 16 Teams: Top 3 LCK/LPL/LEC/LCS (12) + TCL #1 + CBLOL #1, #2 + LCO #1
-  const picks = [
-    ...getSortedStandings(state, 'LCK').slice(0, 3),
-    ...getSortedStandings(state, 'LPL').slice(0, 3),
-    ...getSortedStandings(state, 'LEC').slice(0, 3),
-    ...getSortedStandings(state, 'LCS').slice(0, 3),
-    ...getSortedStandings(state, 'TCL').slice(0, 1),
-    ...getSortedStandings(state, 'CBLOL').slice(0, 2),
-    ...getSortedStandings(state, 'LCO').slice(0, 1),
+// Worlds 2026 Qualification System:
+// 14 Direct Swiss Seeds: LCK #1-3, LPL #1-3, LEC #1-3, LCS #1-3, CBLOL #1, + 1 MSI Champion Region Bonus Seed
+// 4 Play-In Teams (2 BO5s -> 2 winners enter Swiss): TCL #1 (Champ), LCO #1 (Champ), CBLOL #2, + 4th Seed of MSI Bonus Region (or LCK/LPL #4)
+function buildWorlds2026Qualification(state, finalMatches) {
+  const getRegionOrderedSeeds = (regId) => {
+    const fm = finalMatches.find(m => m.region === regId);
+    const champId = fm?.winnerId;
+    const runnerId = fm ? (fm.blueId === champId ? fm.redId : fm.blueId) : null;
+    const regOrder = getSortedStandings(state, regId).map(r => r.teamId);
+    const ordered = [];
+    if (champId) ordered.push(champId);
+    if (runnerId && !ordered.includes(runnerId)) ordered.push(runnerId);
+    for (const id of regOrder) if (!ordered.includes(id)) ordered.push(id);
+    return ordered;
+  };
+
+  const seeds = {};
+  for (const reg of REGIONS) seeds[reg.id] = getRegionOrderedSeeds(reg.id);
+
+  const bonusReg = state.msiWinnerRegion || 'LCK';
+  const directIds = [
+    ...seeds.LCK.slice(0, 3),
+    ...seeds.LPL.slice(0, 3),
+    ...seeds.LEC.slice(0, 3),
+    ...seeds.LCS.slice(0, 3),
+    seeds.CBLOL[0],
   ];
 
-  const swissTeams = picks.map(r => ({
-    teamId: r.teamId,
+  // Add 14th direct seed: if bonusReg is a 3-slot region, take its #4; else take LCK #4
+  const bonus4 = seeds[bonusReg]?.find(id => !directIds.includes(id)) || seeds.LCK.find(id => !directIds.includes(id));
+  if (bonus4) directIds.push(bonus4);
+
+  // 4 Play-In Teams: TCL Champ, LCO Champ, CBLOL #2, and LPL #4 (or next highest non-qualified major seed)
+  const extraPlayIn = seeds.LPL.find(id => !directIds.includes(id)) || seeds.LCK.find(id => !directIds.includes(id));
+  const playInIds = [seeds.TCL[0], seeds.LCO[0], seeds.CBLOL[1], extraPlayIn].filter(Boolean);
+
+  const playInBracket = {
+    title: `WORLDS ${state.season} Ön Eleme (Play-In — 2 Takım İsviçre'ye Çıkar)`,
+    type: 'WORLDS_PLAYIN',
+    currentRound: 0,
+    rounds: [
+      {
+        name: 'Play-In Eleme Finalleri (BO5)',
+        matches: [
+          { id: 'WPI_1', blueId: playInIds[0], redId: playInIds[2], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+          { id: 'WPI_2', blueId: playInIds[3], redId: playInIds[1], bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
+        ],
+      },
+    ],
+  };
+
+  return { directIds, playInIds, playInBracket, bonusReg };
+}
+
+function createWorldsSwissStage(state, teamIds16) {
+  const swissTeams = teamIds16.map(teamId => ({
+    teamId,
     wins: 0,
     losses: 0,
-    status: 'ACTIVE', // ACTIVE | QUALIFIED | ELIMINATED
+    status: 'ACTIVE',
     pastOpps: [],
   }));
 
@@ -755,6 +801,7 @@ function finishBracketAndTransition(state) {
 
   if (state.phase === 'MSI') {
     const msiWinner = state.teams.find(t => t.id === finalMatches[0].winnerId);
+    state.msiWinnerRegion = msiWinner.region;
     msiWinner.budget += 650000;
     msiWinner.prestige = Math.min(99, msiWinner.prestige + 2);
     msiWinner.trophies.push(`MSI ${state.season}`);
@@ -774,7 +821,7 @@ function finishBracketAndTransition(state) {
       title: `MSI ${state.season} Şampiyonu: ${msiWinner.name}!`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${msiWinner.name} MSI kupasını kaldırdı! Yeni Yama ${getCurrentPatch(state).version} ve taze SoloQ Challenger genç yetenekleriyle Yaz Mevsimi başlıyor.`,
+      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds 2026 için +1 bonus slot kazandırdı! Yeni Yama ${getCurrentPatch(state).version} ile Yaz Mevsimi başlıyor.`,
     });
     return;
   }
@@ -788,16 +835,42 @@ function finishBracketAndTransition(state) {
       champs.push(`${fm.region}: ${champ.tag}`);
     }
     state.patchIndex = 4;
+    const { directIds, playInIds, playInBracket, bonusReg } = buildWorlds2026Qualification(state, finalMatches);
+    state.worldsDirectIds = directIds;
+    state.phase = 'WORLDS_PLAYIN';
+    state.week = 1;
+    state.bracket = playInBracket;
+
+    const uid = state.userTeamId;
+    const userStatus = directIds.includes(uid)
+      ? 'Tebrikler! Takımın Worlds İsviçre Aşaması\'na DOĞRUDAN katılmaya hak kazandı! Play-In maçları bitince sahneye çıkacaksın.'
+      : playInIds.includes(uid)
+        ? 'Takımın Worlds Ön Eleme (Play-In) bileti aldı! BO5 serisini kazanıp 16 takımlı İsviçre Aşaması\'na çıkmalısın.'
+        : 'Maalesef bu sezon Worlds 2026 biletini kaçırdın. Turnuvayı dışarıdan takip edip Sezon Arası\'nda kadronu güçlendirebilirsin.';
+
+    addInboxMessage(state, {
+      title: `WORLDS ${state.season} Katılımcıları Belli Oldu (Ön Eleme Başlıyor)`,
+      sender: 'Riot Esports',
+      category: 'TOURNAMENT',
+      body: `Yaz Şampiyonları: ${champs.join(' • ')}. MSI Bonus Slotu: ${bonusReg}. ${userStatus}`,
+    });
+    return;
+  }
+
+  if (state.phase === 'WORLDS_PLAYIN') {
+    const winners = finalMatches.map(m => m.winnerId);
+    const all16 = [...(state.worldsDirectIds || []), ...winners].slice(0, 16);
     state.bracket = null;
     state.phase = 'WORLDS_SWISS';
     state.week = 1;
-    state.swiss = createWorldsSwissStage(state);
+    state.swiss = createWorldsSwissStage(state, all16);
 
+    const wTags = winners.map(id => state.teams.find(t => t.id === id)?.tag).join(' & ');
     addInboxMessage(state, {
       title: `WORLDS ${state.season} — 16 Takımlı İsviçre Aşaması Başlıyor`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `Yaz Şampiyonları: ${champs.join(' • ')}. 3 galibiyet alan Çeyrek Final'e çıkar, 3 mağlubiyet alan elenir!`,
+      body: `Play-In'den çıkan ${wTags} ile 16 takım tamamlandı! 3 galibiyet alan Çeyrek Final'e yükselir, 3 mağlubiyet alan elenir.`,
     });
     return;
   }

@@ -10,13 +10,13 @@ export const ROLE_LABELS = {
 };
 
 export const REGIONS = [
-  { id: 'LCK', name: 'LCK (Kore)', color: '#38bdf8', prestige: 96, lang: 'KR', desc: 'Dünyanın en disiplinli makro ve bireysel yetenek ligi.' },
-  { id: 'LPL', name: 'LPL (Çin)', color: '#ef4444', prestige: 95, lang: 'CN', desc: 'Agresif takım savaşları ve yüksek mekanik temposu.' },
-  { id: 'LEC', name: 'LEC (Avrupa)', color: '#10b981', prestige: 84, lang: 'EN', desc: 'Yaratıcı draftlar ve sürpriz stratejilerin sahnesi.' },
-  { id: 'LCS', name: 'LCS (K. Amerika)', color: '#f59e0b', prestige: 80, lang: 'EN', desc: 'Yüksek bütçeler, yıldız transferler ve şov kültürü.' },
-  { id: 'TCL', name: 'TCL (Türkiye)', color: '#e11d48', prestige: 75, lang: 'TR', desc: 'Tutkulu taraftarlar, ateşli derbiler ve genç mekanik yetenekler.' },
-  { id: 'CBLOL', name: 'CBLOL (Brezilya)', color: '#22c55e', prestige: 76, lang: 'PT', desc: 'Dünyanın en coşkulu arenaları ve kaotik takım savaşları.' },
-  { id: 'LCO', name: 'LCO (Okyanusya)', color: '#06b6d4', prestige: 72, lang: 'EN', desc: 'Sürpriz pickler ve cesur erken oyun baskıları.' },
+  { id: 'LCK', name: 'LCK (Kore)', color: '#38bdf8', prestige: 96, lang: 'KR', splitBestOf: 3, worldsSlots: 3, desc: 'Dünyanın en disiplinli makro ve bireysel yetenek ligi (BO3).' },
+  { id: 'LPL', name: 'LPL (Çin)', color: '#ef4444', prestige: 95, lang: 'CN', splitBestOf: 3, worldsSlots: 3, desc: 'Agresif takım savaşları ve yüksek mekanik temposu (BO3).' },
+  { id: 'LEC', name: 'LEC (Avrupa)', color: '#10b981', prestige: 84, lang: 'EN', splitBestOf: 1, worldsSlots: 3, desc: 'Yaratıcı draftlar ve sürpriz stratejilerin sahnesi (BO1).' },
+  { id: 'LCS', name: 'LCS (K. Amerika)', color: '#f59e0b', prestige: 80, lang: 'EN', splitBestOf: 3, worldsSlots: 3, desc: 'Yüksek bütçeler, yıldız transferler ve şov kültürü (BO3).' },
+  { id: 'TCL', name: 'TCL (Türkiye)', color: '#e11d48', prestige: 75, lang: 'TR', splitBestOf: 1, worldsSlots: 1, desc: 'Tutkulu taraftarlar, tek maçlık lig (BO1) ve sadece şampiyona Worlds bileti.' },
+  { id: 'CBLOL', name: 'CBLOL (Brezilya)', color: '#22c55e', prestige: 76, lang: 'PT', splitBestOf: 1, worldsSlots: 2, desc: 'Dünyanın en coşkulu arenaları, tek maçlık lig (BO1) ve 2 Worlds slotu.' },
+  { id: 'LCO', name: 'LCO (Okyanusya)', color: '#06b6d4', prestige: 72, lang: 'EN', splitBestOf: 1, worldsSlots: 1, desc: 'Tek maçlık lig (BO1) ve sadece şampiyona Worlds Play-In bileti.' },
 ];
 
 export const REGION_LANG = Object.fromEntries(REGIONS.map(r => [r.id, r.lang]));
