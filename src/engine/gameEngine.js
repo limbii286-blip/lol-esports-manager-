@@ -274,6 +274,14 @@ export function skipToNextKeyDay(state) {
   return last;
 }
 
+function setCalendarToMonday(state, month, day) {
+  const dt = new Date(Date.UTC(state.season, month - 1, day));
+  const dow = dt.getUTCDay();
+  const diff = dow === 0 ? 1 : (dow === 1 ? 0 : 8 - dow);
+  dt.setUTCDate(dt.getUTCDate() + diff);
+  state.currentDate = toISO(dt);
+}
+
 export function createNewCareer(userTeamId, managerName = 'Koç') {
   const cleanName = (managerName || 'Koç').trim() || 'Koç';
   const { teams, players } = createInitialDatabase();
@@ -327,7 +335,16 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 export function getCurrentPatch(state) {
-  return PATCHES[state.patchIndex % PATCHES.length];
+  const base = PATCHES[state.patchIndex % PATCHES.length];
+  const yr = String(state.season || 2026).slice(-2);
+  const sub = (state.patchIndex % PATCHES.length) + 1;
+  // Procedurally shift meta slightly on future seasons (2027+) so every year feels fresh!
+  const offset = (state.season - 2026) % PATCHES.length;
+  const shifted = PATCHES[(state.patchIndex + offset) % PATCHES.length];
+  return {
+    ...shifted,
+    version: `${yr}.${sub}`,
+  };
 }
 
 export function getUserNextMatch(state) {
@@ -833,14 +850,16 @@ export function advanceWeekOrRound(state) {
       awardSplitHonors(state, 'Bahar');
       state.phase = 'SPRING_PLAYOFFS';
       state.week = 1;
+      setCalendarToMonday(state, 3, 20); // Late March Playoffs
       state.bracket = createRegionalPlayoffsBracket(state, `Sezon ${state.season} Bahar Playoffları`);
       addInboxMessage(state, { title: 'Bahar Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: '7 bölgede ilk 4 takımlar BO5 Playoff ve MSI bileti için sahneye çıkıyor!' });
     } else {
       awardSplitHonors(state, 'Yaz');
       state.phase = 'SUMMER_PLAYOFFS';
       state.week = 1;
+      setCalendarToMonday(state, 8, 18); // Late August Playoffs
       state.bracket = createRegionalPlayoffsBracket(state, `Sezon ${state.season} Yaz Playoffları`);
-      addInboxMessage(state, { title: 'Yaz Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: 'Yaz Mevsimi bitti! Şimdi 16 takımlı Worlds İsviçre Aşaması öncesi bölge finalleri!' });
+      addInboxMessage(state, { title: 'Yaz Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: 'Yaz Mevsimi bitti! Şimdi Worlds 2026 öncesi bölge finalleri!' });
     }
     return;
   }
@@ -937,6 +956,7 @@ function finishBracketAndTransition(state) {
     });
     state.phase = 'MSI';
     state.week = 1;
+    setCalendarToMonday(state, 5, 2); // May MSI!
     state.bracket = createMSIBracket(state, champByRegion);
     return;
   }
@@ -956,6 +976,7 @@ function finishBracketAndTransition(state) {
     state.bracket = null;
     state.phase = 'SUMMER_SPLIT';
     state.week = 1;
+    setCalendarToMonday(state, 6, 5); // June Summer Split!
     state.academyPromotedThisSplit = false;
     state.challengerPool = generateChallengerProspects();
 
@@ -963,7 +984,7 @@ function finishBracketAndTransition(state) {
       title: `MSI ${state.season} Şampiyonu: ${msiWinner.name}!`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds 2026 için +1 bonus slot kazandırdı! Yeni Yama ${getCurrentPatch(state).version} ile Yaz Mevsimi başlıyor.`,
+      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds ${state.season} için +1 bonus slot kazandırdı! Yeni Yama ${getCurrentPatch(state).version} ile Yaz Mevsimi başlıyor.`,
     });
     return;
   }
@@ -981,6 +1002,7 @@ function finishBracketAndTransition(state) {
     state.worldsDirectIds = directIds;
     state.phase = 'WORLDS_PLAYIN';
     state.week = 1;
+    setCalendarToMonday(state, 10, 2); // October Worlds Play-In!
     state.bracket = playInBracket;
 
     const uid = state.userTeamId;
@@ -1031,25 +1053,37 @@ function finishBracketAndTransition(state) {
     state.swiss = null;
     state.phase = 'OFFSEASON';
     state.week = 1;
+    setCalendarToMonday(state, 11, 16); // Mid-November Off-Season Transfer Window!
     runOffSeasonProgression(state);
 
+    const mgr = state.managerName || 'Koç';
     addInboxMessage(state, {
       title: `WORLDS ${state.season} Şampiyonu: ${worldsWinner.name}`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${worldsWinner.name} Sihirdar Kupası'nı kazandı! Sezon arası transfer dönemi açıldı, AI takımları transfer hamlelerini yapıyor ve yeni Challenger yetenekleri ortaya çıktı.`,
+      body: `${worldsWinner.id === userTeam.id ? `TEBRİKLER ${mgr}! Sihirdar Kupası'nı kaldırdın! ` : ''}${worldsWinner.name} WORLDS ${state.season} şampiyonu oldu! Şimdi Sezon Arası Transfer Penceresi açıldı; AI kulüpleri büyük transfer hamleleri yapıyor. Hazır olduğunda ${state.season + 1} sezonuna başlayabilirsin.`,
     });
   }
 }
 
 function runOffSeasonProgression(state) {
+  const retiredNames = [];
+  const remainingPlayers = [];
+
   for (const p of state.players) {
     p.age++;
     p.fatigue = 5;
     p.stats = { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 };
 
+    // Realistic retirements for veterans (32+, higher chance each year; never retire user's last starter silently without freeing slot)
+    const retireProb = p.age >= 35 ? 0.75 : p.age >= 33 ? 0.42 : p.age >= 32 ? 0.22 : 0;
+    if (retireProb > 0 && p.teamId !== state.userTeamId && Math.random() < retireProb) {
+      if (p.ovr >= 80) retiredNames.push(`${p.name} (${p.age})`);
+      continue;
+    }
+
     if (p.age <= 22 && p.ovr < p.pot) {
-      for (const k of Object.keys(p.attrs)) p.attrs[k] = Math.min(99, p.attrs[k] + (Math.random() < 0.65 ? 2 : 1));
+      for (const k of Object.keys(p.attrs)) p.attrs[k] = Math.min(99, p.attrs[k] + (Math.random() < 0.68 ? 2 : 1));
     } else if (p.age >= 29) {
       for (const k of Object.keys(p.attrs)) p.attrs[k] = Math.max(55, p.attrs[k] - (Math.random() < 0.55 ? 2 : 1));
     }
@@ -1060,47 +1094,80 @@ function runOffSeasonProgression(state) {
     if (p.teamId) {
       p.contractYears--;
       if (p.contractYears <= 0 && p.teamId !== state.userTeamId) {
-        if (Math.random() < 0.72) p.contractYears = 2;
+        if (Math.random() < 0.65) p.contractYears = 2;
         else { p.teamId = null; p.isStarter = false; }
+      }
+    }
+    remainingPlayers.push(p);
+  }
+  state.players = remainingPlayers;
+
+  // Generate 25 fresh young regens across all 7 regions so 2030+ stays vibrant!
+  for (let i = 0; i < 25; i++) {
+    const reg = REGIONS[i % REGIONS.length].id;
+    state.players.push(generateRegenPlayer(ROLES[i % ROLES.length], reg, Math.random() < 0.3 ? 3 : 2, null));
+  }
+  state.challengerPool = generateChallengerProspects();
+
+  // 1. Living AI-to-AI Blockbuster Transfers (Rich AI clubs buy upgrades from other AI clubs!)
+  const aiMoves = [];
+  const richAITeams = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= 1600000).sort(() => Math.random() - 0.5).slice(0, 12);
+  for (const buyer of richAITeams) {
+    const roster = getTeamRoster(state, buyer.id);
+    if (roster.length < 5) continue;
+    const weakest = [...roster].sort((a, b) => a.ovr - b.ovr)[0];
+    // Look for a better player in same role at another AI club or Free Agency
+    const target = state.players
+      .filter(p => p.role === weakest.role && p.teamId !== buyer.id && p.teamId !== state.userTeamId && p.ovr >= weakest.ovr + 2 && p.marketValue <= buyer.budget * 0.65)
+      .sort((a, b) => b.ovr - a.ovr)[0];
+    if (target) {
+      const oldClub = target.teamId ? state.teams.find(t => t.id === target.teamId) : null;
+      if (oldClub) {
+        buyer.budget -= target.marketValue;
+        oldClub.budget += target.marketValue;
+        // Swap weakest to oldClub or free agency so oldClub stays valid
+        weakest.teamId = oldClub.id;
+        weakest.isStarter = true;
+      } else {
+        weakest.teamId = null;
+        weakest.isStarter = false;
+      }
+      target.teamId = buyer.id;
+      target.isStarter = true;
+      target.contractYears = 2;
+      if (aiMoves.length < 7) {
+        aiMoves.push(`${buyer.tag}, ${oldClub ? oldClub.tag + ' takımından' : 'serbest piyasadan'} ${target.name} (${target.role}, ${target.ovr}) transfer etti`);
       }
     }
   }
 
-  // Generate fresh regens + refresh Challenger pool
-  for (let i = 0; i < 14; i++) {
-    const reg = REGIONS[i % REGIONS.length].id;
-    state.players.push(generateRegenPlayer(ROLES[i % ROLES.length], reg, 2, null));
-  }
-  state.challengerPool = generateChallengerProspects();
-
-  // AI-to-AI Off-Season Transfers!
-  const aiMoves = [];
+  // 2. Ensure every AI team has 5 valid starters
   for (const team of state.teams) {
     if (team.id === state.userTeamId) continue;
     for (const role of ROLES) {
       const has = state.players.some(p => p.teamId === team.id && p.role === role);
       if (!has) {
-        const fa = state.players.filter(p => p.teamId === null && p.role === role).sort((a, b) => b.ovr - a.ovr)[0];
-        if (fa) {
-          fa.teamId = team.id; fa.isStarter = true; fa.contractYears = 2;
-          if (aiMoves.length < 5) aiMoves.push(`${team.tag} → ${fa.name} (${fa.role}, ${fa.ovr})`);
-        }
+        const fa = state.players.filter(p => p.teamId === null && p.role === role).sort((a, b) => b.ovr - a.ovr)[0]
+          || generateRegenPlayer(role, team.region, team.facilities.youthAcademy, team.id);
+        if (!state.players.includes(fa)) state.players.push(fa);
+        fa.teamId = team.id; fa.isStarter = true; fa.contractYears = 2;
       }
     }
   }
-  if (aiMoves.length) {
+
+  if (aiMoves.length || retiredNames.length) {
     addInboxMessage(state, {
-      title: 'Sezon Arası Transfer Özeti',
+      title: `${state.season} Sezon Arası Transfer & Emeklilik Özeti`,
       sender: 'Esports Insider',
       category: 'TRANSFER',
-      body: `Öne çıkan AI transferleri: ${aiMoves.join(' • ')}`,
+      body: `${aiMoves.length ? 'Öne Çıkan AI Transferleri: ' + aiMoves.join(' • ') + '.' : ''}${retiredNames.length ? ' Emekli Olan Efsaneler: ' + retiredNames.slice(0, 6).join(', ') + '.' : ''}`,
     });
   }
 }
 
 export function startNewSeason(state) {
   state.season++;
-  state.currentDate = `${state.season}-01-12`;
+  setCalendarToMonday(state, 1, 10); // Early January of New Year!
   state.phase = 'SPRING_SPLIT';
   state.week = 1;
   state.patchIndex = 0;
@@ -1111,11 +1178,12 @@ export function startNewSeason(state) {
   state.bracket = null;
   state.swiss = null;
 
+  const np = getCurrentPatch(state);
   addInboxMessage(state, {
-    title: `Sezon ${state.season} Başladı!`,
+    title: `Sezon ${state.season} Başladı — Yama ${np.version}: ${np.name}`,
     sender: 'Lig Komitesi',
     category: 'NEWS',
-    body: `7 bölgede yeni sezon fikstürü çekildi. Bahar Mevsimi'nde başarılar!`,
+    body: `Yeni yıl (${state.season}) fikstürü 7 bölgede çekildi! Yeni sezon metası: ${np.desc}`,
   });
 }
 
