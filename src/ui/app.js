@@ -6,6 +6,7 @@ import {
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
+  getBoardConfidence, getTransferRoomOpportunities,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
   resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot,
@@ -32,6 +33,8 @@ let ui = {
   selectedInboxId: null,
   saveModalOpen: false,
   saveNameDraft: '',
+  guideModalOpen: false,
+  globalSearch: '',
   toastMsg: null,
   toastTimer: null,
 };
@@ -261,8 +264,8 @@ function renderDashboard() {
         <div class="kpi-val" style="color:var(--gold-bright);">${ovr} <span style="font-size:12.5px;color:var(--text-muted);font-weight:600;">Sinerji %${Math.round(team.synergy)}</span></div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">${team.region} Lig Sıralaması</div>
-        <div class="kpi-val">#${userRank} <span style="font-size:12.5px;color:var(--text-muted);font-weight:600;">(${standings[userRank - 1]?.wins || 0}G - ${standings[userRank - 1]?.losses || 0}M)</span></div>
+        <div class="kpi-label">${team.region} Sıralama & Yönetim</div>
+        <div class="kpi-val">#${userRank} <span style="font-size:12.5px;color:var(--gold-bright);font-weight:700;">• Güven: ${getBoardConfidence(state).grade} (${getBoardConfidence(state).score}%)</span></div>
       </div>
       <div class="card kpi-card">
         <div class="kpi-label">Kulüp Bütçesi</div>
@@ -378,6 +381,37 @@ function renderRoster() {
   return `
     <div class="card" style="margin-bottom:16px;">
       <div class="card-header">
+        <span class="card-title">${icon('target', 14)} Kadro Planlayıcı & Kontrat Risk Radarı</span>
+        <span style="font-size:11.5px;color:var(--text-muted);">Her rolün derinliğini ve biten kontratları tek bakışta yönet</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;">
+        ${ROLES.map(role => {
+          const rolePlayers = myPlayers.filter(p => p.role === role);
+          const starter = rolePlayers.find(p => p.isStarter) || rolePlayers[0];
+          const subs = rolePlayers.filter(p => p.id !== starter?.id);
+          const expiring = starter && starter.contractYears <= 1;
+          return `
+            <div style="background:var(--bg);border:1px solid ${expiring ? 'rgba(245,158,11,0.5)' : 'var(--border)'};border-radius:8px;padding:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span class="badge role-${role}">${role}</span>
+                <span class="ovr-pill ${ovrClass(starter?.ovr || 70)}" style="font-size:11.5px;">${starter?.ovr || '-'}</span>
+              </div>
+              <div style="font-weight:800;font-size:13px;">${starter?.name || 'Eksik!'}</div>
+              <div style="font-size:11px;color:${expiring ? 'var(--amber)' : 'var(--text-muted)'};margin-top:2px;">
+                ${expiring ? 'Kontrat Riski (≤1 yıl)' : `Kontrat: ${starter?.contractYears || 0} yıl`}
+              </div>
+              <div style="font-size:11px;color:${subs.length ? 'var(--green)' : 'var(--text-dim)'};margin-top:2px;">
+                ${subs.length ? `Yedek: ${subs[0].name} (${subs[0].ovr})` : 'Yedek Yok'}
+              </div>
+              <button class="btn-ghost btn-sm" data-planner-search="${role}" style="width:100%;margin-top:8px;font-size:11px;">Transferde Ara ${icon('arrowRight', 11)}</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
         <span class="card-title">${icon('users', 14)} Kadro, Kişilikler & Özellikler (${myPlayers.length} Oyuncu)</span>
         <span class="num" style="font-size:12px;color:var(--text-muted);">Haftalık Maaş: <b style="color:var(--text);">${formatMoney(getTeamWeeklyWages(state, team.id))}</b> • Sinerji: <b style="color:var(--text);">%${Math.round(team.synergy)}</b></span>
       </div>
@@ -462,9 +496,21 @@ function renderRoster() {
             `<button class="tactic-btn ${(team.tactics.supStyle || 'balanced') === k ? 'active' : ''}" data-def-sup="${k}">${lbl}</button>`
           ).join('')}
         </div>
-        <div class="tactic-btn-group">
+        <div class="tactic-btn-group" style="margin-bottom:9px;">
           ${[['aggressive', 'ADC: Agresif'], ['balanced', 'Dengeli'], ['safe', 'Güvenli']].map(([k, lbl]) =>
             `<button class="tactic-btn ${(team.tactics.adcStyle || 'balanced') === k ? 'active' : ''}" data-def-adc="${k}">${lbl}</button>`
+          ).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--green);font-weight:700;margin-bottom:4px;">Öndeyken Strateji (+1.5k Altın)</div>
+        <div class="tactic-btn-group" style="margin-bottom:7px;">
+          ${[['choke', 'Harita Boğma'], ['split131', '1-3-1 Split'], ['dive', 'Agresif Dive']].map(([k, lbl]) =>
+            `<button class="tactic-btn ${(team.tactics.aheadPlan || 'choke') === k ? 'active' : ''}" data-def-ahead="${k}">${lbl}</button>`
+          ).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:4px;">Gerideyken Strateji (-1.5k Altın)</div>
+        <div class="tactic-btn-group">
+          ${[['scale', 'Scaling Bekle'], ['pick', 'Pusu & Pick'], ['crossmap', 'Cross-Map Takas']].map(([k, lbl]) =>
+            `<button class="tactic-btn ${(team.tactics.behindPlan || 'scale') === k ? 'active' : ''}" data-def-behind="${k}">${lbl}</button>`
           ).join('')}
         </div>
       </div>
@@ -569,8 +615,28 @@ function renderTransfers() {
     return true;
   }).sort((a, b) => b.ovr - a.ovr);
 
+  const trOpps = getTransferRoomOpportunities(state);
   return `
     ${subTabs}
+    ${trOpps.length ? `
+      <div class="card" style="margin-bottom:14px;border-color:rgba(56,189,248,0.35);">
+        <div class="card-header" style="margin-bottom:8px;">
+          <span class="card-title" style="color:var(--blue);">${icon('star', 14)} TransferRoom — Piyasa Fırsatları (İndirimli)</span>
+          <span style="font-size:11px;color:var(--text-muted);">Kontratı bitmek üzere veya mutsuz yıldızlar</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;">
+          ${trOpps.map(o => `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div>
+                <div><span class="badge role-${o.player.role}">${o.player.role}</span> <b>${o.player.name}</b> <span class="ovr-pill ${ovrClass(o.player.ovr)}" style="font-size:11px;">${o.player.ovr}</span></div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${o.club?.tag} • ${o.reason} • <b style="color:var(--green);">${formatMoney(o.discountPrice)}</b></div>
+              </div>
+              <button class="btn-blue btn-sm" data-open-nego="${o.player.id}">Teklif</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
     <div class="card" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
       <div>
         <div class="card-title">${icon('users', 14)} Gençlik Akademisi (Sv. ${team.facilities.youthAcademy})</div>
@@ -933,6 +999,36 @@ function renderDramaModal() {
   `;
 }
 
+function renderGuideModal() {
+  if (!ui.guideModalOpen) return '';
+  const items = [
+    ['Çift Fazlı Taktikler', 'Öndeyken Strateji (+1.5k altın) haritayı boğma, 1-3-1 split veya agresif kule dalışını belirler. Gerideyken Strateji (-1.5k altın) geri dönüş için scaling, çalı pususu veya cross-map takas planını devreye alır.'],
+    ['Fearless Draft & Counter', 'BO3 ve BO5 serilerinde önceki maçlarda oynanan şampiyonlar kilitlenir. Rakibin şampiyonuna karşı counter seçimi ve oyuncunun imza/ustalık seviyesi koridor üstünlüğü sağlar.'],
+    ['Shutdown, Smite Çalma & Kadim Ejder', 'Seri yakalayan oyuncular öldüğünde +700 altına kadar Shutdown verir. Ormancılar Clutch statına göre Ejder ve Baron çalabilir. Ejder Ruhu sonrası Kadim Ejder doğar.'],
+    ['Bölge Formatları & Worlds 2026', 'LCK, LPL ve LCS normal sezonda BO3; TCL, LEC, CBLOL ve LCO ise BO1 oynar. TCL ve LCO şampiyonları Worlds Ön Eleme (Play-In) bileti alır; MSI şampiyonunun bölgesi Worlds için +1 bonus slot kazanır.'],
+    ['Kişilikler & Dil Bariyeri', 'Büyük Maç oyuncuları Playoff/Derbi/Worlds maçlarında parlar. Farklı dilden gelen yabancı transferler 5 haftalık iletişim uyum sürecinden geçer (Spor Psikoloğu bu süreyi kısaltır).'],
+    ['Kayıt & Kısayollar', 'Her gün ilerlemesinde ve sekme kapanırken otomatik kayıt alınır. Masaüstünde Space tuşuna basarak tek hamlede +1 gün ilerleyebilirsin.'],
+  ];
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box" style="max-width:680px;">
+        <div class="card-header">
+          <span class="card-title">${icon('shield', 15)} Oyun İçi Rehber & Mekanik Ansiklopedisi</span>
+          <button class="btn-ghost btn-sm" id="btnCloseGuide">${icon('x', 14)} Kapat</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${items.map(([t, d]) => `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:11px 13px;">
+              <div style="font-weight:800;font-size:13px;color:var(--gold-bright);margin-bottom:3px;">${t}</div>
+              <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">${d}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderSaveLoadModal() {
   if (!ui.saveModalOpen) return '';
   const slots = listSaveSlots();
@@ -1059,6 +1155,9 @@ function renderAppShell() {
           <button class="btn-ghost btn-sm" id="btnToggleFearless" style="justify-content:flex-start;">
             ${icon('lock', 13)} Fearless: ${state.fearlessEnabled ? 'AÇIK' : 'KAPALI'}
           </button>
+          <button class="btn-ghost btn-sm" id="btnOpenGuide" style="justify-content:flex-start;">
+            ${icon('shield', 13)} Oyun Rehberi
+          </button>
           <button class="btn-primary btn-sm" id="btnOpenSaveManager" style="justify-content:flex-start;">
             ${icon('save', 13)} Kaydet / Yükle (Slotlar)
           </button>
@@ -1087,6 +1186,22 @@ function renderAppShell() {
             <div class="meta-chip">${getPhaseLabel(state.phase)} (H${state.week})</div>
             <div class="meta-chip">${icon('sliders', 13)} Yama <b>${getCurrentPatch(state).version}</b></div>
             <div class="meta-chip num">${icon('briefcase', 13)} <b style="color:var(--green);">${formatMoney(team.budget)}</b></div>
+            <div style="position:relative;">
+              <input type="text" id="globalSearchInput" value="${ui.globalSearch}" placeholder="Oyuncu / Kulüp ara..." style="width:170px;padding:5px 9px;font-size:12px;" />
+              ${(() => {
+                const q = ui.globalSearch.trim().toLowerCase();
+                if (q.length < 2) return '';
+                const pHits = state.players.filter(p => p.name.toLowerCase().includes(q)).slice(0, 5);
+                const tHits = state.teams.filter(t => t.name.toLowerCase().includes(q) || t.tag.toLowerCase().includes(q)).slice(0, 3);
+                if (!pHits.length && !tHits.length) return '';
+                return `
+                  <div style="position:absolute;top:110%;left:0;width:270px;background:var(--bg-elev);border:1px solid var(--gold);border-radius:8px;box-shadow:var(--shadow);z-index:80;padding:6px;">
+                    ${pHits.map(p => `<div data-gs-player="${p.id}" style="padding:6px 8px;cursor:pointer;border-radius:5px;font-size:12px;display:flex;justify-content:space-between;"><span><span class="badge role-${p.role}">${p.role}</span> <b>${p.name}</b></span><span class="ovr-pill ${ovrClass(p.ovr)}" style="font-size:10.5px;">${p.ovr}</span></div>`).join('')}
+                    ${tHits.map(t => `<div data-gs-team="${t.region}" style="padding:6px 8px;cursor:pointer;border-radius:5px;font-size:12px;display:flex;justify-content:space-between;color:var(--gold-bright);"><span><b>${t.tag}</b> ${t.name}</span><span>${t.region}</span></div>`).join('')}
+                  </div>
+                `;
+              })()}
+            </div>
           </div>
           <div class="topbar-actions">
             ${matchToday
@@ -1123,7 +1238,7 @@ function renderAppShell() {
 }
 
 function render() {
-  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + renderSaveLoadModal() + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
+  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + renderSaveLoadModal() + renderGuideModal() + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
   bindAppEvents();
 }
 
@@ -1339,6 +1454,45 @@ function bindAppEvents() {
   root.querySelectorAll('[data-def-obj]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.objective = b.dataset.defObj; render(); }));
   root.querySelectorAll('[data-def-top]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.topStyle = b.dataset.defTop; render(); }));
   root.querySelectorAll('[data-def-sup]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.supStyle = b.dataset.defSup; render(); }));
+  root.querySelector('#btnOpenGuide')?.addEventListener('click', () => { ui.guideModalOpen = true; render(); });
+  root.querySelector('#btnCloseGuide')?.addEventListener('click', () => { ui.guideModalOpen = false; render(); });
+
+  const gsInput = root.querySelector('#globalSearchInput');
+  if (gsInput) {
+    gsInput.addEventListener('input', (e) => {
+      ui.globalSearch = e.target.value;
+      render();
+      const again = root.querySelector('#globalSearchInput');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    });
+  }
+  root.querySelectorAll('[data-gs-player]').forEach(el => {
+    el.addEventListener('click', () => {
+      ui.globalSearch = '';
+      ui.negotiatingPlayerId = el.dataset.gsPlayer;
+      render();
+    });
+  });
+  root.querySelectorAll('[data-gs-team]').forEach(el => {
+    el.addEventListener('click', () => {
+      ui.globalSearch = '';
+      ui.leagueRegion = el.dataset.gsTeam;
+      ui.tab = 'league';
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-planner-search]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ui.transferRole = btn.dataset.plannerSearch;
+      ui.transferSubTab = 'market';
+      ui.tab = 'transfers';
+      render();
+    });
+  });
+  root.querySelectorAll('[data-def-ahead]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.aheadPlan = b.dataset.defAhead; render(); }));
+  root.querySelectorAll('[data-def-behind]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.behindPlan = b.dataset.defBehind; render(); }));
+
   root.querySelectorAll('[data-def-adc]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.adcStyle = b.dataset.defAdc; render(); }));
 
   root.querySelector('#btnPlayScrim')?.addEventListener('click', () => {

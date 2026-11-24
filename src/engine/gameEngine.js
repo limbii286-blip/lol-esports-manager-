@@ -1310,6 +1310,34 @@ export function renewContract(state, playerId, years = 2) {
   return { ok: true, reason: `${p.name} ile ${years} yıllık yeni sözleşme imzalandı (${formatMoney(newSalary)}/hf).` };
 }
 
+export function getBoardConfidence(state) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const standings = getSortedStandings(state, team.region);
+  const rank = standings.findIndex(r => r.teamId === team.id) + 1;
+  let score = 72;
+  if (rank === 1) score += 18;
+  else if (rank === 2) score += 12;
+  else if (rank <= 4) score += 5;
+  else if (rank >= 7) score -= 14;
+  if (team.budget < 0) score -= 12;
+  if (team.trophies.length > 0) score += Math.min(12, team.trophies.length * 4);
+  score = Math.max(25, Math.min(99, score));
+  const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B+' : score >= 58 ? 'B' : score >= 45 ? 'C' : 'D';
+  return { score, grade, rank };
+}
+
+export function getTransferRoomOpportunities(state) {
+  return state.players
+    .filter(p => p.teamId && p.teamId !== state.userTeamId && (p.contractYears <= 1 || p.morale < 75))
+    .sort((a, b) => b.ovr - a.ovr)
+    .slice(0, 6)
+    .map(p => {
+      const club = state.teams.find(t => t.id === p.teamId);
+      const discountPrice = Math.round((p.marketValue * 0.78) / 5000) * 5000;
+      return { player: p, club, discountPrice, reason: p.contractYears <= 1 ? 'Kontrat Son Yılı' : 'Düşük Moral' };
+    });
+}
+
 export function getLeagueStatLeaders(state, regionId) {
   const regTeams = new Set(state.teams.filter(t => t.region === regionId).map(t => t.id));
   const list = state.players.filter(p => regTeams.has(p.teamId) && p.stats.games > 0).map(p => {

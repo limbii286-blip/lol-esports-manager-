@@ -92,6 +92,8 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     topStyle: t.tactics?.topStyle || 'balanced',
     supStyle: t.tactics?.supStyle || 'balanced',
     adcStyle: t.tactics?.adcStyle || 'balanced',
+    aheadPlan: t.tactics?.aheadPlan || 'choke',     // choke | split131 | dive
+    behindPlan: t.tactics?.behindPlan || 'scale',   // crossmap | scale | pick
   });
 
   return {
@@ -186,6 +188,17 @@ function getMatchStrengthPair(state) {
     if (tactics.supStyle === 'roam') tacticMod += m < 18 ? 0.8 : -0.2;
     if (tactics.supStyle === 'peel') tacticMod += m >= 20 ? 1.1 : -0.2;
     if (tactics.adcStyle === 'safe') tacticMod += m >= 22 ? 1.0 : -0.2;
+
+    // FM26 Dual-Phase Tactics: Ahead Plan (> +1500g) vs Behind Plan (< -1500g)
+    if (myGoldDiff > 1500) {
+      if (tactics.aheadPlan === 'choke') tacticMod += m >= 18 ? 1.4 : 0.6;
+      else if (tactics.aheadPlan === 'split131') tacticMod += m >= 20 ? 1.5 : 0.4;
+      else if (tactics.aheadPlan === 'dive') tacticMod += m < 22 ? 1.6 : 0.2;
+    } else if (myGoldDiff < -1500) {
+      if (tactics.behindPlan === 'scale') tacticMod += m >= 24 ? 1.8 : 0.3;
+      else if (tactics.behindPlan === 'pick') tacticMod += 1.2;
+      else if (tactics.behindPlan === 'crossmap') tacticMod += 1.0;
+    }
 
     const baronMod = state.baronBuffSide === side && m <= state.baronBuffUntil ? 4.2 : 0;
     const elderMod = state.elderBuffSide === side && m <= state.elderBuffUntil ? 6.5 : 0;
