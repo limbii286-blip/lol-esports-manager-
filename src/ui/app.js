@@ -5,7 +5,7 @@ import {
   SPONSORS, FACILITY_INFO, TRAINING_MODES,
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
-  advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
+  advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
   getBoardConfidence, getTransferRoomOpportunities,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
@@ -672,11 +672,12 @@ function renderTransfers() {
       </div>
       <div style="overflow-x:auto;max-height:500px;overflow-y:auto;">
         <table>
-          <thead><tr><th>Rol</th><th>Oyuncu</th><th>Kulüp</th><th>Yaş</th><th>OVR/POT</th><th>Kişilik</th><th>Piyasa Değeri</th><th>Maaş</th><th>İşlem</th></tr></thead>
+          <thead><tr><th>Rol</th><th>Oyuncu</th><th>Kulüp</th><th>Yaş</th><th>OVR/POT</th><th>İlgi</th><th>Piyasa Değeri</th><th>Maaş</th><th>İşlem</th></tr></thead>
           <tbody>
             ${filtered.slice(0, 90).map(p => {
               const club = p.teamId ? state.teams.find(t => t.id === p.teamId) : null;
-              const tr = TRAITS[p.trait];
+              const intr = evaluateTransferInterest(state, p, team);
+              const intrBadge = intr.level === 'HIGH' ? 'tier-A' : intr.level === 'HARD' ? 'tier-S' : 'tier-C';
               return `
                 <tr>
                   <td><span class="badge role-${p.role}">${p.role}</span></td>
@@ -684,7 +685,7 @@ function renderTransfers() {
                   <td>${club ? `<span class="team-tag" style="background:${club.color};color:${club.color2};">${club.tag}</span>` : '<span class="badge tier-A">SERBEST</span>'}</td>
                   <td>${p.age}</td>
                   <td><span class="ovr-pill ${ovrClass(p.ovr)}">${p.ovr}</span> <span style="font-size:11px;color:var(--text-dim);">/${p.pot}</span></td>
-                  <td style="font-size:11.5px;color:var(--text-muted);">${tr ? tr.label : '-'}</td>
+                  <td><span class="badge ${intrBadge}" title="${intr.reason}">${intr.label}</span></td>
                   <td>${club ? formatMoney(p.marketValue) : '<span style="color:var(--green);">Ücretsiz</span>'}</td>
                   <td>${formatMoney(p.salary)}/hf</td>
                   <td><button class="btn-primary btn-sm" data-open-nego="${p.id}">${club ? 'Teklif Yap' : 'İmza At'}</button></td>
@@ -951,9 +952,11 @@ function renderNegotiationModal() {
   if (!ui.negotiatingPlayerId) return '';
   const p = state.players.find(x => x.id === ui.negotiatingPlayerId);
   if (!p) return '';
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const club = p.teamId ? state.teams.find(t => t.id === p.teamId) : null;
+  const intr = evaluateTransferInterest(state, p, userTeam);
   const suggestedBuyout = club ? Math.round(p.marketValue * (p.isStarter ? 1.2 : 0.9)) : 0;
-  const suggestedSalary = Math.round(p.salary * 1.1);
+  const suggestedSalary = Math.round((p.salary * intr.salaryMult) / 500) * 500;
 
   return `
     <div class="modal-backdrop">
@@ -962,12 +965,15 @@ function renderNegotiationModal() {
           <span class="card-title">${icon('briefcase', 14)} Transfer & Sözleşme Pazarlığı</span>
           <button class="btn-ghost btn-sm" id="btnCloseNego">${icon('x', 14)}</button>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div>
             <span class="badge role-${p.role}">${p.role}</span> <strong style="font-size:16px;margin-left:4px;">${p.name}</strong>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${club ? `Kulüp: ${club.name}` : 'Serbest'} • Yaş ${p.age} • ${TRAITS[p.trait]?.label || p.trait}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${club ? `Kulüp: ${club.name} (${club.region})` : 'Serbest'} • Yaş ${p.age} • ${TRAITS[p.trait]?.label || p.trait}</div>
           </div>
           <span class="ovr-pill ${ovrClass(p.ovr)}" style="font-size:15px;padding:4px 9px;">${p.ovr}</span>
+        </div>
+        <div style="padding:8px 10px;border-radius:6px;margin-bottom:12px;font-size:12px;background:${intr.willing ? (intr.level === 'HARD' ? 'var(--gold-soft)' : 'var(--blue-soft)') : 'var(--red-soft)'};border:1px solid ${intr.willing ? 'var(--border-strong)' : 'rgba(244,63,94,0.4)'};color:${intr.willing ? 'var(--text)' : '#fda4af'};">
+          <b>Transfer İlgisi (${intr.label}):</b> ${intr.reason}
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
           ${club ? `<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Bonservis Teklifi (Piyasa: ${formatMoney(p.marketValue)})</label><input type="number" id="negoBuyout" value="${suggestedBuyout}" step="25000" style="width:100%;" /></div>` : `<input type="hidden" id="negoBuyout" value="0" />`}

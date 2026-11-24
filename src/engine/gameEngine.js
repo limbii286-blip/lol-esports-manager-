@@ -1225,11 +1225,75 @@ export function signChallengerProspect(state, prospectId) {
   return { ok: true, reason: `${p.name} kadroya katıldı!` };
 }
 
+export function evaluateTransferInterest(state, player, userTeam) {
+  if (!player || !userTeam) return { level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 1, reason: 'Geçersiz oyuncu.' };
+  const userReg = REGIONS.find(r => r.id === userTeam.region);
+  const sellingTeam = player.teamId ? state.teams.find(t => t.id === player.teamId) : null;
+  const sellReg = sellingTeam ? REGIONS.find(r => r.id === sellingTeam.region) : null;
+
+  // Club allure grows with prestige, league level, and international trophies!
+  const userAllure = userTeam.prestige * 0.62 + (userReg?.prestige || 75) * 0.38 + Math.min(10, userTeam.trophies.length * 2.5);
+  const sellAllure = sellingTeam ? (sellingTeam.prestige * 0.62 + (sellReg?.prestige || 75) * 0.38) : 72;
+
+  // Free agents are more flexible, though elite superstars still want decent prestige
+  if (!sellingTeam) {
+    if (player.ovr >= 88 && userAllure < 82) {
+      return {
+        level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 1.5,
+        reason: `${player.name} (OVR ${player.ovr}), kariyer hedefleri doğrultusunda ${userTeam.name} (${userTeam.region}) teklifini reddetti.`,
+      };
+    }
+    if (player.ovr >= 83 && userAllure < 79) {
+      return { level: 'HARD', label: 'Zor', willing: true, salaryMult: 1.45, reason: 'Yüksek maaş şartıyla düşünebilir.' };
+    }
+    return { level: 'HIGH', label: 'İlgili', willing: true, salaryMult: 1.0, reason: 'Görüşmeye açık.' };
+  }
+
+  // Contracted player checks
+  const allureGap = sellAllure - userAllure; // positive means user club/league is weaker
+  const isPrime = player.age <= 26;
+  const isVeteran = player.age >= 28;
+  const isUnhappyOrBench = !player.isStarter || player.morale < 65;
+
+  // 1. Prime Superstars (89+ OVR) refuse dropping to significantly lower prestige clubs/leagues
+  if (player.ovr >= 89 && allureGap > 6 && !isUnhappyOrBench) {
+    return {
+      level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 2.0,
+      reason: `${player.name}, ${sellingTeam.region} seviyesinden ${userTeam.region} ligine düşmeyi kesinlikle reddetti (Kulüp/Lig prestiji yetersiz — MSI/Worlds başarısı gerekli).`,
+    };
+  }
+
+  // 2. Strong Starters (84-88 OVR) in their prime won't downgrade massively unless benched/unhappy
+  if (player.ovr >= 84 && isPrime && allureGap > 10 && !isUnhappyOrBench) {
+    return {
+      level: 'NONE', label: 'İlgisiz', willing: false, salaryMult: 1.8,
+      reason: `${player.name}, kariyerinin zirvesinde ${userTeam.name} (${userTeam.region}) projesini yeterli bulmadı.`,
+    };
+  }
+
+  // 3. Moderate downgrade or veteran payday -> HARD (demands 1.5x - 1.9x salary)
+  if (allureGap > 4 && !isUnhappyOrBench) {
+    const mult = isVeteran ? 1.55 : 1.75;
+    return {
+      level: 'HARD', label: 'Zor', willing: true, salaryMult: mult,
+      reason: `${player.name} ikna olmak için çok yüksek bir maaş bekliyor.`,
+    };
+  }
+
+  return { level: 'HIGH', label: 'İlgili', willing: true, salaryMult: 1.05, reason: 'Transfer görüşmesine açık.' };
+}
+
 export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSalary, contractYears) {
   const player = state.players.find(p => p.id === playerId);
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   if (!player || !userTeam) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   if (offeredBuyout > userTeam.budget) return { ok: false, reason: 'Yeterli transfer bütçen yok.' };
+
+  // Check realistic player willingness first!
+  const interest = evaluateTransferInterest(state, player, userTeam);
+  if (!interest.willing) {
+    return { ok: false, reason: interest.reason };
+  }
 
   const applyImportCheck = () => {
     if (player.lang && player.lang !== REGION_LANG[userTeam.region]) {
@@ -1241,10 +1305,19 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
 
   if (player.teamId && player.teamId !== userTeam.id) {
     const sellingTeam = state.teams.find(t => t.id === player.teamId);
-    const minBuyout = Math.round(player.marketValue * (player.isStarter ? 1.15 : 0.85));
+
+    // Elite clubs refuse to sell untouchable franchise superstars with 2+ years left
+    if (sellingTeam.prestige >= 88 && player.ovr >= 91 && player.isStarter && player.contractYears >= 2 && offeredBuyout < player.marketValue * 2.1) {
+      return {
+        ok: false,
+        reason: `${sellingTeam.name}, kulübün franchise yıldızı ${player.name}'ı satılık listesine koymuyor (En az ~${formatMoney(Math.round(player.marketValue * 2.1 / 5000) * 5000)} serbest kalma bedeli gerekli).`,
+      };
+    }
+
+    const minBuyout = Math.round(player.marketValue * (player.isStarter ? 1.2 : 0.85));
     if (offeredBuyout < minBuyout) return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu (En az ~${formatMoney(minBuyout)} istiyorlar).` };
-    const minSalary = Math.round(player.salary * (userTeam.prestige >= sellingTeam.prestige ? 1.0 : 1.2));
-    if (offeredSalary < minSalary) return { ok: false, reason: `${player.name}, haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
+    const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
+    if (offeredSalary < minSalary) return { ok: false, reason: `${player.name}, ${userTeam.name} teklifini kabul etmek için haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
 
     const oldTeamId = player.teamId;
     userTeam.budget -= offeredBuyout;
@@ -1274,7 +1347,7 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     return { ok: true, reason: `${player.name} takıma katıldı!` };
   }
 
-  const minSalary = Math.round(player.salary * (userTeam.prestige >= 85 ? 0.92 : 1.05));
+  const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
   if (offeredSalary < minSalary) return { ok: false, reason: `${player.name} haftalık en az ${formatMoney(minSalary)} maaş istiyor.` };
   player.teamId = userTeam.id;
   player.salary = offeredSalary;
@@ -1327,8 +1400,9 @@ export function getBoardConfidence(state) {
 }
 
 export function getTransferRoomOpportunities(state) {
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
   return state.players
-    .filter(p => p.teamId && p.teamId !== state.userTeamId && (p.contractYears <= 1 || p.morale < 75))
+    .filter(p => p.teamId && p.teamId !== state.userTeamId && (p.contractYears <= 1 || p.morale < 75) && evaluateTransferInterest(state, p, userTeam).willing)
     .sort((a, b) => b.ovr - a.ovr)
     .slice(0, 6)
     .map(p => {
