@@ -1700,23 +1700,68 @@ function finishBracketAndTransition(state) {
 function runLivingAITransfers(state, maxMoves = 8) {
   ensureCalendarState(state);
   const aiMoves = [];
-  const richAITeams = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= 1100000).sort(() => Math.random() - 0.5).slice(0, maxMoves * 2);
+  const isOffSeason = state.phase === 'OFFSEASON';
+  const richAITeams = state.teams.filter(t => t.id !== state.userTeamId && t.budget >= 1100000).sort(() => Math.random() - 0.5).slice(0, maxMoves * 3);
+
   for (const buyer of richAITeams) {
     if (aiMoves.length >= maxMoves) break;
     const roster = getTeamRoster(state, buyer.id);
     if (roster.length < 5) continue;
     const weakest = [...roster].sort((a, b) => a.ovr - b.ovr)[0];
-    const target = state.players
-      .filter(p => p.role === weakest.role && p.teamId !== buyer.id && p.teamId !== state.userTeamId && p.ovr >= weakest.ovr + 2 && p.marketValue <= buyer.budget * 0.65)
-      .sort((a, b) => b.ovr - a.ovr)[0];
+
+    const candidates = state.players.filter(p => {
+      if (p.role !== weakest.role || p.teamId === buyer.id || p.teamId === state.userTeamId) return false;
+      if (p.ovr < weakest.ovr + 2 || p.marketValue > buyer.budget * 0.65) return false;
+
+      // Mid-season realism: clubs sign Free Agents or benched players (no mid-split superstar raids!)
+      if (!isOffSeason && p.teamId && p.isStarter) return false;
+
+      // Realistic player willingness & club/region prestige alignment (same rules as user!)
+      const interest = evaluateTransferInterest(state, p, buyer);
+      if (!interest.willing) return false;
+
+      // Protect franchise superstars at elite clubs & prevent huge prestige downgrades
+      if (p.teamId) {
+        const oldClub = state.teams.find(t => t.id === p.teamId);
+        if (!oldClub) return false;
+        if (oldClub.prestige >= 88 && p.ovr >= 91 && p.isStarter && p.contractYears >= 2) return false;
+        if (oldClub.prestige > buyer.prestige + 5 && p.isStarter) return false;
+      }
+
+      // Prefer same-region or realistic cross-region tier
+      if (p.ovr >= 85 && buyer.prestige < 80) return false;
+      return true;
+    }).sort((a, b) => {
+      // Slight preference for same-region players & higher OVR
+      const sameA = (a.lang === REGION_LANG[buyer.region]) ? 2 : 0;
+      const sameB = (b.lang === REGION_LANG[buyer.region]) ? 2 : 0;
+      return (b.ovr + sameB) - (a.ovr + sameA);
+    });
+
+    const target = candidates[0];
     if (target) {
       const oldClub = target.teamId ? state.teams.find(t => t.id === target.teamId) : null;
-      const fee = oldClub ? target.marketValue : 0;
+      const fee = oldClub ? Math.round(target.marketValue * (target.isStarter ? 1.15 : 0.85)) : 0;
+      if (fee > buyer.budget * 0.75) continue;
+
       if (oldClub) {
         buyer.budget -= fee;
         oldClub.budget += fee;
-        weakest.teamId = oldClub.id;
-        weakest.isStarter = true;
+        const oldAvg = getTeamOVR(state, oldClub.id);
+        // Only send weakest to oldClub if they actually fit oldClub's level; otherwise release & let oldClub sign a proper replacement!
+        if (weakest.ovr >= oldAvg - 5) {
+          weakest.teamId = oldClub.id;
+          weakest.isStarter = true;
+        } else {
+          weakest.teamId = null;
+          weakest.isStarter = false;
+          const repl = state.players
+            .filter(x => x.teamId === null && x.role === target.role && evaluateTransferInterest(state, x, oldClub).willing)
+            .sort((a, b) => b.ovr - a.ovr)[0]
+            || generateRegenPlayer(target.role, oldClub.region, oldClub.facilities.youthAcademy, oldClub.id);
+          if (!state.players.includes(repl)) state.players.push(repl);
+          repl.teamId = oldClub.id; repl.isStarter = true; repl.contractYears = 2;
+        }
       } else {
         weakest.teamId = null;
         weakest.isStarter = false;
@@ -1819,7 +1864,9 @@ function runOffSeasonProgression(state) {
     for (const role of ROLES) {
       const has = state.players.some(p => p.teamId === team.id && p.role === role);
       if (!has) {
-        const fa = state.players.filter(p => p.teamId === null && p.role === role).sort((a, b) => b.ovr - a.ovr)[0]
+        const fa = state.players
+          .filter(p => p.teamId === null && p.role === role && evaluateTransferInterest(state, p, team).willing)
+          .sort((a, b) => b.ovr - a.ovr)[0]
           || generateRegenPlayer(role, team.region, team.facilities.youthAcademy, team.id);
         if (!state.players.includes(fa)) state.players.push(fa);
         fa.teamId = team.id; fa.isStarter = true; fa.contractYears = 2;
