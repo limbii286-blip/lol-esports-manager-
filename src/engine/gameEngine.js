@@ -213,6 +213,7 @@ export function ensureCalendarState(state) {
   if (!state.currentDate) state.currentDate = `${state.season || 2026}-01-12`; // Monday
   if (!state.scrimIntel) state.scrimIntel = {};
   if (!state.transferFeed) state.transferFeed = [];
+  if (!state.tournamentArchive) state.tournamentArchive = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   const ut = state.teams?.find(t => t.id === state.userTeamId);
   if (ut) ensureTeamExtras(ut);
@@ -386,6 +387,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     managerJobOffers: [],
     scrimIntel: {},
     transferFeed: [],
+    tournamentArchive: [],
     records: { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] },
     pendingEvent: null,
     boardWarnings: 0,
@@ -1084,6 +1086,20 @@ export function advanceWeekOrRound(state) {
       return;
     }
 
+    // Archive completed Swiss Stage before transitioning to Knockout
+    ensureCalendarState(state);
+    state.tournamentArchive.unshift({
+      id: `arch_swiss_${state.season}`,
+      season: state.season,
+      title: `WORLDS ${state.season} — İsviçre Aşaması`,
+      kind: 'SWISS',
+      rounds: (state.swiss.pastRounds || []).map(pr => ({
+        name: `Tur ${pr.round}`,
+        matches: pr.matches.map(m => ({ blueId: m.blueId, redId: m.redId, blueScore: m.blueScore, redScore: m.redScore, winnerId: m.winnerId, played: m.played, recordLabel: m.recordLabel, bestOf: m.bestOf })),
+      })),
+    });
+    if (state.tournamentArchive.length > 20) state.tournamentArchive.pop();
+
     // Swiss Finished -> Top 8 to Knockout!
     const qualified = state.swiss.teams.filter(t => t.status === 'QUALIFIED').map(t => t.teamId);
     state.phase = 'WORLDS_KNOCKOUT';
@@ -1141,7 +1157,24 @@ export function advanceWeekOrRound(state) {
   }
 }
 
+function archiveBracketSnapshot(state) {
+  if (!state.bracket) return;
+  ensureCalendarState(state);
+  state.tournamentArchive.unshift({
+    id: `arch_${state.phase}_${state.season}_${Date.now().toString(36)}`,
+    season: state.season,
+    title: state.bracket.title,
+    kind: 'BRACKET',
+    rounds: state.bracket.rounds.map(r => ({
+      name: r.name,
+      matches: r.matches.map(m => ({ region: m.region || null, blueId: m.blueId, redId: m.redId, blueScore: m.blueScore, redScore: m.redScore, winnerId: m.winnerId, played: m.played, bestOf: m.bestOf })),
+    })),
+  });
+  if (state.tournamentArchive.length > 20) state.tournamentArchive.pop();
+}
+
 function finishBracketAndTransition(state) {
+  archiveBracketSnapshot(state);
   const finalMatches = state.bracket.rounds[state.bracket.rounds.length - 1].matches;
 
   if (state.phase === 'SPRING_PLAYOFFS') {

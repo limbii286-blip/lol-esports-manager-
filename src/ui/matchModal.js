@@ -37,6 +37,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     teamTalk: 'none',
     postTalkDone: false,
     postTalkMsg: '',
+    champRequests: [],
     roleFilter: 'ALL',
     search: '',
     speed: 1,
@@ -57,6 +58,65 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     if (series.aiTimerId) { clearTimeout(series.aiTimerId); series.aiTimerId = null; }
   }
 
+  function generatePlayerChampRequests(lockedSet) {
+    const userRoster = userSide === 'blue' ? blueRoster : redRoster;
+    const shuffled = [...userRoster].sort(() => Math.random() - 0.5);
+    const count = Math.min(3, Math.max(2, Math.floor(Math.random() * 2) + 2));
+    const lines = [
+      (cn) => `"Koç, ${cn} açık kalırsa alabilir miyiz? Çok rahatım!"`,
+      (cn) => `"Bu maçta ${cn} ile koridoru domine edebilirim!"`,
+      (cn) => `"${cn} metasını çok çalıştım, bana bırak!"`,
+      (cn) => `"${cn} alırsak takım savaşını tek başıma taşırım!"`,
+    ];
+    const reqs = [];
+    const usedIds = new Set(lockedSet);
+    for (const p of shuffled) {
+      if (reqs.length >= count) break;
+      const roleChamps = CHAMPIONS.filter(c => c.roles.includes(p.role) && !usedIds.has(c.id));
+      let candId = null;
+      if (p.learningChampId && !usedIds.has(p.learningChampId)) candId = p.learningChampId;
+      if (!candId) {
+        const availSigs = (p.sigChamps || []).filter(id => !usedIds.has(id) && CHAMPION_MAP[id]?.roles.includes(p.role));
+        if (availSigs.length) candId = availSigs[Math.floor(Math.random() * availSigs.length)];
+      }
+      if (!candId && roleChamps.length) {
+        const metaTop = roleChamps.filter(c => ['S', 'A'].includes(getChampionMetaTier(c, patch)));
+        const pool = metaTop.length ? metaTop : roleChamps;
+        candId = pool[Math.floor(Math.random() * pool.length)].id;
+      }
+      if (candId) {
+        usedIds.add(candId);
+        const ch = CHAMPION_MAP[candId];
+        reqs.push({
+          playerId: p.id,
+          playerName: p.name,
+          role: p.role,
+          trait: p.trait,
+          champId: candId,
+          champName: ch?.name || candId,
+          line: lines[Math.floor(Math.random() * lines.length)](ch?.name || candId),
+        });
+      }
+    }
+    return reqs;
+  }
+
+  function evaluateChampRequestOutcomes() {
+    const userPicks = userSide === 'blue' ? series.draft.bluePicks : series.draft.redPicks;
+    const allBans = new Set([...series.draft.blueBans, ...series.draft.redBans]);
+    const oppPicks = new Set(Object.values(userSide === 'blue' ? series.draft.redPicks : series.draft.bluePicks));
+    const grantedRequestIds = [];
+    const ignoredEgoIds = [];
+    for (const req of series.champRequests) {
+      if (userPicks[req.role] === req.champId) {
+        grantedRequestIds.push(req.playerId);
+      } else if (req.trait === 'Ego' && !allBans.has(req.champId) && !oppPicks.has(req.champId)) {
+        ignoredEgoIds.push(req.playerId);
+      }
+    }
+    return { grantedRequestIds, ignoredEgoIds };
+  }
+
   function startNewGameInSeries() {
     cleanupTimers();
     series.phase = 'DRAFT';
@@ -64,6 +124,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     series.search = '';
     const locked = gameState.fearlessEnabled ? series.fearlessLocked : new Set();
     series.draft = createDraftState(blueTeam, redTeam, blueRoster, redRoster, patch, userSide, locked);
+    series.champRequests = generatePlayerChampRequests(locked);
     box.scrollTop = 0;
     render();
     scheduleAIDraftIfNeeded();
@@ -78,7 +139,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
         if (move) applyDraftAction(series.draft, move.champId, move.role);
         render();
         scheduleAIDraftIfNeeded();
-      }, 280);
+      }, 480);
     }
   }
 
@@ -86,10 +147,11 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     cleanupTimers();
     series.phase = 'MATCH';
     series.paused = false;
+    const reqRes = evaluateChampRequestOutcomes();
     series.liveMatch = createLiveMatchState(
       blueTeam, redTeam, blueRoster, redRoster,
       series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes,
-      { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel }
+      { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel, ...reqRes }
     );
     box.scrollTop = 0;
     render();
@@ -98,7 +160,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
 
   function startMatchLoop() {
     if (series.timerId) clearInterval(series.timerId);
-    const ms = series.speed === 4 ? 140 : series.speed === 2 ? 300 : 580;
+    const ms = series.speed === 4 ? 260 : series.speed === 2 ? 650 : series.speed === 0.5 ? 2200 : 1350;
     series.timerId = setInterval(() => {
       if (series.paused || series.liveMatch.finished) {
         if (series.liveMatch.finished) {
@@ -181,6 +243,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
         const isSig = ch && p && p.sigChamps.includes(ch.id);
         const tier = ch ? getChampionMetaTier(ch, patch) : '';
         const mast = ch && p?.mastery?.[ch.id] ? Math.floor(p.mastery[ch.id]) : 0;
+        const req = side === userSide ? series.champRequests.find(r => r.role === role) : null;
         return `
           <div class="draft-slot">
             <div>
@@ -189,8 +252,10 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
                 <strong style="font-size:12.5px;">${p ? p.name : role}</strong>
                 <span class="num" style="font-size:11px;color:var(--text-muted);">(${p?.ovr})</span>
               </div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:4px;">
-                ${ch ? `<span style="color:${sideColor};font-weight:700;">${ch.name}</span> <span class="badge tier-${tier}">${tier}</span> ${isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 11)}</span>` : ''} ${mast > 0 ? `<span style="color:var(--green);font-weight:700;">U${mast}</span>` : ''}` : `İmza: ${(p?.sigChamps || []).slice(0, 2).map(id => CHAMPION_MAP[id]?.name).join(', ')}`}
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+                ${ch
+                  ? `<span style="color:${sideColor};font-weight:700;">${ch.name}</span> <span class="badge tier-${tier}">${tier}</span> ${isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 11)}</span>` : ''} ${mast > 0 ? `<span style="color:var(--green);font-weight:700;">U${mast}</span>` : ''} ${req && req.champId === ch.id ? `<span class="badge tier-S" title="Oyuncu isteği yerine getirildi (+2.0 Konfor & +3 Moral)">İSTEK ✓</span>` : ''}`
+                  : `${req ? `<span style="color:var(--gold-bright);font-weight:700;">İstiyor: ${req.champName}</span>` : `İmza: ${(p?.sigChamps || []).slice(0, 2).map(id => CHAMPION_MAP[id]?.name).join(', ')}`}`}
               </div>
             </div>
             ${ch ? `<div class="champ-avatar" style="background:${ch.color};width:28px;height:28px;font-size:10px;">${ch.name.slice(0, 2).toUpperCase()}</div>` : ''}
@@ -262,16 +327,17 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
             const used = d.usedChamps.has(c.id);
             const tier = getChampionMetaTier(c, patch);
             const isSig = allUserSigs.has(c.id);
+            const reqBy = series.champRequests.find(r => r.champId === c.id);
             const fitsMissing = step.type === 'ban' || c.roles.some(r => userMissing.includes(r));
             const disabled = used || !isUserTurn || !fitsMissing;
             return `
-              <div class="champ-card ${disabled ? 'disabled' : ''}" data-champ-pick="${c.id}" title="${isFearless ? 'Fearless Draft: Önceki maçta kullanıldı' : c.name}">
+              <div class="champ-card ${disabled ? 'disabled' : ''}" data-champ-pick="${c.id}" style="${reqBy && !used ? 'border-color:var(--gold);box-shadow:0 0 0 1px rgba(200,155,60,0.45);' : ''}" title="${isFearless ? 'Fearless Draft: Önceki maçta kullanıldı' : reqBy ? `${reqBy.playerName} bu şampiyonu istiyor!` : c.name}">
                 <div class="champ-avatar" style="background:${c.color};">${isFearless ? icon('lock', 14) : c.name.slice(0, 2).toUpperCase()}</div>
                 <div style="font-size:11.5px;font-weight:700;">${c.name}</div>
-                <div style="display:flex;gap:3px;align-items:center;">
+                <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;justify-content:center;">
                   <span class="badge tier-${tier}">${tier}</span>
                   <span style="font-size:10px;color:var(--text-muted);">${c.roles[0]}</span>
-                  ${isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 10)}</span>` : ''}
+                  ${reqBy ? `<span class="badge tier-S" style="font-size:9px;padding:1px 4px;">İSTEK</span>` : (isSig ? `<span style="color:var(--gold-bright);" title="İmza Şampiyon">${icon('star', 10)}</span>` : '')}
                 </div>
               </div>
             `;
@@ -292,9 +358,34 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
       </div>
     `;
 
+    const userPicksNow = userSide === 'blue' ? d.bluePicks : d.redPicks;
+    const requestsBar = series.champRequests.length ? `
+      <div class="card" style="padding:8px 12px;margin-bottom:10px;border-color:rgba(56,189,248,0.35);background:rgba(56,189,248,0.05);">
+        <div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+          <span>${icon('star', 12)} OYUNCU ŞAMPİYON İSTEKLERİ (İsteği karşılarsan +2.0 Konfor & +3 Moral)</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${series.champRequests.map(r => {
+            const granted = userPicksNow[r.role] === r.champId;
+            const unavailable = !granted && d.usedChamps.has(r.champId);
+            return `
+              <div style="flex:1;min-width:210px;background:var(--bg);border:1px solid ${granted ? 'var(--green)' : unavailable ? 'var(--border)' : 'rgba(200,155,60,0.45)'};border-radius:6px;padding:6px 9px;font-size:11.5px;opacity:${unavailable ? '0.55' : '1'};">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:2px;">
+                  <span><span class="badge role-${r.role}">${r.role}</span> <b>${r.playerName}</b> → <b style="color:var(--gold-bright);">${r.champName}</b></span>
+                  ${granted ? '<span class="badge tier-A">ALINDI ✓</span>' : unavailable ? '<span class="badge tier-C">YASAK/ALINDI</span>' : '<span class="badge tier-S">İSTİYOR</span>'}
+                </div>
+                <div style="font-size:10.5px;color:var(--text-muted);font-style:italic;">${r.line}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : '';
+
     return `
       ${renderHeader()}
       ${talkBar}
+      ${requestsBar}
       ${scoutingHtml}
       <div class="draft-layout">
         ${renderSideColumn('blue', blueTeam, blueRoster, d.blueBans, d.bluePicks, blueAn)}
@@ -492,6 +583,7 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;">
           <div style="display:flex;gap:6px;align-items:center;">
             <button class="btn-ghost btn-sm" id="btnTogglePause">${series.paused ? `${icon('play', 12)} Devam` : `${icon('pause', 12)} Duraklat`}</button>
+            <button class="tactic-btn ${series.speed === 0.5 ? 'active' : ''}" data-speed="0.5">0.5x</button>
             <button class="tactic-btn ${series.speed === 1 ? 'active' : ''}" data-speed="1">1x</button>
             <button class="tactic-btn ${series.speed === 2 ? 'active' : ''}" data-speed="2">2x</button>
             <button class="tactic-btn ${series.speed === 4 ? 'active' : ''}" data-speed="4">4x</button>
@@ -623,7 +715,8 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
     box.querySelector('#btnInstantMatch')?.addEventListener('click', () => {
       cleanupTimers();
       series.phase = 'MATCH';
-      series.liveMatch = createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes, { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel });
+      const reqRes = evaluateChampRequestOutcomes();
+      series.liveMatch = createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, series.draft.bluePicks, series.draft.redPicks, patch, userSide, highStakes, { teamTalk: series.teamTalk, hasScrimIntel: !!scrimIntel, ...reqRes });
       finishMatchInstantly(series.liveMatch);
       box.scrollTop = 0;
       onGameEnded();

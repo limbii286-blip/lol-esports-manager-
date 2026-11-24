@@ -68,8 +68,9 @@ export function getEffectivePlayerRating(player, champId, oppChampId, patch, tea
   // Duo Synergy (JGL+MID & BOT+SUP bond)
   const duoMod = ctx.duoBonus || 0;
   const intelMod = ctx.hasScrimIntel ? 1.2 : 0;
+  const reqMod = ctx.requestGranted ? 2.0 : 0;
 
-  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + synMod + facilityMod + importPen + injuryPen + traitMod + talkMod + duoMod + intelMod;
+  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + synMod + facilityMod + importPen + injuryPen + traitMod + talkMod + duoMod + intelMod + reqMod;
 }
 
 export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, bluePicks, redPicks, patch, userSide = null, highStakes = false, options = {}) {
@@ -124,6 +125,8 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     highStakes,
     teamTalk: options.teamTalk || 'none',
     hasScrimIntel: !!options.hasScrimIntel,
+    grantedRequestIds: options.grantedRequestIds || [],
+    ignoredEgoIds: options.ignoredEgoIds || [],
     patch,
     blueTeam,
     redTeam,
@@ -209,6 +212,7 @@ function getMatchStrengthPair(state) {
         goldDiff: myGoldDiff,
         teamTalk: isUser ? state.teamTalk : 'none',
         hasScrimIntel: isUser && state.hasScrimIntel,
+        requestGranted: isUser && (state.grantedRequestIds || []).includes(pl.playerId),
         duoBonus,
       });
     }
@@ -757,7 +761,9 @@ export function applyMatchOutcomeToPlayers(matchState) {
       if (!p.mastery) p.mastery = {};
       p.mastery[mp.champId] = Math.min(5, (p.mastery[mp.champId] || 0) + (won ? 1 : 0.5));
 
-      const moraleDelta = won ? 4 : (hasLeader ? -2 : -4);
+      let moraleDelta = won ? 4 : (hasLeader ? -2 : -4);
+      if ((matchState.grantedRequestIds || []).includes(p.id)) moraleDelta += 3;
+      if ((matchState.ignoredEgoIds || []).includes(p.id)) moraleDelta -= 2;
       p.morale = clamp(p.morale + moraleDelta, 30, 100);
       p.form = clamp(p.form + (mp.rating >= 7.8 ? 3 : mp.rating <= 5.6 ? -3 : 0), 45, 99);
       const perfReduction = ((team.staff?.perfCoach || 1) - 1) * 1.6;

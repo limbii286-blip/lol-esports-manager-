@@ -25,6 +25,8 @@ let ui = {
   managerName: localStorage.getItem('lol_mgr_nickname') || '',
   tab: 'dashboard',
   leagueRegion: 'LCK',
+  leagueFixtureWeek: 'CURRENT',
+  selectedArchiveIdx: 0,
   transferSubTab: 'market',
   transferRole: 'ALL',
   transferStatus: 'ALL',
@@ -795,8 +797,16 @@ function renderTransfers() {
 
 // ==================== LEAGUE, SWISS WORLDS, BRACKET & AWARDS ====================
 function renderLeague() {
+  ensureCalendarState(state);
   const standings = getSortedStandings(state, ui.leagueRegion);
-  const weekMatches = state.schedules[ui.leagueRegion]?.[Math.min(6, state.week - 1)] || [];
+  const allWeeks = state.schedules[ui.leagueRegion] || [];
+  const activeWeekNum = ui.leagueFixtureWeek === 'CURRENT' ? Math.min(7, state.week) : ui.leagueFixtureWeek;
+  const fixtureWeeksToShow = activeWeekNum === 'ALL'
+    ? allWeeks.map((ms, idx) => ({ week: idx + 1, matches: ms }))
+    : [{ week: Number(activeWeekNum), matches: allWeeks[Number(activeWeekNum) - 1] || [] }];
+
+  const archiveList = state.tournamentArchive || [];
+  const selectedArch = archiveList[ui.selectedArchiveIdx] || archiveList[0] || null;
 
   const swissHtml = state.swiss ? `
     <div class="card" style="margin-bottom:16px;border-color:rgba(200,155,60,0.5);">
@@ -823,7 +833,7 @@ function renderLeague() {
           </tbody>
         </table>
         <div>
-          <div style="font-size:12px;font-weight:800;color:var(--gold-bright);margin-bottom:8px;">Tur ${state.swiss.round} Eşleşmeleri</div>
+          <div style="font-size:12px;font-weight:800;color:var(--gold-bright);margin-bottom:8px;">Tur ${state.swiss.round} Eşleşmeleri (Aktif)</div>
           ${state.swiss.currentMatches.map(m => {
             const bt = state.teams.find(t => t.id === m.blueId);
             const rt = state.teams.find(t => t.id === m.redId);
@@ -834,6 +844,21 @@ function renderLeague() {
               </div>
             `;
           }).join('')}
+          ${(state.swiss.pastRounds || []).length ? `
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);max-height:240px;overflow-y:auto;">
+              <div style="font-size:11.5px;font-weight:800;color:var(--text-muted);margin-bottom:6px;">Önceki Turlar</div>
+              ${[...state.swiss.pastRounds].reverse().map(pr => `
+                <div style="margin-bottom:8px;">
+                  <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:4px;">Tur ${pr.round}</div>
+                  ${pr.matches.map(m => {
+                    const bt = state.teams.find(t => t.id === m.blueId);
+                    const rt = state.teams.find(t => t.id === m.redId);
+                    return `<div class="num" style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 6px;background:var(--bg);border-radius:4px;margin-bottom:3px;"><span><span style="color:var(--text-dim);">[${m.recordLabel}]</span> <b>${bt?.tag}</b> vs <b>${rt?.tag}</b></span><b style="color:var(--gold-bright);">${m.blueScore}-${m.redScore}</b></div>`;
+                  }).join('')}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -872,9 +897,47 @@ function renderLeague() {
     </div>
   ` : '';
 
+  const archiveHtml = archiveList.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:rgba(56,189,248,0.35);">
+      <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+        <span class="card-title" style="color:var(--blue);">${icon('trophy', 14)} Tamamlanan Turnuva Eşleşmeleri & Arşiv (${archiveList.length})</span>
+        <select id="archiveSelect" style="max-width:340px;">
+          ${archiveList.map((a, idx) => `<option value="${idx}" ${idx === (ui.selectedArchiveIdx || 0) ? 'selected' : ''}>${a.title}</option>`).join('')}
+        </select>
+      </div>
+      ${selectedArch ? `
+        <div class="bracket-grid">
+          ${selectedArch.rounds.map(r => `
+            <div>
+              <div style="font-size:12px;font-weight:800;color:var(--gold-bright);margin-bottom:8px;">${r.name}</div>
+              ${r.matches.map(m => {
+                const bt = state.teams.find(t => t.id === m.blueId);
+                const rt = state.teams.find(t => t.id === m.redId);
+                return `
+                  <div class="bracket-match">
+                    ${m.region ? `<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px;font-weight:700;">${m.region}</div>` : m.recordLabel ? `<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px;font-weight:700;">${m.recordLabel} • BO${m.bestOf || 3}</div>` : ''}
+                    <div class="bracket-row ${m.winnerId === bt?.id ? 'winner' : ''}">
+                      <span><span class="team-tag" style="background:${bt?.color || '#334155'};color:${bt?.color2 || '#fff'};margin-right:6px;">${bt?.tag || '?'}</span>${bt?.name || '?'}</span>
+                      <b class="num">${m.played ? m.blueScore : '-'}</b>
+                    </div>
+                    <div class="bracket-row ${m.winnerId === rt?.id ? 'winner' : ''}">
+                      <span><span class="team-tag" style="background:${rt?.color || '#334155'};color:${rt?.color2 || '#fff'};margin-right:6px;">${rt?.tag || '?'}</span>${rt?.name || '?'}</span>
+                      <b class="num">${m.played ? m.redScore : '-'}</b>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  ` : '';
+
   return `
     ${swissHtml}
     ${bracketHtml}
+    ${archiveHtml}
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       ${REGIONS.map(r => `<button class="region-tab ${ui.leagueRegion === r.id ? 'active' : ''}" data-league-reg="${r.id}"><span class="region-dot" style="background:${r.color};"></span> ${r.name}</button>`).join('')}
     </div>
@@ -909,22 +972,34 @@ function renderLeague() {
 
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div class="card">
-          <div class="card-header"><span class="card-title">${icon('calendar', 14)} ${ui.leagueRegion} Hafta ${Math.min(7, state.week)} Fikstürü</span></div>
-          ${weekMatches.map(m => {
-            const bt = state.teams.find(t => t.id === m.blueId);
-            const rt = state.teams.find(t => t.id === m.redId);
-            const riv = getRivalryName(m.blueId, m.redId);
-            return `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-                <span style="flex:1;"><span class="team-tag" style="background:${bt.color};color:${bt.color2};margin-right:5px;">${bt.tag}</span>${bt.name}</span>
-                <div style="text-align:center;padding:0 10px;">
-                  <strong class="num" style="color:var(--gold-bright);">${m.played ? `${m.blueScore} - ${m.redScore}` : 'VS'}</strong>
-                  ${riv ? `<div style="font-size:9.5px;color:#fda4af;font-weight:700;text-transform:uppercase;">Derbi</div>` : ''}
-                </div>
-                <span style="flex:1;text-align:right;">${rt.name}<span class="team-tag" style="background:${rt.color};color:${rt.color2};margin-left:5px;">${rt.tag}</span></span>
-              </div>
-            `;
-          }).join('')}
+          <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+            <span class="card-title">${icon('calendar', 14)} ${ui.leagueRegion} Fikstür & Tüm Maçlar</span>
+            <div class="tactic-btn-group">
+              ${[1, 2, 3, 4, 5, 6, 7].map(w => `<button class="tactic-btn ${activeWeekNum === w ? 'active' : ''}" data-fix-week="${w}">H${w}</button>`).join('')}
+              <button class="tactic-btn ${activeWeekNum === 'ALL' ? 'active' : ''}" data-fix-week="ALL">Tümü</button>
+            </div>
+          </div>
+          <div style="max-height:360px;overflow-y:auto;">
+            ${fixtureWeeksToShow.map(fw => `
+              ${activeWeekNum === 'ALL' ? `<div style="font-size:11px;font-weight:800;color:var(--gold-bright);padding:6px 0 3px;margin-top:4px;border-bottom:1px solid var(--border-strong);">HAFTA ${fw.week}</div>` : ''}
+              ${fw.matches.map(m => {
+                const bt = state.teams.find(t => t.id === m.blueId);
+                const rt = state.teams.find(t => t.id === m.redId);
+                const riv = getRivalryName(m.blueId, m.redId);
+                const isMine = m.blueId === state.userTeamId || m.redId === state.userTeamId;
+                return `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 6px;border-bottom:1px solid var(--border);${isMine ? 'background:var(--gold-soft);border-radius:5px;' : ''}">
+                    <span style="flex:1;${m.winnerId === bt.id ? 'font-weight:800;color:var(--text);' : ''}"><span class="team-tag" style="background:${bt.color};color:${bt.color2};margin-right:5px;">${bt.tag}</span>${bt.name}</span>
+                    <div style="text-align:center;padding:0 10px;">
+                      <strong class="num" style="color:var(--gold-bright);">${m.played ? `${m.blueScore} - ${m.redScore}` : 'VS'}</strong>
+                      ${riv ? `<div style="font-size:9.5px;color:#fda4af;font-weight:700;text-transform:uppercase;">Derbi</div>` : ''}
+                    </div>
+                    <span style="flex:1;text-align:right;${m.winnerId === rt.id ? 'font-weight:800;color:var(--text);' : ''}">${rt.name}<span class="team-tag" style="background:${rt.color};color:${rt.color2};margin-left:5px;">${rt.tag}</span></span>
+                  </div>
+                `;
+              }).join('')}
+            `).join('')}
+          </div>
         </div>
 
         <div class="card">
@@ -1811,6 +1886,14 @@ function bindAppEvents() {
   });
 
   root.querySelectorAll('[data-league-reg]').forEach(b => b.addEventListener('click', () => { ui.leagueRegion = b.dataset.leagueReg; render(); }));
+  root.querySelectorAll('[data-fix-week]').forEach(b => b.addEventListener('click', () => {
+    ui.leagueFixtureWeek = b.dataset.fixWeek === 'ALL' ? 'ALL' : Number(b.dataset.fixWeek);
+    render();
+  }));
+  root.querySelector('#archiveSelect')?.addEventListener('change', (e) => {
+    ui.selectedArchiveIdx = Number(e.target.value) || 0;
+    render();
+  });
   root.querySelectorAll('[data-upgrade-fac]').forEach(b => b.addEventListener('click', () => { const res = upgradeFacility(state, b.dataset.upgradeFac); saveGame(state); render(); showToast(res.reason); }));
   root.querySelector('#btnResignClub')?.addEventListener('click', () => {
     resignFromClub(state);
