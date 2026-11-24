@@ -72,22 +72,28 @@ export function calcOVR(attrs) {
 
 export function calcMarketValue(ovr, age, pot) {
   const ageFactor = age <= 20 ? 1.32 : age <= 23 ? 1.12 : age <= 26 ? 1.0 : age <= 28 ? 0.8 : 0.65;
-  const potBonus = Math.max(0, pot - ovr) * 15000;
-  const base = Math.pow(Math.max(1, ovr - 55), 2.3) * 215;
+  const potBonus = Math.max(0, pot - ovr) * 14000;
+  const base = Math.pow(Math.max(1, ovr - 48), 2.35) * 115;
   return Math.max(25000, Math.round((base * ageFactor + potBonus) / 5000) * 5000);
 }
 
 export function calcWeeklySalary(ovr, prestige = 80) {
-  const base = Math.pow(Math.max(1, ovr - 56), 2.0) * 38;
+  const base = Math.pow(Math.max(1, ovr - 48), 2.05) * 19;
   return Math.max(2500, Math.round((base * (0.85 + prestige / 400)) / 500) * 500);
 }
 
 let _pid = 1;
 const TRAIT_KEYS = Object.keys(TRAITS);
 
-function mkPlayer(name, role, nat, age, baseOvr, pot, style, sigChamps, teamId, overrides = {}) {
-  const clamp = (v) => Math.max(52, Math.min(99, Math.round(v)));
-  const j = () => Math.floor(Math.random() * 5) - 2;
+function stretchRating(r) {
+  return Math.max(48, Math.min(97, Math.round(95 - (95 - r) * 1.48)));
+}
+
+function mkPlayer(name, role, nat, age, rawBaseOvr, rawPot, style, sigChamps, teamId, overrides = {}) {
+  const clamp = (v) => Math.max(45, Math.min(99, Math.round(v)));
+  const j = () => Math.floor(Math.random() * 7) - 3;
+  const baseOvr = stretchRating(rawBaseOvr);
+  const pot = stretchRating(rawPot);
 
   let m = baseOvr + j();
   let l = baseOvr + j();

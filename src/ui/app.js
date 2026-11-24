@@ -34,7 +34,7 @@ let ui = {
   transferRole: 'ALL',
   transferStatus: 'ALL',
   transferSearch: '',
-  transferMinOvr: 72,
+  transferMinOvr: 60,
   negotiatingPlayerId: null,
   renewingPlayerId: null,
   trainingPlayerId: null,
@@ -75,7 +75,7 @@ function showToast(msg) {
 }
 
 function ovrClass(ovr) {
-  return ovr >= 90 ? 'ovr-90' : ovr >= 85 ? 'ovr-85' : ovr >= 80 ? 'ovr-80' : 'ovr-low';
+  return ovr >= 89 ? 'ovr-90' : ovr >= 82 ? 'ovr-85' : ovr >= 74 ? 'ovr-80' : 'ovr-low';
 }
 
 function barHtml(val, color) {
@@ -832,7 +832,7 @@ function renderTransfers() {
           <option value="CONTRACTED" ${ui.transferStatus === 'CONTRACTED' ? 'selected' : ''}>Bonservisli</option>
         </select>
         <select id="trMinOvr">
-          ${[65, 72, 78, 82, 86, 90].map(v => `<option value="${v}" ${ui.transferMinOvr === v ? 'selected' : ''}>Min OVR: ${v}+</option>`).join('')}
+          ${[55, 60, 68, 75, 82, 88].map(v => `<option value="${v}" ${ui.transferMinOvr === v ? 'selected' : ''}>Min OVR: ${v}+</option>`).join('')}
         </select>
       </div>
       <div style="overflow-x:auto;max-height:500px;overflow-y:auto;">
