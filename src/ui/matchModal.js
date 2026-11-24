@@ -432,6 +432,28 @@ export function openSeriesModal(gameState, match, onSeriesComplete) {
               : `<button class="btn-primary" id="btnNextGame" style="padding:10px 18px;">Maç ${series.gameNum + 1} Draft'ına Geç ${icon('arrowRight', 14)}</button>`}
           </div>
         </div>
+        ${m.coachReport ? `
+          <div class="card" style="margin-top:10px;border-color:var(--border-strong);background:var(--bg-card);">
+            <div class="card-header" style="margin-bottom:8px;padding-bottom:6px;">
+              <span class="card-title">${icon('target', 13)} Koç Maç Analiz Raporu</span>
+              <div class="num" style="display:flex;gap:10px;font-size:11.5px;color:var(--text-muted);flex-wrap:wrap;">
+                <span>Draft: <b style="color:${m.coachReport.draftDiff >= 0 ? 'var(--green)' : 'var(--red)'};">${m.coachReport.draftDiff >= 0 ? '+' : ''}${m.coachReport.draftDiff}</b></span>
+                <span>0-15': <b style="color:${m.coachReport.gd15 >= 0 ? 'var(--green)' : 'var(--red)'};">${m.coachReport.gd15 >= 0 ? '+' : ''}${(m.coachReport.gd15 / 1000).toFixed(1)}k</b></span>
+                <span>15-25': <b style="color:${m.coachReport.midSwing >= 0 ? 'var(--green)' : 'var(--red)'};">${m.coachReport.midSwing >= 0 ? '+' : ''}${(m.coachReport.midSwing / 1000).toFixed(1)}k</b></span>
+                <span>25'+: <b style="color:${m.coachReport.lateSwing >= 0 ? 'var(--green)' : 'var(--red)'};">${m.coachReport.lateSwing >= 0 ? '+' : ''}${(m.coachReport.lateSwing / 1000).toFixed(1)}k</b></span>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:12px;">
+              <div style="flex:1;min-width:260px;">
+                ${m.coachReport.notes.map(n => `<div style="margin-bottom:3px;color:var(--text);">• ${n}</div>`).join('')}
+              </div>
+              <div style="font-size:11.5px;color:var(--text-muted);text-align:right;">
+                <div>En İyi: <b style="color:var(--green);">${m.coachReport.bestPlayer}</b></div>
+                <div>Gelişim Alanı: <b style="color:var(--amber);">${m.coachReport.weakestPlayer}</b></div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
       ` : `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;">
           <div style="display:flex;gap:6px;align-items:center;">

@@ -38,6 +38,8 @@ export function openWorldsMayhemModal() {
     roster: [],
     choices: [],
     teamPower: null,
+    tacticPlan: 'balanced', // aggressive | balanced | scaling
+    focusRoleIdx: 2,        // 0..4 (default MID)
 
     // 16-Team Swiss State
     swissRound: 1,
@@ -191,9 +193,15 @@ export function openWorldsMayhemModal() {
     if (tB.losses >= 3) tB.status = 'ELIMINATED';
   }
 
-  // ==================== LIVE KEY-MOMENTS MATCH SIMULATOR ====================
+  // ==================== LIVE KEY-MOMENTS MATCH SIMULATOR (v3.0) ====================
   function generateGameTimeline(userTeam, oppTeam) {
-    const winProb = 1 / (1 + Math.exp(-(userTeam.rating - oppTeam.rating) / 3.8));
+    const focusLegend = m.roster[m.focusRoleIdx] || m.roster[2];
+    // Tactic synergy bonus when playing around a 96+ superstar or matching playstyle
+    const planBonus = (m.tacticPlan === 'aggressive' && focusLegend.style === 'Aggressive') ? 1.2
+      : (m.tacticPlan === 'scaling' && focusLegend.style === 'Scaling') ? 1.2
+      : (focusLegend.ovr >= 97 ? 0.8 : 0.3);
+
+    const winProb = Math.max(0.18, Math.min(0.84, 1 / (1 + Math.exp(-((userTeam.rating + planBonus) - oppTeam.rating) / 4.2))));
     const userWins = Math.random() < winProb;
 
     const top = m.roster[0], jgl = m.roster[1], mid = m.roster[2], bot = m.roster[3], sup = m.roster[4];
@@ -210,65 +218,84 @@ export function openWorldsMayhemModal() {
       moments.push({ min, type, tag, side, text, uKills, oKills, uGold, oGold, uDrag, oDrag, uBaron, oBaron });
     };
 
-    // 1. Early First Blood (min 4-6)
-    const fbUser = Math.random() < (userWins ? 0.62 : 0.38);
-    const fbActor = pick([jgl, mid, top]);
+    // 1. Early First Blood (influenced by Erken Baskı!)
+    const fbBias = m.tacticPlan === 'aggressive' ? 0.14 : m.tacticPlan === 'scaling' ? -0.10 : 0;
+    const fbUser = Math.random() < Math.max(0.22, Math.min(0.82, (userWins ? 0.58 : 0.42) + fbBias));
+    const fbActor = Math.random() < 0.5 ? focusLegend : pick([jgl, mid, top]);
     addMoment(
       4 + Math.floor(Math.random() * 3),
       'FIRST_BLOOD', 'İLK KAN', fbUser ? 'blue' : 'red',
       fbUser
         ? `${fbActor.name}, erken koridor baskınında ${oppTeam.tag} karşısında İlk Kan'ı aldı.`
         : `${oppTeam.tag} (${oppStar}), erken seviyede baskınla İlk Kan'ı çıkardı.`,
-      fbUser ? 1 : 0, fbUser ? 0 : 1, fbUser ? 7200 : 6200, fbUser ? 6200 : 7200
+      fbUser ? 1 : 0, fbUser ? 0 : 1, fbUser ? 7400 : 6300, fbUser ? 6300 : 7400
     );
 
-    // 2. Lane Skirmish / Solo Kill (min 10-13)
-    const skUser = Math.random() < (userWins ? 0.65 : 0.35);
-    const soloActor = pick([top, mid, bot]);
+    // 2. Legend 1v1 Duel / Solo Kill
+    const skUser = Math.random() < (userWins ? 0.62 : 0.38);
     addMoment(
-      10 + Math.floor(Math.random() * 4),
-      'SOLO', 'SOLO KILL', skUser ? 'blue' : 'red',
+      11 + Math.floor(Math.random() * 3),
+      'SOLO', 'EFSANE DÜELLOSU', skUser ? 'blue' : 'red',
       skUser
-        ? `${soloActor.name}, birebir koridor takasında mekanik üstünlükle solo kill çıkardı ve kule plakalarını topladı.`
-        : `${oppTeam.tag} koridor baskısını artırdı; ${oppStar} skor bularak altın dengesini lehine çevirdi.`,
-      skUser ? 2 : 1, skUser ? 1 : 2, skUser ? 11500 : 9800, skUser ? 9800 : 11500
+        ? `${focusLegend.name}, ${oppStar} karşısındaki 1v1 düelloyu kazanarak kule plakalarını topladı!`
+        : `${oppStar}, ${focusLegend.name} karşısında kritik bir 1v1 takasından galip çıktı ve koridor kontrolünü aldı.`,
+      skUser ? 2 : 1, skUser ? 1 : 2, skUser ? 11600 : 10100, skUser ? 10100 : 11600
     );
 
-    // 3. Mid-Game Dragon Fight (min 17-20)
-    const drUser = Math.random() < (userWins ? 0.68 : 0.32);
+    // 3. Mid-Game Dragon Fight (with Shutdown possibility!)
+    const drUser = Math.random() < (userWins ? 0.64 : 0.36);
+    const isShutdown = !fbUser && drUser;
     addMoment(
       17 + Math.floor(Math.random() * 3),
-      'DRAGON', 'EJDER', drUser ? 'blue' : 'red',
+      isShutdown ? 'SHUTDOWN' : 'DRAGON', isShutdown ? 'SHUTDOWN + EJDER' : 'EJDER', drUser ? 'blue' : 'red',
       drUser
-        ? `${sup.name}'ın kusursuz savaş başlatmasıyla ejder çukurunda 3-1 üstünlük! ${bot.name} hasarı temizledi ve Ejder alındı.`
-        : `${oppTeam.tag} ejder çukurunda iyi pozisyon aldı ve 2 skorla birlikte Ejder'i hanesine yazdı.`,
-      drUser ? 3 : 1, drUser ? 1 : 3, drUser ? 13200 : 11000, drUser ? 11000 : 13200,
+        ? `${sup.name}'ın kusursuz savaş başlatmasıyla ejder çukurunda 3-2 üstünlük! ${bot.name} ${isShutdown ? 'Shutdown altınıyla birlikte ' : ''}Ejder'i takıma kazandırdı.`
+        : `${oppTeam.tag} ejder çukurunda iyi pozisyon aldı ve 3-1 takasla birlikte Ejder'i hanesine yazdı.`,
+      drUser ? 3 : 1, drUser ? 2 : 3, drUser ? 13400 : 11400, drUser ? 11400 : 13400,
       drUser ? 2 : 0, drUser ? 0 : 2
     );
 
-    // 4. Baron Nashor Climax (min 24-27)
-    const barUser = Math.random() < (userWins ? 0.78 : 0.22);
-    const baronHero = pick([jgl, mid, bot]);
+    // 4. Baron Nashor & Jungle Smite Steal Climax!
+    const lateBias = m.tacticPlan === 'scaling' ? 0.12 : m.tacticPlan === 'aggressive' ? -0.06 : 0;
+    const barUser = Math.random() < Math.max(0.2, Math.min(0.85, (userWins ? 0.74 : 0.26) + lateBias));
+    const isSteal = Math.random() < 0.22;
     addMoment(
       24 + Math.floor(Math.random() * 4),
-      'BARON', 'BARON', barUser ? 'blue' : 'red',
+      'BARON', isSteal ? 'BARON ÇALDI' : 'BARON', barUser ? 'blue' : 'red',
       barUser
-        ? `${baronHero.name} önderliğinde 5v5 takım savaşı kazanıldı! Baron Nashor güçlendirmesiyle orta koridor kuşatması başlıyor.`
-        : `${oppTeam.tag} Baron çukurunda kritik bir yakalama buldu; ${oppStar} liderliğinde Baron güçlendirmesini aldılar.`,
-      barUser ? 4 : 2, barUser ? 2 : 4, barUser ? 14800 : 12200, barUser ? 12200 : 14800,
+        ? (isSteal
+          ? `İNANILMAZ! ${jgl.name}, çukura sıçrayıp kusursuz Çarp (Smite) ile Baron Nashor'u ${oppTeam.tag}'nin elinden çaldı!`
+          : `${focusLegend.name} önderliğinde 5v5 takım savaşı kazanıldı! Baron Nashor güçlendirmesiyle kuşatma başlıyor.`)
+        : (isSteal
+          ? `${oppTeam.tag} ormancısı kritik anda Baron'u çaldı ve maçı çevirdi!`
+          : `${oppTeam.tag} Baron çukurunda kritik bir yakalama buldu; ${oppStar} liderliğinde Baron'u aldılar.`),
+      barUser ? 4 : 2, barUser ? 2 : 4, barUser ? 14800 : 12400, barUser ? 12400 : 14800,
       barUser ? 1 : 0, barUser ? 0 : 1, barUser ? 1 : 0, barUser ? 0 : 1
     );
 
-    // 5. Final Teamfight & Nexus (min 30-35)
-    const endMin = 30 + Math.floor(Math.random() * 6);
-    const mvp = userWins ? pick([mid, bot, top, jgl]) : null;
+    // 5. Optional Elder Dragon Climax if close game!
+    if (Math.abs(uGold - oGold) < 3500) {
+      addMoment(
+        31,
+        'SOUL', 'KADİM EJDER', userWins ? 'blue' : 'red',
+        userWins
+          ? `31. dakikada Kadim Ejder savaşı! ${sup.name} ve ${focusLegend.name} kombosuyla Kadim Ejder alındı.`
+          : `31. dakikada nefes kesen Kadim Ejder savaşını ${oppTeam.name} kazandı.`,
+        userWins ? 3 : 1, userWins ? 1 : 3, userWins ? 6500 : 4800, userWins ? 4800 : 6500,
+        userWins ? 1 : 0, userWins ? 0 : 1
+      );
+    }
+
+    // 6. Final Teamfight & Nexus
+    const endMin = moments[moments.length - 1].min + 3 + Math.floor(Math.random() * 4);
+    const mvp = userWins ? (Math.random() < 0.55 ? focusLegend : pick([mid, bot, top, jgl])) : null;
     addMoment(
       endMin,
       'NEXUS', 'NEXUS', userWins ? 'blue' : 'red',
       userWins
-        ? `Son takım savaşında Katliam (Ace)! ${mvp.name} muhteşem bir performansla Nexus'u yıktı ve maçı kazandı.`
+        ? `Son takım savaşında Katliam (Ace)! ${mvp.name} tarihi bir performansla Nexus'u yıktı ve maçı kazandı.`
         : `${oppTeam.name} son takım savaşını kazanarak üsse girdi ve ${endMin}. dakikada Nexus'u yıktı.`,
-      userWins ? 4 : 1, userWins ? 1 : 4, userWins ? 11500 : 8500, userWins ? 8500 : 11500
+      userWins ? 4 : 1, userWins ? 1 : 4, userWins ? 9500 : 7200, userWins ? 7200 : 9500
     );
 
     return { userWins, moments, mvpName: userWins ? mvp.name : oppStar };
@@ -509,6 +536,26 @@ export function openWorldsMayhemModal() {
     `;
   }
 
+  function renderMayhemTacticBar() {
+    if (m.roster.length < 5) return '';
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:12px;font-size:11.5px;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="color:var(--text-muted);font-weight:700;">Oyun Planı:</span>
+          ${[['aggressive', 'Erken Baskı'], ['balanced', 'Dengeli'], ['scaling', 'Geç Oyun Scaling']].map(([k, lbl]) =>
+            `<button class="tactic-btn ${m.tacticPlan === k ? 'active' : ''}" data-m-plan="${k}">${lbl}</button>`
+          ).join('')}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="color:var(--text-muted);font-weight:700;">Yıldız Odak:</span>
+          ${m.roster.map((p, i) =>
+            `<button class="tactic-btn ${m.focusRoleIdx === i ? 'active' : ''}" data-m-focus="${i}">${p.role}: ${p.name.split(' ').slice(1).join(' ')}</button>`
+          ).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function renderSwissStage() {
     const userT = m.swissTeams.find(t => t.id === 'user');
     const userMatch = m.swissMatches.find(sm => sm.aId === 'user' || sm.bId === 'user');
@@ -519,6 +566,7 @@ export function openWorldsMayhemModal() {
 
     return `
       ${renderRosterBar()}
+      ${renderMayhemTacticBar()}
       ${userMatch && opp ? `
         <div class="card" style="margin-bottom:14px;border-color:var(--gold);background:linear-gradient(135deg, rgba(200,155,60,0.1), var(--bg-card));display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
           <div>
@@ -649,6 +697,7 @@ export function openWorldsMayhemModal() {
 
     return `
       ${renderRosterBar()}
+      ${renderMayhemTacticBar()}
       ${userMatch && opp ? `
         <div class="card" style="margin-bottom:14px;border-color:var(--gold);background:linear-gradient(135deg, rgba(200,155,60,0.12), var(--bg-card));display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
           <div>
@@ -741,6 +790,8 @@ export function openWorldsMayhemModal() {
         render();
       });
     });
+    box.querySelectorAll('[data-m-plan]').forEach(b => b.addEventListener('click', () => { m.tacticPlan = b.dataset.mPlan; render(); }));
+    box.querySelectorAll('[data-m-focus]').forEach(b => b.addEventListener('click', () => { m.focusRoleIdx = Number(b.dataset.mFocus); render(); }));
     box.querySelector('#btnStartSwiss')?.addEventListener('click', initSwissTournament);
 
     box.querySelector('#btnPlaySwissMatch')?.addEventListener('click', () => {

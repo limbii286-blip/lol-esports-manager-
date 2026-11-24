@@ -416,8 +416,9 @@ function runWeeklyClubTick(state) {
     const roster = state.players.filter(p => p.teamId === team.id);
     const streamerBonus = roster.filter(p => p.trait === 'Streamer').length * 18000;
     const fanIncome = team.fanbase * 950 + streamerBonus;
-    const sponsorIncome = team.sponsor ? team.sponsor.weekly : 35000;
+    const sponsorIncome = team.sponsor ? team.sponsor.weekly : 45000;
     team.budget += (fanIncome + sponsorIncome - wages);
+    if (team.id !== state.userTeamId && team.budget < 250000) team.budget = 250000;
 
     const focus = team.trainingFocus || 'balanced';
     for (const p of roster) {
@@ -505,8 +506,8 @@ function createRegionalPlayoffsBracket(state, title) {
 }
 
 function createMSIBracket(state, champByRegion) {
-  // 8 Teams: All 7 Regional Champions + LCK #2
-  const lck2 = getSortedStandings(state, 'LCK')[1]?.teamId;
+  // 8 Teams: All 7 Regional Champions + highest-seeded non-champion LCK team (no duplicates!)
+  const lck2 = getSortedStandings(state, 'LCK').find(r => r.teamId !== champByRegion.LCK)?.teamId || getSortedStandings(state, 'LCK')[1]?.teamId;
   const qf = [
     { id: 'MSI_qf1', blueId: champByRegion.LCK, redId: champByRegion.LCO, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
     { id: 'MSI_qf2', blueId: champByRegion.LPL, redId: champByRegion.TCL, bestOf: 5, blueScore: 0, redScore: 0, played: false, winnerId: null },
@@ -542,6 +543,7 @@ function createWorldsSwissStage(state) {
     wins: 0,
     losses: 0,
     status: 'ACTIVE', // ACTIVE | QUALIFIED | ELIMINATED
+    pastOpps: [],
   }));
 
   const swiss = {
@@ -573,7 +575,14 @@ function pairSwissRound(swiss) {
     if (leftovers.length) group.unshift(leftovers.pop());
     while (group.length >= 2) {
       const a = group.shift();
-      const b = group.shift();
+      // Avoid rematches in Swiss stage whenever possible
+      let oppIdx = group.findIndex(cand => !(a.pastOpps || []).includes(cand.teamId));
+      if (oppIdx === -1) oppIdx = 0;
+      const b = group.splice(oppIdx, 1)[0];
+      if (!a.pastOpps) a.pastOpps = [];
+      if (!b.pastOpps) b.pastOpps = [];
+      a.pastOpps.push(b.teamId);
+      b.pastOpps.push(a.teamId);
       const isDecider = a.wins === 2 || a.losses === 2 || b.wins === 2 || b.losses === 2;
       matches.push({
         id: `sw_r${swiss.round}_${a.teamId}_${b.teamId}`,
@@ -1004,6 +1013,31 @@ export function setStarter(state, playerId) {
   for (const mate of state.players) {
     if (mate.teamId === state.userTeamId && mate.role === p.role) mate.isStarter = (mate.id === p.id);
   }
+}
+
+export function renewContract(state, playerId, years = 2) {
+  const p = state.players.find(x => x.id === playerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || p.teamId !== team?.id) return { ok: false, reason: 'Oyuncu bulunamadı.' };
+  const newSalary = Math.round((Math.max(p.salary, calcWeeklySalary(p.ovr, team.prestige)) * 1.08) / 500) * 500;
+  p.salary = newSalary;
+  p.contractYears = years;
+  p.morale = Math.min(100, p.morale + 6);
+  return { ok: true, reason: `${p.name} ile ${years} yıllık yeni sözleşme imzalandı (${formatMoney(newSalary)}/hf).` };
+}
+
+export function getLeagueStatLeaders(state, regionId) {
+  const regTeams = new Set(state.teams.filter(t => t.region === regionId).map(t => t.id));
+  const list = state.players.filter(p => regTeams.has(p.teamId) && p.stats.games > 0).map(p => {
+    const team = state.teams.find(t => t.id === p.teamId);
+    const kda = +((p.stats.kills + p.stats.assists) / Math.max(1, p.stats.deaths)).toFixed(2);
+    const kpg = +(p.stats.kills / p.stats.games).toFixed(1);
+    return { ...p, teamTag: team?.tag || '?', teamColor: team?.color || '#334155', teamColor2: team?.color2 || '#fff', kda, kpg };
+  });
+  return {
+    byKda: [...list].sort((a, b) => b.kda - a.kda).slice(0, 5),
+    byMvp: [...list].sort((a, b) => (b.stats.mvps - a.stats.mvps) || (b.kda - a.kda)).slice(0, 5),
+  };
 }
 
 export function releasePlayer(state, playerId) {

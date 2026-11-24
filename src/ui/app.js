@@ -5,7 +5,7 @@ import {
   SPONSORS, FACILITY_INFO, TRAINING_MODES,
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
-  advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer,
+  advanceWeekOrRound, attemptSignOrTransfer, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
   resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot
@@ -67,7 +67,7 @@ function renderStartScreen() {
         <div style="display:flex;align-items:center;gap:14px;">
           <img src="./assets/icon.jpg" alt="LoL Esports Manager Icon" style="width:52px;height:52px;border-radius:12px;border:1px solid rgba(200,155,60,0.45);box-shadow:0 4px 16px rgba(0,0,0,0.45);object-fit:cover;" />
           <div>
-            <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span> <span class="badge tier-A">v2.1</span></div>
+            <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span> <span class="badge tier-S">v3.0</span></div>
             <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • 16 Takımlı Swiss Worlds • Wonderkid Scouting</div>
           </div>
         </div>
@@ -363,10 +363,11 @@ function renderRoster() {
                     <div>F:${p.form} ${barHtml(p.form, '#38bdf8')}</div>
                     <div>Y:${p.fatigue} ${barHtml(p.fatigue, p.fatigue > 65 ? '#f43f5e' : '#f59e0b')}</div>
                   </td>
-                  <td style="font-size:12px;">${formatMoney(p.salary)}<br><span style="color:var(--text-dim);">${p.contractYears} yıl</span></td>
+                  <td style="font-size:12px;">${formatMoney(p.salary)}<br><span style="color:${p.contractYears <= 1 ? 'var(--amber)' : 'var(--text-dim)'};">${p.contractYears <= 0 ? 'Bitti' : `${p.contractYears} yıl`}</span></td>
                   <td>
                     <div style="display:flex;gap:4px;">
                       ${!p.isStarter ? `<button class="btn-blue btn-sm" data-set-starter="${p.id}">İlk 5</button>` : ''}
+                      ${p.contractYears <= 1 ? `<button class="btn-green btn-sm" data-renew-player="${p.id}">Yenile</button>` : ''}
                       <button class="btn-danger btn-sm" data-release-player="${p.id}">Sal</button>
                     </div>
                   </td>
@@ -710,6 +711,26 @@ function renderLeague() {
               </div>
             `;
           }).join('')}
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">${icon('target', 14)} ${ui.leagueRegion} Sezon İstatistik Liderleri</span></div>
+          ${(() => {
+            const ld = getLeagueStatLeaders(state, ui.leagueRegion);
+            if (ld.byKda.length === 0) return '<p style="font-size:12px;color:var(--text-muted);">Maçlar oynandıkça KDA ve MVP liderleri burada listelenecek.</p>';
+            return `
+              <div class="grid-2" style="gap:10px;">
+                <div>
+                  <div style="font-size:11px;font-weight:800;color:var(--gold-bright);margin-bottom:5px;">EN YÜKSEK KDA</div>
+                  ${ld.byKda.map((p, i) => `<div class="num" style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);"><span>${i + 1}. <b>${p.name}</b> <span style="color:var(--text-dim);">(${p.teamTag})</span></span><b style="color:var(--blue);">${p.kda}</b></div>`).join('')}
+                </div>
+                <div>
+                  <div style="font-size:11px;font-weight:800;color:var(--gold-bright);margin-bottom:5px;">MVP LİDERLERİ</div>
+                  ${ld.byMvp.map((p, i) => `<div class="num" style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);"><span>${i + 1}. <b>${p.name}</b> <span style="color:var(--text-dim);">(${p.teamTag})</span></span><b style="color:var(--gold-bright);">${p.stats.mvps} MVP</b></div>`).join('')}
+                </div>
+              </div>
+            `;
+          })()}
         </div>
 
         <div class="card">
@@ -1182,6 +1203,7 @@ function bindAppEvents() {
 
   const uTeam = state.teams.find(t => t.id === state.userTeamId);
   root.querySelectorAll('[data-set-starter]').forEach(btn => btn.addEventListener('click', () => { setStarter(state, btn.dataset.setStarter); saveGame(state); render(); showToast('İlk 5 güncellendi.'); }));
+  root.querySelectorAll('[data-renew-player]').forEach(btn => btn.addEventListener('click', () => { const res = renewContract(state, btn.dataset.renewPlayer, 2); saveGame(state); render(); showToast(res.reason); }));
   root.querySelectorAll('[data-release-player]').forEach(btn => btn.addEventListener('click', () => { const res = releasePlayer(state, btn.dataset.releasePlayer); saveGame(state); render(); showToast(res.reason); }));
   root.querySelectorAll('[data-set-training]').forEach(el => el.addEventListener('click', () => { uTeam.trainingFocus = el.dataset.setTraining; saveGame(state); render(); showToast('Antrenman güncellendi.'); }));
   root.querySelectorAll('[data-def-plan]').forEach(b => b.addEventListener('click', () => { uTeam.tactics.gameplan = b.dataset.defPlan; render(); }));

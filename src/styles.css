@@ -604,6 +604,7 @@ tr.highlight-row td { background: rgba(200, 155, 60, 0.08); }
   flex-shrink: 0;
 }
 .ev-tag-FIRST_BLOOD { background: rgba(244, 63, 94, 0.25); color: #fda4af; }
+.ev-tag-SHUTDOWN { background: rgba(245, 158, 11, 0.28); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.45); }
 .ev-tag-BARON { background: rgba(168, 85, 247, 0.25); color: #e9d5ff; }
 .ev-tag-DRAGON, .ev-tag-SOUL { background: rgba(245, 158, 11, 0.25); color: #fde68a; }
 .ev-tag-NEXUS { background: var(--gold); color: #090d14; }
