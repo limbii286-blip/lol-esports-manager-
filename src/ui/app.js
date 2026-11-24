@@ -6,7 +6,7 @@ import {
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
-  getBoardConfidence, getTransferRoomOpportunities,
+  getBoardConfidence, getTransferRoomOpportunities, resignFromClub, acceptJobOffer,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
   resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot,
@@ -893,6 +893,13 @@ function renderClub() {
       <div class="card kpi-card"><div class="kpi-label">Haftalık Gelir (Sponsor + Taraftar + Yayın)</div><div class="kpi-val" style="color:var(--blue);">+${formatMoney(spRev + fanRev)}</div></div>
       <div class="card kpi-card"><div class="kpi-label">Haftalık Maaş Gideri</div><div class="kpi-val" style="color:var(--red);">-${formatMoney(wages)}</div></div>
     </div>
+    <div class="card" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-weight:800;font-size:13.5px;">Yönetim Kurulu Güveni: <span style="color:var(--gold-bright);">${getBoardConfidence(state).grade} (%${getBoardConfidence(state).score})</span></div>
+        <div style="font-size:12px;color:var(--text-muted);">Güven puanın %45'in altına düşerse önce ültimatom alırsın, toparlayamazsan görevine son verilir.</div>
+      </div>
+      <button class="btn-danger btn-sm" id="btnResignClub">İstifa Et & Kulüp Değiştir</button>
+    </div>
     <div class="grid-2">
       <div class="card">
         <div class="card-header"><span class="card-title">${icon('shield', 14)} Kulüp Tesisleri</span></div>
@@ -1011,6 +1018,34 @@ function renderDramaModal() {
         <p style="font-size:13.5px;line-height:1.55;margin-bottom:16px;">${ev.desc}</p>
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${ev.choices.map(c => `<button class="btn-ghost" data-drama-choice="${c.idx}" style="justify-content:flex-start;text-align:left;padding:11px 14px;font-size:13px;">${icon('arrowRight', 13)} ${c.label}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSackedModal() {
+  if (!state?.sackedState) return '';
+  const sk = state.sackedState;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box" style="max-width:680px;border-color:var(--red);">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--red);font-size:15px;">${icon('shield', 16)} ${sk.resigned ? 'İSTİFA ETTİN — YENİ KULÜP SEÇ' : `GÖREVİNE SON VERİLDİ (${sk.oldTeamTag})`}</span>
+        </div>
+        <p style="font-size:13.5px;color:var(--text);margin-bottom:14px;">${sk.reason}</p>
+        <div style="font-size:12px;font-weight:800;color:var(--gold-bright);text-transform:uppercase;margin-bottom:8px;">Sana Gelen Yeni Koçluk Teklifleri</div>
+        <div class="grid-2" style="gap:10px;">
+          ${sk.offers.map(o => `
+            <div class="card" style="background:var(--bg);display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span><span class="team-tag" style="background:${o.color};color:${o.color2};margin-right:6px;">${o.tag}</span><b>${o.name}</b></span>
+                <span class="ovr-pill ${ovrClass(o.ovr)}">${o.ovr}</span>
+              </div>
+              <div class="num" style="font-size:12px;color:var(--text-muted);">${o.region} • Prestij ${o.prestige} • Bütçe ${formatMoney(o.budget)}</div>
+              <button class="btn-primary btn-sm" data-accept-job="${o.teamId}">Teklifi Kabul Et ${icon('arrowRight', 12)}</button>
+            </div>
+          `).join('')}
         </div>
       </div>
     </div>
@@ -1256,7 +1291,7 @@ function renderAppShell() {
 }
 
 function render() {
-  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + renderSaveLoadModal() + renderGuideModal() + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
+  root.innerHTML = (state ? renderAppShell() : renderStartScreen()) + renderSaveLoadModal() + renderGuideModal() + renderSackedModal() + (ui.toastMsg ? `<div class="toast">${ui.toastMsg}</div>` : '');
   bindAppEvents();
 }
 
@@ -1555,6 +1590,21 @@ function bindAppEvents() {
 
   root.querySelectorAll('[data-league-reg]').forEach(b => b.addEventListener('click', () => { ui.leagueRegion = b.dataset.leagueReg; render(); }));
   root.querySelectorAll('[data-upgrade-fac]').forEach(b => b.addEventListener('click', () => { const res = upgradeFacility(state, b.dataset.upgradeFac); saveGame(state); render(); showToast(res.reason); }));
+  root.querySelector('#btnResignClub')?.addEventListener('click', () => {
+    resignFromClub(state);
+    render();
+  });
+  root.querySelectorAll('[data-accept-job]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      acceptJobOffer(state, btn.dataset.acceptJob);
+      ui.leagueRegion = state.teams.find(t => t.id === state.userTeamId)?.region || 'LCK';
+      ui.tab = 'dashboard';
+      saveGame(state);
+      render();
+      showToast('Yeni kulübünde göreve başladın! Başarılar koç.');
+    });
+  });
+
   root.querySelectorAll('[data-pick-sponsor]').forEach(b => b.addEventListener('click', () => {
     const sp = SPONSORS.find(s => s.id === b.dataset.pickSponsor);
     if (sp) { uTeam.sponsor = sp; saveGame(state); render(); showToast(`${sp.name} ile anlaşıldı.`); }

@@ -327,6 +327,8 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     challengerPool: generateChallengerProspects(),
     incomingOffers: [],
     pendingEvent: null,
+    boardWarnings: 0,
+    sackedState: null,
     scrimDoneThisWeek: false,
     academyPromotedThisSplit: false,
     history: [],
@@ -851,6 +853,7 @@ export function advanceWeekOrRound(state) {
       for (const m of weekMatches) if (!m.played) quickSimSeries(state, m);
     }
     runWeeklyClubTick(state);
+    evaluateBoardJobSecurity(state);
     maybeTriggerDramaEvent(state);
     maybeGenerateIncomingOffer(state);
 
@@ -1417,16 +1420,97 @@ export function getBoardConfidence(state) {
   const team = state.teams.find(t => t.id === state.userTeamId);
   const standings = getSortedStandings(state, team.region);
   const rank = standings.findIndex(r => r.teamId === team.id) + 1;
-  let score = 72;
+  const row = standings[rank - 1] || { wins: 0, losses: 0 };
+  let score = 70;
   if (rank === 1) score += 18;
   else if (rank === 2) score += 12;
-  else if (rank <= 4) score += 5;
-  else if (rank >= 7) score -= 14;
-  if (team.budget < 0) score -= 12;
+  else if (rank <= 4) score += 4;
+  else if (rank === 6) score -= 12;
+  else if (rank >= 7) score -= 24;
+  if (row.losses >= 4 && row.wins <= 1) score -= 12;
+  if (team.budget < 0) score -= 14;
   if (team.trophies.length > 0) score += Math.min(12, team.trophies.length * 4);
-  score = Math.max(25, Math.min(99, score));
+  score = Math.max(18, Math.min(99, score));
   const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B+' : score >= 58 ? 'B' : score >= 45 ? 'C' : 'D';
   return { score, grade, rank };
+}
+
+export function buildJobOffers(state, excludeTeamId) {
+  const candidates = state.teams
+    .filter(t => t.id !== excludeTeamId && t.prestige <= 86)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 4);
+  return candidates.map(t => ({
+    teamId: t.id,
+    name: t.name,
+    tag: t.tag,
+    region: t.region,
+    color: t.color,
+    color2: t.color2,
+    prestige: t.prestige,
+    budget: t.budget,
+    ovr: getTeamOVR(state, t.id),
+  }));
+}
+
+export function evaluateBoardJobSecurity(state) {
+  if (state.sackedState) return;
+  if (state.phase !== 'SPRING_SPLIT' && state.phase !== 'SUMMER_SPLIT') return;
+  if (state.week < 3) return; // Give at least 3 weeks grace period
+
+  const conf = getBoardConfidence(state);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const mgr = state.managerName || 'Koç';
+
+  if (conf.score < 45) {
+    state.boardWarnings = (state.boardWarnings || 0) + 1;
+    if (state.boardWarnings === 1) {
+      addInboxMessage(state, {
+        title: `RESMİ ÜLTİMATOM — Yönetim Kurulu Uyarısı`,
+        sender: `${team.name} Yönetim Kurulu`,
+        category: 'BOARD',
+        body: `${mgr}, takımın gidişatından ciddi şekilde endişeliyiz (Sıralama #${conf.rank}, Güven %${conf.score}). Önümüzdeki haftada toparlayamazsan görevine son verilecek!`,
+      });
+    } else if (state.boardWarnings >= 2) {
+      state.sackedState = {
+        resigned: false,
+        oldTeamName: team.name,
+        oldTeamTag: team.tag,
+        reason: `Kötü lig performansı (#${conf.rank}, Güven %${conf.score}) nedeniyle ${team.name} Yönetim Kurulu sözleşmeni feshetti.`,
+        offers: buildJobOffers(state, team.id),
+      };
+    }
+  } else {
+    state.boardWarnings = 0;
+  }
+}
+
+export function resignFromClub(state) {
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  state.sackedState = {
+    resigned: true,
+    oldTeamName: team.name,
+    oldTeamTag: team.tag,
+    reason: `${team.name} görevinden kendi isteğinle istifa ettin. Aşağıdaki kulüplerden biriyle yeni bir sayfa açabilirsin.`,
+    offers: buildJobOffers(state, team.id),
+  };
+}
+
+export function acceptJobOffer(state, newTeamId) {
+  const newTeam = state.teams.find(t => t.id === newTeamId);
+  if (!newTeam) return;
+  state.userTeamId = newTeam.id;
+  if (!newTeam.sponsor) newTeam.sponsor = SPONSORS[0];
+  state.boardWarnings = 0;
+  state.sackedState = null;
+  state.incomingOffers = [];
+  const mgr = state.managerName || 'Koç';
+  addInboxMessage(state, {
+    title: `Yeni Görev: ${newTeam.name} Baş Koçluğu`,
+    sender: `${newTeam.name} Yönetim Kurulu`,
+    category: 'BOARD',
+    body: `Hoş geldin ${mgr}! ${newTeam.name} (${newTeam.region}) ile yeni bir başlangıç yapıyorsun. Bütçen ${formatMoney(newTeam.budget)}. Başarılar!`,
+  });
 }
 
 export function getTransferRoomOpportunities(state) {
