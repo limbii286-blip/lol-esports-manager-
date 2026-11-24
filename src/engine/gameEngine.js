@@ -326,6 +326,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     bracket: null,   // Playoffs / MSI / Worlds Play-In / Worlds Knockout
     challengerPool: generateChallengerProspects(),
     incomingOffers: [],
+    managerJobOffers: [],
     pendingEvent: null,
     boardWarnings: 0,
     sackedState: null,
@@ -1111,6 +1112,7 @@ function finishBracketAndTransition(state) {
     state.week = 1;
     setCalendarToMonday(state, 11, 16); // Mid-November Off-Season Transfer Window!
     runOffSeasonProgression(state);
+    generateSuccessJobOffers(state);
 
     const mgr = state.managerName || 'Koç';
     addInboxMessage(state, {
@@ -1521,6 +1523,52 @@ export function resignFromClub(state) {
   };
 }
 
+export function generateSuccessJobOffers(state) {
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const conf = getBoardConfidence(state);
+  const wonTrophyThisYear = userTeam.trophies.some(t => t.includes(String(state.season)));
+  if (!wonTrophyThisYear && conf.rank > 2 && conf.score < 82) {
+    state.managerJobOffers = [];
+    return;
+  }
+
+  // Step-up clubs: higher prestige than current club (or rival elite giants if already 90+)
+  const minP = userTeam.prestige >= 90 ? 88 : userTeam.prestige + 2;
+  const maxP = userTeam.prestige >= 90 ? 99 : Math.min(99, userTeam.prestige + 14 + (wonTrophyThisYear ? 5 : 0));
+
+  let cands = state.teams.filter(t => t.id !== userTeam.id && t.prestige >= minP && t.prestige <= maxP);
+  if (cands.length < 2) {
+    cands = state.teams.filter(t => t.id !== userTeam.id && t.prestige >= userTeam.prestige - 2);
+  }
+  const picked = cands.sort(() => Math.random() - 0.5).slice(0, 3);
+  state.managerJobOffers = picked.map(t => ({
+    teamId: t.id,
+    name: t.name,
+    tag: t.tag,
+    region: t.region,
+    color: t.color,
+    color2: t.color2,
+    prestige: t.prestige,
+    budget: t.budget,
+    ovr: getTeamOVR(state, t.id),
+  }));
+
+  if (state.managerJobOffers.length) {
+    const mgr = state.managerName || 'Koç';
+    const names = state.managerJobOffers.map(o => `${o.name} (${o.region})`).join(', ');
+    addInboxMessage(state, {
+      title: `Başarılı Sezon Sonrası Sana Koçluk Teklifleri Geldi!`,
+      sender: 'Menajerlik Ajansı',
+      category: 'BOARD',
+      body: `Tebrikler ${mgr}! Gösterdiğin üstün performans büyük kulüplerin dikkatini çekti. Şu kulüpler seni Baş Koç olarak istiyor: ${names}. Genel Bakış ekranından teklifleri değerlendirebilir veya ${userTeam.name} ile yola devam edebilirsin.`,
+    });
+  }
+}
+
+export function dismissManagerJobOffer(state, teamId) {
+  state.managerJobOffers = (state.managerJobOffers || []).filter(o => o.teamId !== teamId);
+}
+
 export function acceptJobOffer(state, newTeamId) {
   const newTeam = state.teams.find(t => t.id === newTeamId);
   if (!newTeam) return;
@@ -1528,6 +1576,7 @@ export function acceptJobOffer(state, newTeamId) {
   if (!newTeam.sponsor) newTeam.sponsor = SPONSORS[0];
   state.boardWarnings = 0;
   state.sackedState = null;
+  state.managerJobOffers = [];
   state.incomingOffers = [];
   const mgr = state.managerName || 'Koç';
   addInboxMessage(state, {

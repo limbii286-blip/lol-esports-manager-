@@ -6,7 +6,7 @@ import {
   createNewCareer, getCurrentPatch, getPhaseLabel, getTeamRoster, getTeamOVR,
   getTeamWeeklyWages, getSortedStandings, getUserNextMatch, quickSimSeries,
   advanceWeekOrRound, attemptSignOrTransfer, evaluateTransferInterest, getTransferWindowStatus, setStarter, releasePlayer, renewContract, getLeagueStatLeaders,
-  getBoardConfidence, getTransferRoomOpportunities, resignFromClub, acceptJobOffer,
+  getBoardConfidence, getTransferRoomOpportunities, resignFromClub, acceptJobOffer, dismissManagerJobOffer,
   promoteAcademyPlayer, playWeeklyScrim, upgradeFacility, formatMoney,
   scoutChallengerProspect, signChallengerProspect, respondIncomingOffer,
   resolveDramaEvent, saveGame, listSaveSlots, saveToSlot, loadFromSlot, deleteSaveSlot,
@@ -255,8 +255,32 @@ function renderDashboard() {
     </div>
   `;
 
+  const jobOffersBanner = state.managerJobOffers?.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:rgba(200,155,60,0.65);background:linear-gradient(135deg, rgba(200,155,60,0.12), var(--bg-card));">
+      <div class="card-header" style="margin-bottom:8px;">
+        <span class="card-title">${icon('trophy', 14)} Başarılı Sezon Sonrası Sana Gelen Koçluk Teklifleri (${state.managerJobOffers.length})</span>
+      </div>
+      <div class="grid-3" style="gap:10px;">
+        ${state.managerJobOffers.map(o => `
+          <div style="background:var(--bg);border:1px solid var(--border-strong);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span><span class="team-tag" style="background:${o.color};color:${o.color2};margin-right:6px;">${o.tag}</span><b>${o.name}</b></span>
+              <span class="ovr-pill ${ovrClass(o.ovr)}" style="font-size:11.5px;">${o.ovr}</span>
+            </div>
+            <div class="num" style="font-size:11.5px;color:var(--text-muted);">${o.region} • Prestij ${o.prestige} • ${formatMoney(o.budget)}</div>
+            <div style="display:flex;gap:6px;margin-top:4px;">
+              <button class="btn-primary btn-sm" style="flex:1;" data-accept-job="${o.teamId}">Kabul Et</button>
+              <button class="btn-ghost btn-sm" data-dismiss-job="${o.teamId}">Reddet</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
   return `
     ${calStripHtml}
+    ${jobOffersBanner}
     ${offersBanner}
     <div class="grid-4" style="margin-bottom:16px;">
       <div class="card kpi-card">
@@ -1602,6 +1626,15 @@ function bindAppEvents() {
       saveGame(state);
       render();
       showToast('Yeni kulübünde göreve başladın! Başarılar koç.');
+    });
+  });
+
+  root.querySelectorAll('[data-dismiss-job]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      dismissManagerJobOffer(state, btn.dataset.dismissJob);
+      saveGame(state);
+      render();
+      showToast('Koçluk teklifi reddedildi — mevcut kulübünde kalıyorsun.');
     });
   });
 
