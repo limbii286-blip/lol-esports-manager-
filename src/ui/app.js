@@ -1554,6 +1554,54 @@ function renderSellModal() {
   `;
 }
 
+function renderCelebrationModal() {
+  if (!state?.pendingCelebration) return '';
+  const c = state.pendingCelebration;
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const totalCash = (c.prizeMoney || 0) + (c.sponsorBonus || 0);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal-box modal-sm" style="border-color:${c.isChampion ? 'var(--gold)' : 'var(--fm-cyan)'};border-top:4px solid ${c.isChampion ? 'var(--gold)' : 'var(--fm-cyan)'};text-align:center;background:linear-gradient(180deg, ${c.isChampion ? 'rgba(234,179,8,0.16)' : 'rgba(34,211,238,0.12)'}, var(--bg-elev) 48%);">
+        <div style="width:68px;height:68px;margin:6px auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${c.isChampion ? 'linear-gradient(135deg, #eab308, #facc15)' : 'rgba(34,211,238,0.18)'};color:${c.isChampion ? '#111322' : 'var(--fm-cyan)'};box-shadow:0 0 28px ${c.isChampion ? 'rgba(234,179,8,0.45)' : 'rgba(34,211,238,0.28)'};">
+          ${icon(c.isChampion ? 'trophy' : 'star', 34)}
+        </div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:${c.isChampion ? 'var(--gold-bright)' : 'var(--fm-cyan)'};margin-bottom:4px;">${c.tournament}</div>
+        <div style="font-size:21px;font-weight:900;color:#ffffff;margin-bottom:8px;">${c.placement}</div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">${c.subtitle}</p>
+
+        <div style="background:var(--bg);border:1px solid var(--border-strong);border-radius:8px;padding:12px 14px;margin-bottom:16px;text-align:left;font-size:12.5px;">
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+            <span style="color:var(--text-muted);">Turnuva Ödül Havuzu Payı</span>
+            <strong class="num" style="color:var(--green);">+${formatMoney(c.prizeMoney)}</strong>
+          </div>
+          ${c.sponsorBonus > 0 ? `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+              <span style="color:var(--text-muted);">Sponsor Başarı Primi</span>
+              <strong class="num" style="color:var(--gold-bright);">+${formatMoney(c.sponsorBonus)}</strong>
+            </div>
+          ` : ''}
+          <div style="display:flex;justify-content:space-between;padding:6px 0 2px;font-size:13.5px;">
+            <strong>Toplam Kulüp Geliri</strong>
+            <strong class="num" style="color:var(--green);">+${formatMoney(totalCash)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0 0;font-size:12px;color:var(--text-muted);">
+            <span>Turnuva MVP</span>
+            <b style="color:var(--text);">${c.mvp}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0 0;font-size:12px;color:var(--text-muted);">
+            <span>Kulüp Toplam Kupa</span>
+            <b style="color:var(--gold-bright);">${team?.trophies?.length || 0} Kupa</b>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btnCloseCelebration" style="width:100%;padding:11px 16px;font-size:13.5px;">
+          ${icon('check', 15)} Ödülü Kasaya Aktar & Devam Et
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 function renderDramaModal() {
   if (!state?.pendingEvent) return '';
   const ev = state.pendingEvent;
@@ -1837,6 +1885,7 @@ function renderAppShell() {
     ${renderPlayerPlanModal()}
     ${renderPlayerProfileModal()}
     ${renderSellModal()}
+    ${renderCelebrationModal()}
     ${renderDramaModal()}
   `;
 }
@@ -2038,6 +2087,12 @@ function bindAppEvents() {
   };
   root.querySelector('#btnAdvanceCal')?.addEventListener('click', doAdvance);
   root.querySelector('#btnTopAdvance')?.addEventListener('click', doAdvance);
+
+  root.querySelector('#btnCloseCelebration')?.addEventListener('click', () => {
+    state.pendingCelebration = null;
+    autoSaveNow();
+    render();
+  });
 
   root.querySelectorAll('[data-drama-choice]').forEach(btn => {
     btn.addEventListener('click', () => {

@@ -620,6 +620,16 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
     }
   }
 
+  // Match win prize bonus (helps clubs earn money throughout the season!)
+  const winnerClub = state.teams.find(t => t.id === match.winnerId);
+  if (winnerClub) {
+    const isIntl = state.phase === 'MSI' || state.phase.startsWith('WORLDS');
+    const isPo = state.phase.includes('PLAYOFFS');
+    const isRiv = !!getRivalryName(match.blueId, match.redId);
+    const winCash = isIntl ? 110000 : isPo ? 75000 : isRiv ? 55000 : 35000;
+    winnerClub.budget += winCash;
+  }
+
   // Derby fanbase bonus
   if (getRivalryName(match.blueId, match.redId)) {
     const winTeam = state.teams.find(t => t.id === match.winnerId);
@@ -1583,41 +1593,165 @@ function archiveBracketSnapshot(state) {
 
 function finishBracketAndTransition(state) {
   archiveBracketSnapshot(state);
-  const finalMatches = state.bracket.rounds[state.bracket.rounds.length - 1].matches;
+  const rounds = state.bracket.rounds;
+  const finalMatches = rounds[rounds.length - 1].matches;
+  const uid = state.userTeamId;
+  const userTeam = state.teams.find(t => t.id === uid);
 
-  if (state.phase === 'SPRING_PLAYOFFS') {
+  const awardSponsorGoal = (team, type) => {
+    if (!team || !team.sponsor) return 0;
+    if (type === 'PLAYOFF' && team.sponsor.id === 'sp_safe') { team.budget += team.sponsor.bonus; return team.sponsor.bonus; }
+    if (type === 'FINAL' && team.sponsor.id === 'sp_mid') { team.budget += team.sponsor.bonus; return team.sponsor.bonus; }
+    if (type === 'INTL_WIN' && team.sponsor.id === 'sp_elite') { team.budget += team.sponsor.bonus; return team.sponsor.bonus; }
+    return 0;
+  };
+
+  if (state.phase === 'SPRING_PLAYOFFS' || state.phase === 'SUMMER_PLAYOFFS') {
+    const isSpring = state.phase === 'SPRING_PLAYOFFS';
+    const splitLbl = isSpring ? 'Bahar' : 'Yaz';
     const champs = [];
     const champByRegion = {};
+    const sfMatches = rounds[0]?.matches || [];
+
+    // Award semi-finalists ($200K) and all regional teams broadcast revenue share ($100K)
+    for (const t of state.teams) t.budget += 100000;
+    for (const sf of sfMatches) {
+      const loserId = sf.winnerId === sf.blueId ? sf.redId : sf.blueId;
+      const lTeam = state.teams.find(t => t.id === loserId);
+      if (lTeam) lTeam.budget += 200000;
+    }
+
+    let userPrize = 100000;
+    let userPlace = 'Lig Aşaması (Yayın Geliri)';
+    let userWon = false;
+    let userSponsorBonus = 0;
+
     for (const fm of finalMatches) {
       const champ = state.teams.find(t => t.id === fm.winnerId);
-      champ.budget += 300000;
-      champ.trophies.push(`${state.season} ${fm.region} Bahar`);
+      const runnerId = fm.winnerId === fm.blueId ? fm.redId : fm.blueId;
+      const runner = state.teams.find(t => t.id === runnerId);
+      champ.budget += 650000;
+      champ.prestige = Math.min(99, champ.prestige + 1);
+      champ.trophies.push(`${state.season} ${fm.region} ${splitLbl}`);
+      if (runner) runner.budget += 380000;
       champs.push(`${fm.region}: ${champ.tag}`);
       champByRegion[fm.region] = champ.id;
+
+      if (champ.id === uid) {
+        userWon = true;
+        userPrize = 750000;
+        userPlace = `${fm.region} ${splitLbl} ŞAMPİYONU`;
+        userSponsorBonus = awardSponsorGoal(userTeam, 'FINAL') + awardSponsorGoal(userTeam, 'PLAYOFF');
+      } else if (runnerId === uid) {
+        userPrize = 480000;
+        userPlace = `${fm.region} ${splitLbl} İkincisi (Finalist)`;
+        userSponsorBonus = awardSponsorGoal(userTeam, 'FINAL') + awardSponsorGoal(userTeam, 'PLAYOFF');
+      }
     }
-    state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
-    const msiPatch = getCurrentPatch(state);
+    if (!userWon && sfMatches.some(m => m.blueId === uid || m.redId === uid) && userPlace === 'Lig Aşaması (Yayın Geliri)') {
+      userPrize = 300000;
+      userPlace = `${userTeam.region} ${splitLbl} Yarı Finalisti (3.-4.)`;
+      userSponsorBonus = awardSponsorGoal(userTeam, 'PLAYOFF');
+    }
+
+    const userMvp = getTeamRoster(state, uid).sort((a, b) => (b.stats.mvps * 10 + b.ovr) - (a.stats.mvps * 10 + a.ovr))[0];
+    if (userWon || userPrize >= 300000) {
+      state.pendingCelebration = {
+        isChampion: userWon,
+        tournament: `${state.season} ${userTeam.region} ${splitLbl} Playoffları`,
+        placement: userPlace,
+        prizeMoney: userPrize,
+        sponsorBonus: userSponsorBonus,
+        mvp: userMvp ? `${userMvp.name} (${userMvp.role})` : '-',
+        subtitle: userWon
+          ? `Tebrikler ${state.managerName || 'Koç'}! ${userTeam.name} kupayı kaldırdı ve ${isSpring ? 'MSI' : 'WORLDS'} biletini kaptı!`
+          : `${userTeam.name}, ${userPlace} olarak sezonu tamamladı ve kulüp kasasına önemli ödül kazandırdı.`,
+      };
+    }
+
+    if (isSpring) {
+      state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
+      const msiPatch = getCurrentPatch(state);
+      addInboxMessage(state, {
+        title: `Bahar Şampiyonları Belli Oldu — MSI Yaması ${msiPatch.version} (${msiPatch.name})`,
+        sender: 'Riot Esports',
+        category: 'TOURNAMENT',
+        body: `Bölge Şampiyonları: ${champs.join(' • ')}. Ödül Havuzu dağıtıldı (${userPlace}: +${formatMoney(userPrize + userSponsorBonus)}). MSI Özel Yaması (${msiPatch.version}): ${msiPatch.desc}`,
+      });
+      state.phase = 'MSI';
+      state.week = 1;
+      setCalendarToMonday(state, 5, 2);
+      state.bracket = createMSIBracket(state, champByRegion);
+      return;
+    }
+
+    state.patchIndex = 4;
+    const { directIds, playInIds, playInBracket, bonusReg } = buildWorlds2026Qualification(state, finalMatches);
+    state.worldsDirectIds = directIds;
+    state.phase = 'WORLDS_PLAYIN';
+    state.week = 1;
+    setCalendarToMonday(state, 10, 2);
+    state.bracket = playInBracket;
+
+    const userStatus = directIds.includes(uid)
+      ? 'Tebrikler! Takımın Worlds İsviçre Aşaması\'na DOĞRUDAN katılmaya hak kazandı!'
+      : playInIds.includes(uid)
+        ? 'Takımın Worlds Ön Eleme (Play-In) bileti aldı! BO5 serisini kazanıp İsviçre Aşaması\'na çıkmalısın.'
+        : 'Bu sezon Worlds biletini kaçırdın. Turnuva bitince Sezon Arası\'nda kadronu güçlendirebilirsin.';
+
     addInboxMessage(state, {
-      title: `Bahar Şampiyonları Belli Oldu — MSI Yaması ${msiPatch.version} (${msiPatch.name})`,
+      title: `WORLDS ${state.season} Katılımcıları Belli Oldu (Ön Eleme Başlıyor)`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `Bölge Şampiyonları: ${champs.join(' • ')}. MSI Özel Yaması (${msiPatch.version}): ${msiPatch.desc}`,
+      body: `Yaz Şampiyonları: ${champs.join(' • ')}. Ödül Havuzu (${userPlace}: +${formatMoney(userPrize + userSponsorBonus)}). MSI Bonus Slotu: ${bonusReg}. ${userStatus}`,
     });
-    state.phase = 'MSI';
-    state.week = 1;
-    setCalendarToMonday(state, 5, 2); // May MSI!
-    state.bracket = createMSIBracket(state, champByRegion);
     return;
   }
 
   if (state.phase === 'MSI') {
     const msiWinner = state.teams.find(t => t.id === finalMatches[0].winnerId);
+    const runnerId = finalMatches[0].winnerId === finalMatches[0].blueId ? finalMatches[0].redId : finalMatches[0].blueId;
+    const msiRunner = state.teams.find(t => t.id === runnerId);
     state.msiWinnerRegion = msiWinner.region;
-    msiWinner.budget += 650000;
+
+    // Official $2M MSI Prize Pool + Skin Share
+    msiWinner.budget += 850000;
     msiWinner.prestige = Math.min(99, msiWinner.prestige + 2);
     msiWinner.trophies.push(`MSI ${state.season}`);
+    if (msiRunner) msiRunner.budget += 450000;
+    for (const sf of (rounds[1]?.matches || [])) {
+      const lId = sf.winnerId === sf.blueId ? sf.redId : sf.blueId;
+      const lt = state.teams.find(t => t.id === lId);
+      if (lt) lt.budget += 260000;
+    }
+    for (const qf of (rounds[0]?.matches || [])) {
+      const lId = qf.winnerId === qf.blueId ? qf.redId : qf.blueId;
+      const lt = state.teams.find(t => t.id === lId);
+      if (lt) lt.budget += 140000;
+    }
+
     const msiMvp = getTeamRoster(state, msiWinner.id).sort((a, b) => (b.stats.mvps * 10 + b.ovr) - (a.stats.mvps * 10 + a.ovr))[0];
     state.history.push({ season: state.season, event: 'MSI', winner: msiWinner.name, tag: msiWinner.tag, mvp: msiMvp?.name || '-' });
+
+    const playedMSI = (rounds[0]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
+    if (playedMSI) {
+      const won = msiWinner.id === uid;
+      const isRun = runnerId === uid;
+      const isSf = (rounds[1]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
+      const prize = won ? 850000 : isRun ? 450000 : isSf ? 260000 : 140000;
+      const spBonus = won ? awardSponsorGoal(userTeam, 'INTL_WIN') : 0;
+      state.pendingCelebration = {
+        isChampion: won,
+        tournament: `MSI ${state.season} Uluslararası Turnuvası`,
+        placement: won ? `MSI ${state.season} ŞAMPİYONU` : isRun ? 'MSI Finalisti (2.)' : isSf ? 'MSI Yarı Finalisti (3.-4.)' : 'MSI Çeyrek Finalisti (5.-8.)',
+        prizeMoney: prize,
+        sponsorBonus: spBonus,
+        mvp: `${msiMvp?.name || '-'} (${msiWinner.tag})`,
+        subtitle: won
+          ? `TARİH YAZDIN ${state.managerName || 'Koç'}! ${userTeam.name} MSI kupasını kaldırdı ve ${userTeam.region} bölgesine Worlds için +1 bonus slot kazandırdı!`
+          : `${userTeam.name}, MSI ${state.season} performansıyla kulüp kasasına ${formatMoney(prize)} ödül kazandırdı.`,
+      };
+    }
 
     state.patchIndex = (state.patchIndex + 1) % PATCHES.length;
     const { schedules, standings } = createRegionalSchedules(state.teams);
@@ -1626,7 +1760,7 @@ function finishBracketAndTransition(state) {
     state.bracket = null;
     state.phase = 'SUMMER_SPLIT';
     state.week = 1;
-    setCalendarToMonday(state, 6, 5); // June Summer Split!
+    setCalendarToMonday(state, 6, 5);
     state.academyPromotedThisSplit = false;
     state.challengerPool = generateChallengerProspects();
     const sumPatch = getCurrentPatch(state);
@@ -1635,45 +1769,18 @@ function finishBracketAndTransition(state) {
       title: `MSI ${state.season} Şampiyonu: ${msiWinner.name} (Finals MVP: ${msiMvp?.name || '-'})`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${msiWinner.name} MSI kupasını kaldırdı ve ${msiWinner.region} bölgesine Worlds ${state.season} için +1 bonus slot kazandırdı! Yeni Yaz Yaması ${sumPatch.version} (${sumPatch.name}): ${sumPatch.desc}`,
-    });
-    return;
-  }
-
-  if (state.phase === 'SUMMER_PLAYOFFS') {
-    const champs = [];
-    for (const fm of finalMatches) {
-      const champ = state.teams.find(t => t.id === fm.winnerId);
-      champ.budget += 350000;
-      champ.trophies.push(`${state.season} ${fm.region} Yaz`);
-      champs.push(`${fm.region}: ${champ.tag}`);
-    }
-    state.patchIndex = 4;
-    const { directIds, playInIds, playInBracket, bonusReg } = buildWorlds2026Qualification(state, finalMatches);
-    state.worldsDirectIds = directIds;
-    state.phase = 'WORLDS_PLAYIN';
-    state.week = 1;
-    setCalendarToMonday(state, 10, 2); // October Worlds Play-In!
-    state.bracket = playInBracket;
-
-    const uid = state.userTeamId;
-    const userStatus = directIds.includes(uid)
-      ? 'Tebrikler! Takımın Worlds İsviçre Aşaması\'na DOĞRUDAN katılmaya hak kazandı! Play-In maçları bitince sahneye çıkacaksın.'
-      : playInIds.includes(uid)
-        ? 'Takımın Worlds Ön Eleme (Play-In) bileti aldı! BO5 serisini kazanıp 16 takımlı İsviçre Aşaması\'na çıkmalısın.'
-        : 'Maalesef bu sezon Worlds 2026 biletini kaçırdın. Turnuvayı dışarıdan takip edip Sezon Arası\'nda kadronu güçlendirebilirsin.';
-
-    addInboxMessage(state, {
-      title: `WORLDS ${state.season} Katılımcıları Belli Oldu (Ön Eleme Başlıyor)`,
-      sender: 'Riot Esports',
-      category: 'TOURNAMENT',
-      body: `Yaz Şampiyonları: ${champs.join(' • ')}. MSI Bonus Slotu: ${bonusReg}. ${userStatus}`,
+      body: `${msiWinner.name} MSI kupasını kaldırdı (+$850K) ve ${msiWinner.region} bölgesine Worlds ${state.season} için +1 bonus slot kazandırdı! Yeni Yaz Yaması ${sumPatch.version} (${sumPatch.name}): ${sumPatch.desc}`,
     });
     return;
   }
 
   if (state.phase === 'WORLDS_PLAYIN') {
     const winners = finalMatches.map(m => m.winnerId);
+    for (const m of finalMatches) {
+      const lId = m.winnerId === m.blueId ? m.redId : m.blueId;
+      const lt = state.teams.find(t => t.id === lId);
+      if (lt) lt.budget += 75000;
+    }
     const all16 = [...(state.worldsDirectIds || []), ...winners].slice(0, 16);
     state.bracket = null;
     state.phase = 'WORLDS_SWISS';
@@ -1692,13 +1799,36 @@ function finishBracketAndTransition(state) {
 
   if (state.phase === 'WORLDS_KNOCKOUT') {
     const worldsWinner = state.teams.find(t => t.id === finalMatches[0].winnerId);
-    worldsWinner.budget += 1500000;
+    const runnerId = finalMatches[0].winnerId === finalMatches[0].blueId ? finalMatches[0].redId : finalMatches[0].blueId;
+    const worldsRunner = state.teams.find(t => t.id === runnerId);
+
+    // Official $5M Worlds Prize Pool + Champion Skin Share!
+    worldsWinner.budget += 1800000;
     worldsWinner.prestige = Math.min(99, worldsWinner.prestige + 3);
     worldsWinner.trophies.push(`WORLDS ${state.season}`);
+    if (worldsRunner) worldsRunner.budget += 950000;
+    for (const sf of (rounds[1]?.matches || [])) {
+      const lId = sf.winnerId === sf.blueId ? sf.redId : sf.blueId;
+      const lt = state.teams.find(t => t.id === lId);
+      if (lt) lt.budget += 500000;
+    }
+    for (const qf of (rounds[0]?.matches || [])) {
+      const lId = qf.winnerId === qf.blueId ? qf.redId : qf.blueId;
+      const lt = state.teams.find(t => t.id === lId);
+      if (lt) lt.budget += 320000;
+    }
+    // Swiss participants who didn't make Knockout still get $150K participation share
+    const koIds = new Set((rounds[0]?.matches || []).flatMap(m => [m.blueId, m.redId]));
+    for (const st of (state.swiss?.teams || [])) {
+      if (!koIds.has(st.teamId)) {
+        const t = state.teams.find(x => x.id === st.teamId);
+        if (t) t.budget += 150000;
+      }
+    }
+
     const worldsMvp = getTeamRoster(state, worldsWinner.id).sort((a, b) => (b.stats.mvps * 12 + b.ovr) - (a.stats.mvps * 12 + a.ovr))[0];
     state.history.push({ season: state.season, event: 'WORLDS', winner: worldsWinner.name, tag: worldsWinner.tag, mvp: worldsMvp?.name || '-' });
 
-    // Record Hall of Fame inductee
     ensureCalendarState(state);
     if (worldsMvp) {
       const existing = state.records.hallOfFame.find(h => h.name === worldsMvp.name);
@@ -1707,17 +1837,34 @@ function finishBracketAndTransition(state) {
       if (state.records.hallOfFame.length > 20) state.records.hallOfFame.pop();
     }
 
-    const userTeam = state.teams.find(t => t.id === state.userTeamId);
-    if (userTeam.sponsor && worldsWinner.id === userTeam.id) userTeam.budget += userTeam.sponsor.bonus;
+    const inKO = koIds.has(uid);
+    const inSwiss = (state.swiss?.teams || []).some(st => st.teamId === uid);
+    if (inKO || inSwiss) {
+      const won = worldsWinner.id === uid;
+      const isRun = runnerId === uid;
+      const isSf = (rounds[1]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
+      const prize = won ? 1800000 : isRun ? 950000 : isSf ? 500000 : inKO ? 320000 : 150000;
+      const spBonus = won ? awardSponsorGoal(userTeam, 'INTL_WIN') : 0;
+      state.pendingCelebration = {
+        isChampion: won,
+        tournament: `WORLDS ${state.season} Dünya Şampiyonası`,
+        placement: won ? `WORLDS ${state.season} DÜNYA ŞAMPİYONU` : isRun ? 'WORLDS Finalisti (2.)' : isSf ? 'WORLDS Yarı Finalisti (3.-4.)' : inKO ? 'WORLDS Çeyrek Finalisti (5.-8.)' : 'WORLDS İsviçre Aşaması (9.-16.)',
+        prizeMoney: prize,
+        sponsorBonus: spBonus,
+        mvp: `${worldsMvp?.name || '-'} (${worldsWinner.tag})`,
+        subtitle: won
+          ? `EFSANE ${state.managerName || 'Koç'}! ${userTeam.name} Sihirdar Kupası'nı kaldırdı! ($1M Ödül + $800K Şampiyon Kostüm Geliri)`
+          : `${userTeam.name}, WORLDS ${state.season} sahnesinde büyük bir mücadele verdi ve ${formatMoney(prize)} ödül kazandı.`,
+      };
+    }
 
     state.bracket = null;
     state.swiss = null;
     state.phase = 'OFFSEASON';
     state.week = 1;
-    setCalendarToMonday(state, 11, 16); // Mid-November Off-Season Transfer Window!
+    setCalendarToMonday(state, 11, 16);
     runOffSeasonProgression(state);
     generateSuccessJobOffers(state);
-    // Rostermania: generate realistic off-season transfer bids for user's players!
     maybeGenerateIncomingOffer(state, 0.85);
     maybeGenerateIncomingOffer(state, 0.55);
 
@@ -1726,7 +1873,7 @@ function finishBracketAndTransition(state) {
       title: `WORLDS ${state.season} Şampiyonu: ${worldsWinner.name} (Finals MVP: ${worldsMvp?.name || '-'})`,
       sender: 'Riot Esports',
       category: 'TOURNAMENT',
-      body: `${worldsWinner.id === userTeam.id ? `TEBRİKLER ${mgr}! Sihirdar Kupası'nı kaldırdın! ` : ''}${worldsWinner.name} WORLDS ${state.season} şampiyonu oldu (Finals MVP: ${worldsMvp?.name || '-'})! Şimdi Sezon Arası Transfer Penceresi açıldı; AI kulüpleri büyük transfer hamleleri yapıyor. Hazır olduğunda ${state.season + 1} sezonuna başlayabilirsin.`,
+      body: `${worldsWinner.id === userTeam.id ? `TEBRİKLER ${mgr}! Sihirdar Kupası'nı kaldırdın! ` : ''}${worldsWinner.name} WORLDS ${state.season} şampiyonu oldu (+$1.80M Ödül & Kostüm Payı, Finals MVP: ${worldsMvp?.name || '-'})! Şimdi Sezon Arası Transfer Penceresi açıldı.`,
     });
   }
 }
