@@ -559,11 +559,11 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 export function getCurrentPatch(state) {
-  const base = PATCHES[state.patchIndex % PATCHES.length];
-  const yr = String(state.season || 2026).slice(-2);
+  const yrNum = state.season || 2026;
+  const yr = yrNum >= 2100 ? String(yrNum) : String(yrNum).slice(-2);
   const sub = (state.patchIndex % PATCHES.length) + 1;
-  // Procedurally shift meta slightly on future seasons (2027+) so every year feels fresh!
-  const offset = (state.season - 2026) % PATCHES.length;
+  // Procedurally shift meta slightly on future seasons (2027..2100+) so every year feels fresh!
+  const offset = Math.max(0, yrNum - 2026) % PATCHES.length;
   const shifted = PATCHES[(state.patchIndex + offset) % PATCHES.length];
   return {
     ...shifted,
@@ -1493,8 +1493,15 @@ export function advanceWeekOrRound(state) {
     });
     if (state.tournamentArchive.length > 20) state.tournamentArchive.pop();
 
-    // Swiss Finished -> Top 8 to Knockout!
+    // Swiss Finished -> Top 8 to Knockout! (Guaranteed 8 valid unique teams)
     const qualified = state.swiss.teams.filter(t => t.status === 'QUALIFIED').map(t => t.teamId);
+    if (qualified.length < 8) {
+      const extras = [...state.swiss.teams]
+        .filter(t => !qualified.includes(t.teamId))
+        .sort((a, b) => (b.wins - a.wins) || (a.losses - b.losses))
+        .map(t => t.teamId);
+      while (qualified.length < 8 && extras.length) qualified.push(extras.shift());
+    }
     state.phase = 'WORLDS_KNOCKOUT';
     state.week = 1;
     state.bracket = createWorldsKnockoutBracket(state, qualified);
@@ -1835,9 +1842,18 @@ function runOffSeasonProgression(state) {
     p.injuredWeeks = 0;
     p.stats = { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 };
 
-    const retireProb = p.age >= 35 ? 0.75 : p.age >= 33 ? 0.42 : p.age >= 32 ? 0.22 : 0;
-    if (retireProb > 0 && p.teamId !== state.userTeamId && Math.random() < retireProb) {
-      if (p.ovr >= 80) retiredNames.push(`${p.name} (${p.age})`);
+    // Realistic retirements for veterans (AI 32+, User legends gracefully retire at 36+ so 2026..2100 stays realistic!)
+    const isUser = p.teamId === state.userTeamId;
+    const retireProb = isUser
+      ? (p.age >= 38 ? 0.85 : p.age >= 36 ? 0.45 : 0)
+      : (p.age >= 35 ? 0.75 : p.age >= 33 ? 0.42 : p.age >= 32 ? 0.22 : 0);
+    if (retireProb > 0 && Math.random() < retireProb) {
+      if (p.ovr >= 80 || isUser) retiredNames.push(`${p.name} (${p.age})`);
+      continue;
+    }
+
+    // Prune aging/low-OVR unsigned free agents so multi-decade saves (up to 2100+) stay fast and lean!
+    if (p.teamId === null && (p.age >= 27 || (p.age >= 23 && p.ovr < 75))) {
       continue;
     }
 
@@ -1863,10 +1879,28 @@ function runOffSeasonProgression(state) {
   }
   state.players = remainingPlayers;
 
+  // Keep user team valid if a 36+ veteran retired
+  const userClub = state.teams.find(t => t.id === state.userTeamId);
+  if (userClub) {
+    for (const role of ROLES) {
+      if (!state.players.some(p => p.teamId === userClub.id && p.role === role)) {
+        const acad = generateRegenPlayer(role, userClub.region, userClub.facilities.youthAcademy, userClub.id);
+        acad.isStarter = true;
+        state.players.push(acad);
+      }
+    }
+  }
+
   for (let i = 0; i < 25; i++) {
     const reg = REGIONS[i % REGIONS.length].id;
     state.players.push(generateRegenPlayer(ROLES[i % ROLES.length], reg, Math.random() < 0.3 ? 3 : 2, null));
   }
+  // Cap unsigned free-agent pool at top 90 so 75-year saves (2026..2100) stay super lightweight!
+  const signedPlayers = state.players.filter(p => p.teamId !== null);
+  const freeAgents = state.players.filter(p => p.teamId === null).sort((a, b) => (b.ovr + b.pot * 0.3) - (a.ovr + a.pot * 0.3)).slice(0, 90);
+  state.players = [...signedPlayers, ...freeAgents];
+  if (state.history.length > 150) state.history = state.history.slice(-150);
+  if (state.awards.length > 150) state.awards = state.awards.slice(0, 150);
   state.challengerPool = generateChallengerProspects();
   // Head Scout bonus boosts Challenger pool potential
   const uTeam = state.teams.find(t => t.id === state.userTeamId);
@@ -2717,7 +2751,14 @@ export function saveToSlot(state, slotId, customName = '') {
     const slots = readAllSlots();
     const fallbackName = slotId === 'autosave' ? 'Otomatik Kayıt' : customName.trim();
     slots[slotId] = buildSlotRecord(state, fallbackName);
-    localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+    try {
+      localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+    } catch (quotaErr) {
+      // Compact archive/inbox if localStorage nears 5MB quota on very long 2026..2100 saves!
+      const compact = { ...state, inbox: (state.inbox || []).slice(0, 25), tournamentArchive: (state.tournamentArchive || []).slice(0, 8) };
+      slots[slotId] = buildSlotRecord(compact, fallbackName);
+      localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+    }
     return true;
   } catch (e) {
     console.error('Save slot failed', e);
