@@ -320,13 +320,21 @@ export function advanceOneDay(state) {
     }
   }
 
+  // Off-Season Rostermania: allow advancing days to receive fresh AI transfer bids!
+  if (state.phase === 'OFFSEASON') {
+    if (newDow === 3 || newDow === 5) {
+      maybeGenerateIncomingOffer(state, 0.58);
+    }
+    return { status: 'OK', msg: `${formatTurkishDate(state.currentDate)} — Transfer Pazarı Açık` };
+  }
+
   // Tuesday (2), Wednesday (3), Friday (5): Living World News, Match Preview & Scouting Buzz!
-  if ((newDow === 2 || newDow === 3 || newDow === 5) && state.phase !== 'OFFSEASON') {
+  if (newDow === 2 || newDow === 3 || newDow === 5) {
     maybeGenerateLivingWorldNews(state, newDow);
   }
 
   // Thursday (4): Mid-week Drama Event or AI Transfer Offer!
-  if (newDow === 4 && state.phase !== 'OFFSEASON') {
+  if (newDow === 4) {
     maybeTriggerDramaEvent(state);
     maybeGenerateIncomingOffer(state);
     if (state.pendingEvent) return { status: 'EVENT', msg: `Gündem: ${state.pendingEvent.title}` };
@@ -845,11 +853,13 @@ export function resolveDramaEvent(state, choiceIdx) {
 }
 
 // ==================== AI INCOMING TRANSFER BIDS ====================
-function maybeGenerateIncomingOffer(state) {
+function maybeGenerateIncomingOffer(state, chance = 0.28) {
   if (!isTransferWindowOpen(state)) return;
-  if (state.incomingOffers.length >= 2 || Math.random() > 0.28) return;
+  const maxOffers = state.phase === 'OFFSEASON' ? 3 : 2;
+  if (state.incomingOffers.length >= maxOffers || Math.random() > chance) return;
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
-  const userPlayers = state.players.filter(p => p.teamId === state.userTeamId);
+  const existingIds = new Set(state.incomingOffers.map(o => o.playerId));
+  const userPlayers = state.players.filter(p => p.teamId === state.userTeamId && !existingIds.has(p.id));
   if (userPlayers.length === 0) return;
   const target = userPlayers[Math.floor(Math.random() * userPlayers.length)];
 
@@ -1555,6 +1565,9 @@ function finishBracketAndTransition(state) {
     setCalendarToMonday(state, 11, 16); // Mid-November Off-Season Transfer Window!
     runOffSeasonProgression(state);
     generateSuccessJobOffers(state);
+    // Rostermania: generate realistic off-season transfer bids for user's players!
+    maybeGenerateIncomingOffer(state, 0.85);
+    maybeGenerateIncomingOffer(state, 0.55);
 
     const mgr = state.managerName || 'Koç';
     addInboxMessage(state, {

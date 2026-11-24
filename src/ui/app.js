@@ -40,9 +40,17 @@ let ui = {
   saveNameDraft: '',
   guideModalOpen: false,
   globalSearch: '',
+  lastAutoSave: '',
   toastMsg: null,
   toastTimer: null,
 };
+
+function autoSaveNow() {
+  if (!state) return;
+  if (saveGame(state)) {
+    ui.lastAutoSave = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  }
+}
 
 const previewDB = createInitialDatabase();
 
@@ -238,9 +246,12 @@ function renderDashboard() {
             ? 'Sezon arası transfer dönemindesin. Kadronu güçlendirip yeni sezona başlayabilirsin.'
             : 'Bu turda oynayacağın maç tamamlandı veya takımın bu turnuvada yer almıyor. Haftayı/Turu ilerletebilirsin.'}
         </p>
-        <button class="btn-primary" id="btnAdvanceCal">
-          ${state.phase === 'OFFSEASON' ? `Sezon ${state.season + 1}'e Başla` : 'Sonraki Hafta / Tura İlerle'} ${icon('arrowRight', 14)}
-        </button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${state.phase === 'OFFSEASON' ? `<button class="btn-blue" id="btnOffseasonWait">${icon('calendar', 14)} +1 Gün (Teklif Bekle)</button>` : ''}
+          <button class="btn-primary" id="btnAdvanceCal">
+            ${state.phase === 'OFFSEASON' ? `Sezon ${state.season + 1}'e Başla` : 'Sonraki Hafta / Tura İlerle'} ${icon('arrowRight', 14)}
+          </button>
+        </div>
       </div>
     `;
   }
@@ -1507,6 +1518,7 @@ function renderAppShell() {
             <div class="meta-chip">${getPhaseLabel(state.phase)} (H${state.week})</div>
             <div class="meta-chip">${icon('sliders', 13)} Yama <b>${getCurrentPatch(state).version}</b></div>
             <div class="meta-chip num">${icon('briefcase', 13)} <b style="color:var(--green);">${formatMoney(team.budget)}</b></div>
+            <div class="meta-chip" style="color:var(--green);border-color:rgba(16,185,129,0.35);" title="Kariyerin her işlemde ve 20 saniyede bir otomatik kaydedilir">${icon('save', 12)} Oto-Kayıt${ui.lastAutoSave ? ` ${ui.lastAutoSave}` : ''}</div>
             <div style="position:relative;">
               <input type="text" id="globalSearchInput" value="${ui.globalSearch}" placeholder="Oyuncu / Kulüp ara..." style="width:170px;padding:5px 9px;font-size:12px;" />
               ${(() => {
@@ -1888,6 +1900,14 @@ function bindAppEvents() {
     saveGame(state); render(); showToast(res.reason);
   });
 
+  root.querySelector('#btnOffseasonWait')?.addEventListener('click', () => {
+    const before = state.incomingOffers.length;
+    const res = advanceOneDay(state);
+    autoSaveNow();
+    render();
+    showToast(state.incomingOffers.length > before ? 'Yeni transfer teklifi geldi! Gelen Teklifler sekmesini kontrol et.' : res.msg);
+  });
+
   root.querySelectorAll('[data-league-reg]').forEach(b => b.addEventListener('click', () => { ui.leagueRegion = b.dataset.leagueReg; render(); }));
   root.querySelectorAll('[data-fix-week]').forEach(b => b.addEventListener('click', () => {
     ui.leagueFixtureWeek = b.dataset.fixWeek === 'ALL' ? 'ALL' : Number(b.dataset.fixWeek);
@@ -1928,9 +1948,13 @@ function bindAppEvents() {
   }));
 }
 
-// Safety auto-save if user accidentally closes tab or switches app on mobile
-window.addEventListener('beforeunload', () => { if (state) saveGame(state); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) saveGame(state); });
+// Safety auto-save: every 20s in background + on tab close / app switch
+setInterval(() => {
+  if (!state) return;
+  autoSaveNow();
+}, 20000);
+window.addEventListener('beforeunload', () => { if (state) autoSaveNow(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) autoSaveNow(); });
 
 // Football Manager Spacebar shortcut to advance 1 day!
 window.addEventListener('keydown', (e) => {
