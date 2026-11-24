@@ -94,7 +94,13 @@ export function chooseAIDraftAction(draft) {
   const ownPicks = isBlue ? draft.bluePicks : draft.redPicks;
   const oppPicks = isBlue ? draft.redPicks : draft.bluePicks;
 
-  const available = CHAMPIONS.filter(c => !draft.usedChamps.has(c.id));
+  let available = CHAMPIONS.filter(c => !draft.usedChamps.has(c.id));
+  if (available.length === 0) {
+    // Safety fallback if pool ever exhausts
+    const curPicked = new Set([...Object.values(draft.bluePicks), ...Object.values(draft.redPicks), ...draft.blueBans, ...draft.redBans]);
+    available = CHAMPIONS.filter(c => !curPicked.has(c.id));
+  }
+  if (available.length === 0) return null;
 
   if (step.type === 'ban') {
     const oppMissing = getMissingRoles(oppPicks);
