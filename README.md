@@ -2,9 +2,9 @@
   <img src="./assets/icon.jpg" alt="LoL Esports Manager Icon" width="128" style="border-radius: 22px;" />
 </p>
 
-# LoL Esports Manager — Football Manager Edition
+# LoL Esports Manager
 
-**League of Legends** espor sahnesi için **Football Manager** derinliğinde, tarayıcıda çalışan, harici bağımlılık gerektirmeyen kulüp yönetim ve maç simülasyonu oyunu.
+**League of Legends** espor sahnesi için tarayıcıda çalışan, derin kulüp yönetim, draft ve canlı maç simülasyonu oyunu.
 
 ## v2.0 Özellikleri
 - **7 Bölge, 56 Takım & 280+ Oyuncu:** **LCK, LPL, LEC, LCS, TCL (Türkiye), CBLOL (Brezilya)** ve **LCO (Okyanusya)**.
