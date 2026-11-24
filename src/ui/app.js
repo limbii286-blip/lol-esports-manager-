@@ -66,9 +66,9 @@ function renderStartScreen() {
     <div class="start-screen">
       <div class="start-header">
         <div style="display:flex;align-items:center;gap:14px;">
-          <img src="./assets/icon.jpg" alt="LoL Esports Manager Icon" style="width:52px;height:52px;border-radius:12px;border:1px solid rgba(200,155,60,0.45);box-shadow:0 4px 16px rgba(0,0,0,0.45);object-fit:cover;" />
+          <img src="./assets/icon.jpg" alt="LoL Esports Manager" style="width:52px;height:52px;border-radius:12px;border:1px solid rgba(200,155,60,0.45);box-shadow:0 4px 16px rgba(0,0,0,0.45);object-fit:cover;" />
           <div>
-            <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span> <span class="badge tier-S">v3.0</span></div>
+            <div class="brand-title"><span>LOL ESPORTS <span class="brand-accent">MANAGER</span></span></div>
             <div class="brand-sub">7 Bölge (LCK, LPL, LEC, LCS, TCL, CBLOL, LCO) • Fearless Draft • 16 Takımlı Swiss Worlds • Wonderkid Scouting</div>
           </div>
         </div>
@@ -1010,6 +1010,10 @@ function renderAppShell() {
   return `
     <div class="app-shell">
       <aside class="sidebar">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:rgba(200,155,60,0.04);">
+          <img src="./assets/icon.jpg" alt="LoL Esports Manager" style="width:28px;height:28px;border-radius:7px;border:1px solid rgba(200,155,60,0.4);object-fit:cover;" />
+          <span style="font-weight:900;font-size:12px;letter-spacing:0.8px;color:var(--text);">LOL <span style="color:var(--gold-bright);">MANAGER</span></span>
+        </div>
         <div class="sidebar-club">
           <span class="team-tag" style="background:${team.color};color:${team.color2};font-size:13px;padding:7px 10px;">${team.tag}</span>
           <div>
