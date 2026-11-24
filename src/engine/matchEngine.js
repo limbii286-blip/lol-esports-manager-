@@ -251,11 +251,12 @@ function getMatchStrengthPair(state) {
 
   const bBase = sideBase('blue');
   const rBase = sideBase('red');
-  // Single-sided gold modifier (softened + capped so comebacks stay possible!)
-  const goldMod = clamp(goldDiff / 1550, -7.5, 7.5);
+  // Realistic pro LoL gold-to-strength curve (diminishes slightly post-35m as both teams approach 6 items)
+  const lateDiminish = m >= 36 ? 0.72 : m >= 30 ? 0.86 : 1.0;
+  const goldMod = clamp((goldDiff / 950) * lateDiminish, -22, 22);
   const netDiff = (bBase - rBase) + goldMod;
-  // Soft logistic curve (divisor 11.5) -> realistic pro win/skirmish odds (clamped 16%..84%)
-  const blueWinProb = clamp(1 / (1 + Math.exp(-netDiff / 11.5)), 0.16, 0.84);
+  // Realistic logistic curve: close games stay 50/50, +10k gold = ~90%, +20k gold = ~97%
+  const blueWinProb = clamp(1 / (1 + Math.exp(-netDiff / 8.5)), 0.03, 0.97);
   return { blueStr: bBase + goldMod * 0.5, redStr: rBase - goldMod * 0.5, blueWinProb, netDiff };
 }
 
@@ -492,9 +493,10 @@ export function stepMatchMinute(state) {
       const laneRole = pick(['TOP', 'MID', 'BOT']);
       const bp = state.bluePlayers.find(p => p.role === laneRole);
       const rp = state.redPlayers.find(p => p.role === laneRole);
-      const bDuel = bp.playerRef.attrs.mechanics * 0.55 + bp.playerRef.attrs.laning * 0.45 + getMatchupAdvantage(bp.champId, rp.champId) * 2.2;
+      const laneGoldEdge = clamp((bp.gold - rp.gold) / 260, -14, 14);
+      const bDuel = bp.playerRef.attrs.mechanics * 0.55 + bp.playerRef.attrs.laning * 0.45 + getMatchupAdvantage(bp.champId, rp.champId) * 2.2 + laneGoldEdge;
       const rDuel = rp.playerRef.attrs.mechanics * 0.55 + rp.playerRef.attrs.laning * 0.45 + getMatchupAdvantage(rp.champId, bp.champId) * 2.2;
-      const bSoloProb = clamp(1 / (1 + Math.exp(-(bDuel - rDuel) / 10)), 0.2, 0.8);
+      const bSoloProb = clamp(1 / (1 + Math.exp(-(bDuel - rDuel) / 9)), 0.08, 0.92);
       const killerSide = Math.random() < bSoloProb ? 'blue' : 'red';
       const { killer, victim, isFB, shutdownGold } = awardKill(state, killerSide, laneRole, laneRole, laneRole === 'BOT' ? ['SUP'] : []);
       const tag = killerSide === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
@@ -513,7 +515,7 @@ export function stepMatchMinute(state) {
   // 3. Voidgrubs / Rift Herald
   if (m === 6 || m === 11 || m === 15) {
     let grubsProb = blueWinProb + (state.blueTactics.objective === 'baron' ? 0.06 : 0) - (state.redTactics.objective === 'baron' ? 0.06 : 0);
-    const side = Math.random() < clamp(grubsProb, 0.15, 0.85) ? 'blue' : 'red';
+    const side = Math.random() < clamp(grubsProb, 0.06, 0.94) ? 'blue' : 'red';
     const objName = m === 15 ? 'Vadi Alameti' : 'Hiçlik Kurtçukları';
     if (side === 'blue') { state.blueGrubs++; state.bluePlayers.forEach(p => { p.gold += 120; }); }
     else { state.redGrubs++; state.redPlayers.forEach(p => { p.gold += 120; }); }
@@ -526,7 +528,7 @@ export function stepMatchMinute(state) {
   // 4. Dragon & Smite Steals
   if (m >= state.dragonTimer && !state.soulSide) {
     let dragProb = blueWinProb + (state.blueTactics.objective === 'dragon' ? 0.06 : 0) - (state.redTactics.objective === 'dragon' ? 0.06 : 0);
-    let winner = Math.random() < clamp(dragProb, 0.16, 0.84) ? 'blue' : 'red';
+    let winner = Math.random() < clamp(dragProb, 0.05, 0.95) ? 'blue' : 'red';
     const contested = Math.random() < 0.68;
     let stolen = false;
 
@@ -601,9 +603,10 @@ export function stepMatchMinute(state) {
   }
 
   // 5. Tower Takes
-  if (m >= 10 && Math.random() < 0.27 + (state.baronBuffSide ? 0.18 : 0)) {
-    let towerProb = blueWinProb + (state.blueTactics.objective === 'towers' || state.blueTactics.gameplan === 'split' ? 0.06 : 0) - (state.redTactics.objective === 'towers' || state.redTactics.gameplan === 'split' ? 0.06 : 0);
-    const side = Math.random() < clamp(towerProb, 0.16, 0.84) ? 'blue' : 'red';
+  if (m >= 10 && Math.random() < 0.28 + (state.baronBuffSide ? 0.22 : 0)) {
+    const baronTowerBoost = state.baronBuffSide === 'blue' ? 0.16 : state.baronBuffSide === 'red' ? -0.16 : 0;
+    let towerProb = blueWinProb + baronTowerBoost + (state.blueTactics.objective === 'towers' || state.blueTactics.gameplan === 'split' ? 0.06 : 0) - (state.redTactics.objective === 'towers' || state.redTactics.gameplan === 'split' ? 0.06 : 0);
+    const side = Math.random() < clamp(towerProb, 0.04, 0.96) ? 'blue' : 'red';
     const oppLanes = side === 'blue' ? state.redLaneTowers : state.blueLaneTowers;
     const availableLanes = ['TOP', 'MID', 'BOT'].filter(l => oppLanes[l] > 0);
 
@@ -673,15 +676,30 @@ export function stepMatchMinute(state) {
   recomputePlayerRatings(state);
   updatePlayerPositions(state, focusPoint);
 
-  // 8. Nexus Push / Game End Check
-  if (m >= 24) {
+  // 8. Nexus Push / Game End Check (Only a side with real tower/gold/buff map control can destroy Nexus!)
+  if (m >= 23) {
     const blueAdv = state.blueGold - state.redGold;
-    const hasBuff = state.baronBuffSide || state.elderBuffSide;
-    const blueCanEnd = (state.blueTowers >= 6 && blueAdv > 3800) || (m >= 31 && blueWinProb > 0.55) || m >= 42;
-    const redCanEnd = (state.redTowers >= 6 && blueAdv < -3800) || (m >= 31 && blueWinProb < 0.45) || m >= 42;
+    const blueHasBuff = state.baronBuffSide === 'blue' || state.elderBuffSide === 'blue';
+    const redHasBuff = state.baronBuffSide === 'red' || state.elderBuffSide === 'red';
+    const blueCanEnd = (state.blueTowers >= 6 && blueAdv >= 2500)
+      || (state.blueTowers >= 5 && blueHasBuff && blueAdv >= -1500)
+      || (state.blueTowers >= 4 && blueAdv >= 9000)
+      || (m >= 36 && state.blueTowers >= 4 && blueAdv >= -1000)
+      || (m >= 44 && blueAdv >= 0);
+    const redCanEnd = (state.redTowers >= 6 && blueAdv <= -2500)
+      || (state.redTowers >= 5 && redHasBuff && blueAdv <= 1500)
+      || (state.redTowers >= 4 && blueAdv <= -9000)
+      || (m >= 36 && state.redTowers >= 4 && blueAdv <= 1000)
+      || (m >= 44 && blueAdv < 0);
 
-    if ((blueCanEnd || redCanEnd) && Math.random() < (m >= 38 ? 0.65 : hasBuff ? 0.34 : 0.24)) {
-      const winner = Math.random() < blueWinProb ? 'blue' : 'red';
+    const isStomp = Math.abs(blueAdv) >= 12000;
+    const endChance = m >= 38 ? 0.65 : isStomp ? 0.52 : (blueHasBuff || redHasBuff) ? 0.36 : 0.24;
+
+    if ((blueCanEnd || redCanEnd) && Math.random() < endChance) {
+      let winner;
+      if (blueCanEnd && !redCanEnd) winner = 'blue';
+      else if (redCanEnd && !blueCanEnd) winner = 'red';
+      else winner = Math.random() < blueWinProb ? 'blue' : 'red';
       const loser = winner === 'blue' ? 'red' : 'blue';
       // Final teamfight (3-1 realistic finish)
       for (const r of ROLES.slice(0, 3)) awardKill(state, winner, pick(['BOT', 'MID', 'TOP']), r, ['SUP', 'JGL']);
