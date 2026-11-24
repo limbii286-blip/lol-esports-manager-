@@ -409,6 +409,7 @@ th {
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-strong);
   font-weight: 700;
+  white-space: nowrap;
 }
 td { padding: 8px 8px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); vertical-align: middle; }
 tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
@@ -740,4 +741,11 @@ tr.highlight-row td { background: rgba(200, 155, 60, 0.08); }
   .kpi-val { font-size: 18px; }
   button { min-height: 36px; }
   .btn-sm { min-height: 30px; }
+  .toast {
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    text-align: center;
+    pointer-events: none;
+  }
 }
