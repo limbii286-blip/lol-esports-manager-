@@ -71,9 +71,9 @@ export function calcOVR(attrs) {
 }
 
 export function calcMarketValue(ovr, age, pot) {
-  const ageFactor = age <= 20 ? 1.35 : age <= 23 ? 1.15 : age <= 26 ? 1.0 : age <= 28 ? 0.8 : 0.65;
-  const potBonus = Math.max(0, pot - ovr) * 18000;
-  const base = Math.pow(Math.max(1, ovr - 55), 2.3) * 260;
+  const ageFactor = age <= 20 ? 1.32 : age <= 23 ? 1.12 : age <= 26 ? 1.0 : age <= 28 ? 0.8 : 0.65;
+  const potBonus = Math.max(0, pot - ovr) * 15000;
+  const base = Math.pow(Math.max(1, ovr - 55), 2.3) * 215;
   return Math.max(25000, Math.round((base * ageFactor + potBonus) / 5000) * 5000);
 }
 
@@ -883,7 +883,7 @@ export function createInitialDatabase() {
       region: rt.region,
       color: rt.color,
       color2: rt.color2,
-      budget: rt.budget,
+      budget: Math.round((rt.budget * 2.5) / 50000) * 50000,
       prestige: rt.prestige,
       fanbase: rt.fanbase,
       synergy: 68 + Math.floor(Math.random() * 14),

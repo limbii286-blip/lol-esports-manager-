@@ -12,9 +12,9 @@ export const SLOTS_KEY = 'lol_esports_manager_slots_v2';
 export const SAVE_SLOT_IDS = ['autosave', 'slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 export const SPONSORS = [
-  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 55000, bonus: 180000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti haftalık gelir, düşük baskı.' },
-  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 85000, bonus: 400000, goal: 'Bölge Finali Oyna', minPrestige: 76, desc: 'Yüksek haftalık gelir ve final primi.' },
-  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 125000, bonus: 850000, goal: 'MSI veya Worlds Kupası', minPrestige: 85, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
+  { id: 'sp_safe', name: 'LogiTech Gear', weekly: 95000, bonus: 350000, goal: 'Playofflara Kal', minPrestige: 0, desc: 'Garanti yüksek haftalık gelir, düşük baskı.' },
+  { id: 'sp_mid', name: 'RedBull Gaming', weekly: 155000, bonus: 750000, goal: 'Bölge Finali Oyna', minPrestige: 76, desc: 'Güçlü haftalık gelir ve bölge finali primi.' },
+  { id: 'sp_elite', name: 'Mercedes-Benz Esports', weekly: 240000, bonus: 1500000, goal: 'MSI veya Worlds Kupası', minPrestige: 85, desc: 'Elit kulüpler için dev bütçe ve kupa primi.' },
 ];
 
 export const FACILITY_INFO = {
@@ -314,6 +314,18 @@ export function ensureCalendarState(state) {
   if (!state.financeLog) state.financeLog = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   if (Array.isArray(state.teams)) state.teams.forEach(t => ensureTeamExtras(t));
+  // One-time realistic budget rebalance for existing saves!
+  if (!state.economyRebalancedV2 && Array.isArray(state.teams)) {
+    state.economyRebalancedV2 = true;
+    for (const t of state.teams) {
+      const boost = Math.round(((t.prestige >= 90 ? 4500000 : t.prestige >= 82 ? 3200000 : t.prestige >= 75 ? 2400000 : 1700000)) / 50000) * 50000;
+      t.budget += boost;
+      if (t.sponsor) {
+        const sp = SPONSORS.find(s => s.id === t.sponsor.id);
+        if (sp) t.sponsor = sp;
+      }
+    }
+  }
 }
 
 function parseISO(iso) {
@@ -504,6 +516,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     sackedState: null,
     scrimDoneThisWeek: false,
     academyPromotedThisSplit: false,
+    economyRebalancedV2: true,
     history: [],
     awards: [],
     inbox: [],
@@ -1735,6 +1748,22 @@ function runOffSeasonProgression(state) {
   const retiredNames = [];
   const remainingPlayers = [];
   const expiringUserNames = [];
+
+  // Annual Board Transfer Budget Allocation for all clubs!
+  let userGrant = 0;
+  for (const t of state.teams) {
+    const grant = Math.round((t.prestige >= 90 ? 3500000 : t.prestige >= 82 ? 2500000 : t.prestige >= 75 ? 1800000 : 1300000) / 50000) * 50000;
+    t.budget += grant;
+    if (t.id === state.userTeamId) userGrant = grant;
+  }
+  if (userGrant > 0) {
+    addInboxMessage(state, {
+      title: `Yeni Sezon Transfer Bütçesi Onaylandı (+${formatMoney(userGrant)})`,
+      sender: 'Yönetim Kurulu',
+      category: 'BOARD',
+      body: `Yönetim Kurulu, sezon arası transfer dönemi için kulüp kasasına +${formatMoney(userGrant)} yeni sezon bütçesi aktardı!`,
+    });
+  }
 
   for (const p of state.players) {
     p.age++;
