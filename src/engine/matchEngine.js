@@ -1082,6 +1082,93 @@ export function finishMatchInstantly(state) {
   return state;
 }
 
+export function applyPlayerInGameDecision(matchState, userPlayerId, option) {
+  if (!matchState || matchState.finished || !option) return { success: false, text: '' };
+  const side = matchState.userSide || 'blue';
+  const myPlayers = side === 'blue' ? matchState.bluePlayers : matchState.redPlayers;
+  const oppPlayers = side === 'blue' ? matchState.redPlayers : matchState.bluePlayers;
+  const mp = myPlayers.find(p => p.playerId === userPlayerId) || myPlayers[0];
+  if (!mp) return { success: false, text: '' };
+
+  const opp = oppPlayers.find(p => p.role === mp.role) || oppPlayers[0];
+  const attrVal = mp.playerRef?.attrs?.[option.attr || 'mechanics'] ?? mp.playerRef?.ovr ?? 76;
+  const successProb = clamp((option.baseProb ?? 0.62) + (attrVal - 75) * 0.012, 0.25, 0.92);
+  const ok = Math.random() < successProb;
+  const m = matchState.minute;
+  const teamTag = side === 'blue' ? matchState.blueTeam.tag : matchState.redTeam.tag;
+
+  let text = '';
+  if (option.kind === 'AGGRO') {
+    if (ok) {
+      mp.kills++;
+      if (opp) opp.deaths++;
+      if (side === 'blue') { matchState.blueKills++; matchState.blueGold += 450; }
+      else { matchState.redKills++; matchState.redGold += 450; }
+      mp.gold += 450;
+      mp.dmg += 1400;
+      mp.rating = Math.min(10, +(mp.rating + 0.55).toFixed(1));
+      text = `${mp.name} (${mp.champName}) agresif takası kazandı ve ${opp ? opp.name : 'rakibini'} avladı! (+450g)`;
+    } else {
+      mp.deaths++;
+      if (opp) opp.kills++;
+      if (side === 'blue') { matchState.redKills++; matchState.redGold += 350; }
+      else { matchState.blueKills++; matchState.blueGold += 350; }
+      mp.rating = Math.max(4.0, +(mp.rating - 0.35).toFixed(1));
+      text = `${mp.name} aşırı agresif oynadı ve rakip ormancının da desteğiyle yakalandı.`;
+    }
+  } else if (option.kind === 'ROAM') {
+    if (ok) {
+      mp.assists += 2;
+      const ally = myPlayers.find(p => p.playerId !== mp.playerId && p.role !== 'SUP') || myPlayers[0];
+      if (ally) ally.kills++;
+      if (side === 'blue') { matchState.blueKills++; matchState.blueGold += 520; }
+      else { matchState.redKills++; matchState.redGold += 520; }
+      mp.gold += 260;
+      mp.vision += 3;
+      mp.rating = Math.min(10, +(mp.rating + 0.5).toFixed(1));
+      text = `${mp.name} zamanında roam atarak ${teamTag} adına skor üretti (+2 Asist, +520 Takım Altını).`;
+    } else {
+      mp.cs = Math.max(0, mp.cs - 6);
+      mp.rating = Math.max(4.5, +(mp.rating - 0.15).toFixed(1));
+      text = `${mp.name} roam denemesinden sonuç alamadı ve koridorda biraz minyon kaybetti.`;
+    }
+  } else if (option.kind === 'SAFE') {
+    mp.cs += 18;
+    mp.gold += 340;
+    if (side === 'blue') matchState.blueGold += 340;
+    else matchState.redGold += 340;
+    mp.rating = Math.min(10, +(mp.rating + 0.25).toFixed(1));
+    text = `${mp.name} dalgayı kusursuz yönetip +18 CS ve +340g çıkardı.`;
+  } else if (option.kind === 'OBJECTIVE') {
+    if (ok) {
+      mp.assists += 1;
+      mp.dmg += 1200;
+      mp.vision += 4;
+      if (side === 'blue') matchState.blueGold += 600;
+      else matchState.redGold += 600;
+      mp.gold += 300;
+      mp.rating = Math.min(10, +(mp.rating + 0.5).toFixed(1));
+      text = `${mp.name} objektif öncesi pozisyonlamasıyla ${teamTag} takımına harita kontrolü ve +600g kazandırdı!`;
+    } else {
+      mp.deaths++;
+      if (side === 'blue') { matchState.redKills++; matchState.redGold += 300; }
+      else { matchState.blueKills++; matchState.blueGold += 300; }
+      mp.rating = Math.max(4.5, +(mp.rating - 0.3).toFixed(1));
+      text = `${mp.name} objektif kontrolü kurarken yakalandı.`;
+    }
+  }
+
+  matchState.events.push({
+    min: m,
+    type: 'TACTIC',
+    tag: ok ? 'OYUNCU KARARI' : 'RİSKLİ HAMLE',
+    side,
+    text,
+  });
+
+  return { success: ok, text };
+}
+
 export function quickSimulateGame(blueTeam, redTeam, blueRoster, redRoster, patch, fearlessLocked = new Set(), highStakes = false) {
   const draft = createDraftState(blueTeam, redTeam, blueRoster, redRoster, patch, null, fearlessLocked);
   autoCompleteDraft(draft);

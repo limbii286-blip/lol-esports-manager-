@@ -1,13 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Flame, FolderOpen, Play, ArrowRight, Trophy, Users, Wallet, ShieldCheck } from 'lucide-react';
-import { REGIONS, createInitialDatabase } from '../data/teamsAndPlayers.js';
+import { Flame, FolderOpen, Play, ArrowRight, Trophy, Users, Wallet, ShieldCheck, UserCheck, Briefcase } from 'lucide-react';
+import { REGIONS, ROLES, createInitialDatabase } from '../data/teamsAndPlayers.js';
+import { CHAMPIONS } from '../data/champions.js';
 import { formatMoney, listSaveSlots } from '../engine/gameEngine.js';
 import { MEDIA_ASSETS } from '../assets/media';
-import { SafeImage, TeamCrest, OvrValue } from './shared/Visuals';
+import { SafeImage, TeamCrest, OvrValue, ChampionEmblem } from './shared/Visuals';
 import { soundFx } from '../engine/soundFx';
 
 interface StartScreenProps {
   onStartCareer: (teamId: string, managerName: string) => void;
+  onStartPlayerCareer: (opts: {
+    playerName: string;
+    role: string;
+    sigChamps: string[];
+    teamId: string;
+    archetype: string;
+  }) => void;
   onResumeAutoSave: () => void;
   onOpenSaveManager: () => void;
   onOpenMayhem: () => void;
@@ -15,6 +23,7 @@ interface StartScreenProps {
 
 export const StartScreen: React.FC<StartScreenProps> = ({
   onStartCareer,
+  onStartPlayerCareer,
   onResumeAutoSave,
   onOpenSaveManager,
   onOpenMayhem,
@@ -24,6 +33,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const autoRec = slots.find((s: any) => s.slotId === 'autosave')?.record;
   const filledCount = slots.filter((s: any) => s.record).length;
 
+  const [careerMode, setCareerMode] = useState<'MANAGER' | 'PLAYER'>('MANAGER');
   const [selectedRegion, setSelectedRegion] = useState<string>('LCK');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('t1');
   const [managerName, setManagerName] = useState<string>(() => {
@@ -34,13 +44,29 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     }
   });
 
-  const regionTeams = useMemo(
-    () => previewDB.teams.filter((t: any) => t.region === selectedRegion),
-    [previewDB.teams, selectedRegion]
+  // Be a Legend (Player Career) state
+  const [playerName, setPlayerName] = useState<string>('Legend');
+  const [playerRole, setPlayerRole] = useState<string>('MID');
+  const [playerArchetype, setPlayerArchetype] = useState<string>('Aggressive');
+  const [sigChamps, setSigChamps] = useState<string[]>(['ahri', 'syndra']);
+  const [onlyUnderdogs, setOnlyUnderdogs] = useState<boolean>(true);
+
+  const roleChampions = useMemo(
+    () => CHAMPIONS.filter((c: any) => c.roles.includes(playerRole)).slice(0, 30),
+    [playerRole]
   );
 
+  const regionTeams = useMemo(() => {
+    const base = previewDB.teams.filter((t: any) => t.region === selectedRegion);
+    if (careerMode === 'PLAYER' && onlyUnderdogs) {
+      const under = base.filter((t: any) => t.prestige <= 80);
+      return under.length ? under : base;
+    }
+    return base;
+  }, [previewDB.teams, selectedRegion, careerMode, onlyUnderdogs]);
+
   const selectedTeam = useMemo(
-    () => previewDB.teams.find((t: any) => t.id === selectedTeamId) || regionTeams[0],
+    () => regionTeams.find((t: any) => t.id === selectedTeamId) || regionTeams[0] || previewDB.teams[0],
     [previewDB.teams, selectedTeamId, regionTeams]
   );
 
@@ -58,13 +84,52 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const handleRegionChange = (regId: string) => {
     soundFx.click();
     setSelectedRegion(regId);
-    const first = previewDB.teams.find((t: any) => t.region === regId);
-    if (first) setSelectedTeamId(first.id);
+    const list = previewDB.teams.filter((t: any) => t.region === regId);
+    const preferred = careerMode === 'PLAYER' ? (list.find((t: any) => t.prestige <= 80) || list[0]) : list[0];
+    if (preferred) setSelectedTeamId(preferred.id);
+  };
+
+  const handleModeSwitch = (mode: 'MANAGER' | 'PLAYER') => {
+    soundFx.click();
+    setCareerMode(mode);
+    const list = previewDB.teams.filter((t: any) => t.region === selectedRegion);
+    if (mode === 'PLAYER') {
+      const under = list.find((t: any) => t.prestige <= 78) || [...list].sort((a: any, b: any) => a.prestige - b.prestige)[0];
+      if (under) setSelectedTeamId(under.id);
+    } else if (list[0]) {
+      setSelectedTeamId(list[0].id);
+    }
+  };
+
+  const handleRoleChange = (r: string) => {
+    soundFx.click();
+    setPlayerRole(r);
+    const matching = CHAMPIONS.filter((c: any) => c.roles.includes(r)).slice(0, 2).map((c: any) => c.id);
+    setSigChamps(matching);
+  };
+
+  const toggleSigChamp = (cid: string) => {
+    soundFx.click();
+    setSigChamps((prev) => {
+      if (prev.includes(cid)) return prev.length > 1 ? prev.filter((x) => x !== cid) : prev;
+      if (prev.length >= 2) return [prev[1], cid];
+      return [...prev, cid];
+    });
   };
 
   const handleLaunch = () => {
     if (!selectedTeam) return;
     soundFx.draftLock();
+    if (careerMode === 'PLAYER') {
+      onStartPlayerCareer({
+        playerName: playerName.trim() || 'Legend',
+        role: playerRole,
+        sigChamps,
+        teamId: selectedTeam.id,
+        archetype: playerArchetype,
+      });
+      return;
+    }
     try {
       localStorage.setItem('lol_mgr_nickname', managerName.trim() || 'Baş Koç');
     } catch {
@@ -141,17 +206,53 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               Taktik tahtası, gerçek zamanlı 2D Vadi simülasyonu, kenar yönetimi talimatları, basın toplantıları, Challenger wonderkid scout ağı ve Fearless Draft stratejileriyle tam ölçekli espor menajerliği.
             </p>
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <div className="flex items-center bg-[#121722]/90 border border-white/[0.12] rounded-md px-3 py-2 gap-2.5 min-w-[260px]">
-                <span className="text-xs text-slate-400 whitespace-nowrap">Baş Koç:</span>
-                <input
-                  type="text"
-                  value={managerName}
-                  onChange={(e) => setManagerName(e.target.value)}
-                  maxLength={24}
-                  placeholder="Koç adın..."
-                  className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder:text-slate-600"
-                />
+              {/* Career Mode Switcher */}
+              <div className="flex items-center gap-1 p-1 bg-[#121722]/95 border border-white/[0.12] rounded-md">
+                <button
+                  onClick={() => handleModeSwitch('MANAGER')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
+                    careerMode === 'MANAGER' ? 'bg-[#C89B3C] text-[#0B0E14]' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  Menajer Ol
+                </button>
+                <button
+                  onClick={() => handleModeSwitch('PLAYER')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
+                    careerMode === 'PLAYER' ? 'bg-[#C89B3C] text-[#0B0E14]' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Efsane Ol (Oyuncu)
+                </button>
               </div>
+
+              {careerMode === 'MANAGER' ? (
+                <div className="flex items-center bg-[#121722]/90 border border-white/[0.12] rounded-md px-3 py-2 gap-2.5 min-w-[240px]">
+                  <span className="text-xs text-slate-400 whitespace-nowrap">Baş Koç:</span>
+                  <input
+                    type="text"
+                    value={managerName}
+                    onChange={(e) => setManagerName(e.target.value)}
+                    maxLength={24}
+                    placeholder="Koç adın..."
+                    className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder:text-slate-600"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center bg-[#121722]/90 border border-[#C89B3C]/50 rounded-md px-3 py-2 gap-2.5 min-w-[240px]">
+                  <span className="text-xs text-[#E4BD67] whitespace-nowrap">Oyuncu Adı:</span>
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    maxLength={18}
+                    placeholder="Nickname..."
+                    className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder:text-slate-600"
+                  />
+                </div>
+              )}
               <button
                 onClick={onOpenMayhem}
                 className="px-4 py-2.5 rounded-md border border-white/[0.14] bg-[#121722]/85 hover:bg-[#1A2233] text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
@@ -226,7 +327,101 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       </section>
 
       {/* Main Region + Club Selector Workspace */}
-      <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 lg:px-10 py-8">
+      <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 lg:px-10 py-8 space-y-6">
+        {careerMode === 'PLAYER' && (
+          <div className="bg-[#121722] border border-[#C89B3C]/40 rounded-lg p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
+              <div>
+                <div className="text-xs text-[#E4BD67] font-semibold">Efsane Ol — Pro Oyuncu Oluşturucu</div>
+                <h2 className="font-display text-2xl font-bold text-white">Rolünü, Oyun Tarzını ve İmza Şampiyonlarını Seç</h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onlyUnderdogs}
+                  onChange={(e) => setOnlyUnderdogs(e.target.checked)}
+                  className="accent-[#C89B3C]"
+                />
+                Sadece alt sıra / gelişmekte olan takımları göster
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              <div className="lg:col-span-4 space-y-3">
+                <div>
+                  <div className="text-[11px] text-slate-400 mb-1.5">Koridor / Rol</div>
+                  <div className="flex gap-1.5">
+                    {ROLES.map((r: string) => (
+                      <button
+                        key={r}
+                        onClick={() => handleRoleChange(r)}
+                        className={`flex-1 py-2 rounded text-xs font-bold cursor-pointer ${
+                          playerRole === r ? 'bg-[#C89B3C] text-[#0B0E14]' : 'bg-[#0B0E14] text-slate-300 border border-white/[0.1]'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 mb-1.5">Oyun Tarzı / Profil</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { id: 'Aggressive', label: 'Mekanik Taşıyıcı' },
+                      { id: 'Playmaker', label: 'Oyun Kurucu' },
+                      { id: 'Consistent', label: 'İstikrarlı Çapa' },
+                      { id: 'Weakside', label: 'Takım Oyuncusu' },
+                    ].map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => setPlayerArchetype(a.id)}
+                        className={`py-2 px-2.5 rounded text-xs font-semibold cursor-pointer ${
+                          playerArchetype === a.id
+                            ? 'bg-[#171E2C] border border-[#C89B3C] text-[#E4BD67]'
+                            : 'bg-[#0B0E14] border border-white/[0.08] text-slate-400'
+                        }`}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-8">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] text-slate-400">
+                    İmza Şampiyonların (1 veya 2 şampiyon seç — şu an {sigChamps.length}/2)
+                  </span>
+                  <span className="text-[11px] font-mono-num text-[#E4BD67]">
+                    {sigChamps.map((id) => CHAMPIONS.find((c: any) => c.id === id)?.name || id).join(' · ')}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-2 max-h-36 overflow-y-auto pr-1">
+                  {roleChampions.map((c: any) => {
+                    const active = sigChamps.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => toggleSigChamp(c.id)}
+                        className={`p-2 rounded border text-left flex items-center gap-2 cursor-pointer ${
+                          active
+                            ? 'bg-[#171E2C] border-[#C89B3C] text-white'
+                            : 'bg-[#0B0E14] border-white/[0.08] text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <ChampionEmblem name={c.name} dmg={c.dmg} classTag={c.classTag} size="xs" />
+                        <span className="text-[11px] font-semibold truncate">{c.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="font-display text-2xl font-bold text-white tracking-wide">Kulüp ve Bölge Seçimi</h2>

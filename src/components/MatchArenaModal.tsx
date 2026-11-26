@@ -28,6 +28,7 @@ import {
   stepMatchMinute,
   finishMatchInstantly,
   applyMatchOutcomeToPlayers,
+  applyPlayerInGameDecision,
 } from '../engine/matchEngine.js';
 import {
   TEAM_TALK_OPTIONS,
@@ -84,6 +85,12 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     return ROLES.map((role: string) => r.find((p: any) => p.role === role && p.isStarter) || r.find((p: any) => p.role === role) || r[0]);
   }, [careerState, redTeam.id]);
 
+  const isPlayerMode = careerState.careerMode === 'PLAYER';
+  const userLegendPlayer = useMemo(
+    () => (isPlayerMode ? careerState.players.find((p: any) => p.id === careerState.userPlayerId) : null),
+    [careerState, isPlayerMode]
+  );
+
   const [phase, setPhase] = useState<StagePhase>('TEAM_TALK');
   const [gameNum, setGameNum] = useState(1);
   const [blueScore, setBlueScore] = useState(0);
@@ -98,7 +105,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const [liveState, setLiveState] = useState<any>(null);
   const [liveTick, setLiveTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [speed, setSpeed] = useState<number>(2);
+  const [speed, setSpeed] = useState<number>(isPlayerMode ? 1 : 2);
   const [lastShoutMin, setLastShoutMin] = useState<number>(-10);
   const [shoutNotice, setShoutNotice] = useState<string>('');
   const [postTalkDone, setPostTalkDone] = useState(false);
@@ -110,6 +117,16 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     champId: string;
     champName: string;
   } | null>(null);
+  const [coachPickReqId, setCoachPickReqId] = useState<string | null>(null);
+  const [coachPickStatus, setCoachPickStatus] = useState<string>('');
+  const [autoDecide, setAutoDecide] = useState<boolean>(false);
+  const [pendingDecision, setPendingDecision] = useState<{
+    minute: number;
+    title: string;
+    desc: string;
+    options: { id: string; label: string; kind: string; attr: string; baseProb: number }[];
+  } | null>(null);
+  const triggeredDecisionMinsRef = useRef<Set<number>>(new Set());
   const [broadcastBanner, setBroadcastBanner] = useState<{ text: string; color: string } | null>(null);
 
   const timerRef = useRef<number | null>(null);
@@ -151,9 +168,9 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       lockedSet
     );
 
-    // Pro Player Draft Request (55% chance a star asks for a signature champ for +2.0 bonus)
+    // Pro Player Draft Request (55% chance in Manager mode; in Player mode user can request from coach!)
     let req: typeof champRequest = null;
-    if (Math.random() < 0.55) {
+    if (!isPlayerMode && Math.random() < 0.55) {
       const sortedStars = [...userRosterLive].filter(Boolean).sort((a: any, b: any) => (b.ovr || 0) - (a.ovr || 0));
       for (const star of sortedStars) {
         const availSigs = (star.sigChamps || []).filter((cid: string) => !lockedSet.has(cid) && CHAMPION_MAP[cid]);
@@ -171,6 +188,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       }
     }
     setChampRequest(req);
+    setCoachPickStatus('');
     setDraft(d);
     setDraftVersion((v) => v + 1);
     setPhase('DRAFT');
@@ -188,14 +206,31 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     };
   }, [phase, draft?.finished]);
 
-  // Auto-advance AI Draft turns
+  // Auto-advance AI Draft turns (and in Player Mode, AI Coach also runs userSide!)
   useEffect(() => {
     if (phase !== 'DRAFT' || !draft || draft.finished) return;
     const step = DRAFT_STEPS[draft.stepIndex];
     if (!step) return;
 
-    if (step.side !== userSide) {
+    if (step.side !== userSide || isPlayerMode) {
       const id = window.setTimeout(() => {
+        // In Player Mode, when AI coach picks for user's role, check if player requested a champion!
+        if (isPlayerMode && step.side === userSide && step.type === 'pick' && userLegendPlayer && coachPickReqId) {
+          const myPicks = userSide === 'blue' ? draft.bluePicks : draft.redPicks;
+          const role = userLegendPlayer.role;
+          if (!myPicks[role] && !draft.usedChamps.has(coachPickReqId)) {
+            const trust = careerState.playerCareer?.coachTrust ?? 60;
+            const accepts = Math.random() < Math.min(0.95, 0.45 + (trust / 100) * 0.55);
+            if (accepts && applyDraftAction(draft, coachPickReqId, role)) {
+              soundFx.draftLock();
+              setCoachPickStatus(`Koç isteğini kabul etti ve senin için ${CHAMPION_MAP[coachPickReqId]?.name || coachPickReqId} seçti!`);
+              setDraftVersion((v) => v + 1);
+              return;
+            } else {
+              setCoachPickStatus(`Koç takım kompozisyonu gereği farklı bir şampiyon tercih etti.`);
+            }
+          }
+        }
         const aiAction = chooseAIDraftAction(draft);
         if (aiAction && aiAction.champId) {
           applyDraftAction(draft, aiAction.champId, aiAction.role as any);
@@ -203,10 +238,10 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
           else soundFx.draftLock();
           setDraftVersion((v) => v + 1);
         }
-      }, 360);
+      }, isPlayerMode ? 240 : 360);
       return () => window.clearTimeout(id);
     }
-  }, [phase, draft, draftVersion, userSide]);
+  }, [phase, draft, draftVersion, userSide, isPlayerMode, coachPickReqId]);
 
   // Launch Live Match once draft finishes
   const launchLiveMatch = () => {
@@ -244,15 +279,58 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLiveTick(0);
     setLastShoutMin(-10);
     setShoutNotice('');
+    setPendingDecision(null);
+    triggeredDecisionMinsRef.current = new Set();
     setBroadcastBanner(null);
     setIsPlaying(true);
     setPhase('LIVE');
     soundFx.objectiveSecured();
   };
 
+  const buildPlayerDecision = (minute: number) => {
+    const role = userLegendPlayer?.role || 'MID';
+    if (minute <= 5) {
+      return {
+        minute,
+        title: `Dakika ${minute}: Erken Koridor Kararı`,
+        desc: `${role} koridorunda ilk minyon dalgaları çarpışıyor. Nasıl oynamak istersin?`,
+        options: [
+          { id: 'aggro', label: 'Agresif Takasa Gir & Kill Ara (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.6 },
+          { id: 'roam', label: 'Orman/Nehir Kontrolüne Destek Çık (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.65 },
+          { id: 'safe', label: 'Kusursuz CS & Kule Altı Güvenli Kal (Koridor)', kind: 'SAFE', attr: 'laning', baseProb: 0.9 },
+          { id: 'obj', label: 'Derin Totem At & Rakip Ormancıyı Tespit Et', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.72 },
+        ],
+      };
+    }
+    if (minute <= 16) {
+      return {
+        minute,
+        title: `Dakika ${minute}: Orta Oyun & Harita Rotasyonu`,
+        desc: `Ejder ve kule plakaları için kritik an. Takımın için en doğru hamle ne?`,
+        options: [
+          { id: 'roam', label: 'Yan Koridora Roam At & Skor Üret (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.64 },
+          { id: 'aggro', label: '1v1 Düelloya Zorla & Baskı Kur (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.58 },
+          { id: 'obj', label: 'Ejder Çukuru Etrafında Görüş & Pozisyon Al', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.68 },
+          { id: 'safe', label: 'Yan Dalga İttir & Güvenli Altın Topla', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+        ],
+      };
+    }
+    return {
+      minute,
+      title: `Dakika ${minute}: Geç Oyun & Baron Savaşı`,
+      desc: `5v5 takım savaşları oyunu belirleyecek! Savaşta nasıl pozisyon alacaksın?`,
+      options: [
+        { id: 'obj', label: 'Takım Savaşında Ön/Arka Saf Koordinasyonu (Savaş)', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.66 },
+        { id: 'aggro', label: 'Rakip Taşıyıcıya Flash Engage / Odaklan (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.57 },
+        { id: 'roam', label: 'Yan Koridordan Flank / TP Fırsatı Kovala (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.63 },
+        { id: 'safe', label: 'Dalgayı Temizle & Takımı Güvende Tut', kind: 'SAFE', attr: 'laning', baseProb: 0.85 },
+      ],
+    };
+  };
+
   // Live Match Simulation Loop
   useEffect(() => {
-    if (phase !== 'LIVE' || !liveState || liveState.finished || !isPlaying) return;
+    if (phase !== 'LIVE' || !liveState || liveState.finished || !isPlaying || pendingDecision) return;
     const intervalMs = speed === 1 ? 820 : speed === 2 ? 440 : speed === 4 ? 220 : 100;
     timerRef.current = window.setInterval(() => {
       const prevBlueKills = liveState.blueKills;
@@ -297,13 +375,27 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       if (liveState.finished) {
         if (timerRef.current) window.clearInterval(timerRef.current);
         handleSingleGameComplete(liveState);
+        return;
+      }
+
+      // Be a Legend interactive decision moments
+      const DECISION_MINS = [4, 9, 14, 19, 25, 31];
+      if (
+        isPlayerMode &&
+        !autoDecide &&
+        DECISION_MINS.includes(liveState.minute) &&
+        !triggeredDecisionMinsRef.current.has(liveState.minute)
+      ) {
+        triggeredDecisionMinsRef.current.add(liveState.minute);
+        setIsPlaying(false);
+        setPendingDecision(buildPlayerDecision(liveState.minute));
       }
     }, intervalMs);
 
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
     };
-  }, [phase, liveState, isPlaying, speed]);
+  }, [phase, liveState, isPlaying, speed, isPlayerMode, autoDecide, pendingDecision]);
 
   // Keyboard shortcuts during LIVE broadcast (Space = Pause/Resume, 1-4 = Speed)
   useEffect(() => {
@@ -633,18 +725,81 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {TEAM_TALK_OPTIONS.map((opt: any) => (
+              {isPlayerMode && userLegendPlayer ? (
+                <div className="space-y-4">
+                  <div className="bg-[#0B0E14] border border-[#C89B3C]/40 rounded-md p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-[#E4BD67]">
+                          Koçtan Şampiyon İste ({userLegendPlayer.role})
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Draft öncesi koçuna oynamak istediğin şampiyonu önerebilirsin (Koç Güveni: %{careerState.playerCareer?.coachTrust ?? 60}).
+                        </div>
+                      </div>
+                      {coachPickReqId && (
+                        <button
+                          type="button"
+                          onClick={() => setCoachPickReqId(null)}
+                          className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                        >
+                          İsteği Temizle
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto pr-1">
+                      {CHAMPIONS.filter((c: any) => c.roles.includes(userLegendPlayer.role))
+                        .sort((a: any, b: any) => {
+                          const aSig = userLegendPlayer.sigChamps?.includes(a.id) ? 1 : 0;
+                          const bSig = userLegendPlayer.sigChamps?.includes(b.id) ? 1 : 0;
+                          return bSig - aSig;
+                        })
+                        .slice(0, 24)
+                        .map((c: any) => {
+                          const isSig = userLegendPlayer.sigChamps?.includes(c.id);
+                          const selected = coachPickReqId === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                soundFx.click();
+                                setCoachPickReqId(c.id);
+                              }}
+                              className={`p-2 rounded border text-left flex items-center gap-1.5 cursor-pointer ${
+                                selected
+                                  ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C] font-bold'
+                                  : 'bg-[#121722] border-white/[0.1] text-slate-200 hover:border-[#C89B3C]/60'
+                              }`}
+                            >
+                              <span className="text-[11px] truncate flex-1">{c.name}</span>
+                              {isSig && !selected && <span className="text-[10px] text-[#E4BD67]">★</span>}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
                   <button
-                    key={opt.id}
-                    onClick={() => startDraftForGame(opt.id)}
-                    className="text-left p-4 rounded-md border border-white/[0.08] bg-[#171E2C]/60 hover:bg-[#1D2638] hover:border-[#C89B3C]/70 transition-colors cursor-pointer space-y-1.5"
+                    onClick={() => startDraftForGame('motivate')}
+                    className="w-full py-3 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] font-bold text-sm cursor-pointer"
                   >
-                    <div className="text-sm font-bold text-white">{opt.name || opt.label}</div>
-                    <div className="text-xs text-slate-400 leading-relaxed">{opt.desc}</div>
+                    Draft Sahnesine Çık {coachPickReqId ? `(İstek: ${CHAMPION_MAP[coachPickReqId]?.name || coachPickReqId})` : '(Koç Kararına Bırak)'}
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {TEAM_TALK_OPTIONS.map((opt: any) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => startDraftForGame(opt.id)}
+                      className="text-left p-4 rounded-md border border-white/[0.08] bg-[#171E2C]/60 hover:bg-[#1D2638] hover:border-[#C89B3C]/70 transition-colors cursor-pointer space-y-1.5"
+                    >
+                      <div className="text-sm font-bold text-white">{opt.name || opt.label}</div>
+                      <div className="text-xs text-slate-400 leading-relaxed">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -702,6 +857,12 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       .map((id) => CHAMPION_MAP[id]?.name || id)
                       .join(' · ')}
                   </span>
+                </div>
+              )}
+
+              {coachPickStatus && (
+                <div className="bg-[#171E2C] border border-[#C89B3C]/50 rounded-md px-4 py-2.5 text-xs text-[#E4BD67] font-semibold">
+                  {coachPickStatus}
                 </div>
               )}
 
@@ -1084,6 +1245,24 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                           <FastForward className="w-3.5 h-3.5" />
                           Bitir
                         </button>
+                        {isPlayerMode && (
+                          <button
+                            onClick={() => {
+                              setAutoDecide((a) => !a);
+                              if (pendingDecision) {
+                                setPendingDecision(null);
+                                setIsPlaying(true);
+                              }
+                            }}
+                            className={`px-2.5 py-1.5 rounded-md border text-xs font-semibold cursor-pointer whitespace-nowrap ${
+                              autoDecide
+                                ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                                : 'bg-[#171E2C] text-slate-300 border-white/[0.12]'
+                            }`}
+                          >
+                            {autoDecide ? 'Hızlı Geç: AÇIK' : 'Hızlı Geç'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1163,10 +1342,59 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                   </div>
                 </div>
 
-                {/* Right 7 cols: Touchline Shouts + Scoreboard + Live Commentary */}
+                {/* Right 7 cols: Player Decisions / Touchline Shouts + Scoreboard + Live Commentary */}
                 <div className="lg:col-span-7 space-y-4">
-                  {/* FM Touchline Shouts & Live Tactical Switches */}
-                  {phase === 'LIVE' && userTacticsLive && (
+                  {/* Be a Legend Interactive In-Game Decision Card */}
+                  {phase === 'LIVE' && isPlayerMode && pendingDecision && userLegendPlayer && (
+                    <div className="bg-[#171E2C] border border-[#C89B3C] rounded-lg p-5 space-y-3 shadow-2xl">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-[#E4BD67]">KARAR ANI · EFSANE OL</div>
+                          <h3 className="font-display text-xl font-bold text-white mt-0.5">{pendingDecision.title}</h3>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setAutoDecide(true);
+                            setPendingDecision(null);
+                            setIsPlaying(true);
+                          }}
+                          className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                        >
+                          Otomatik Hızlı Geç
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-300">{pendingDecision.desc}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {pendingDecision.options.map((opt) => {
+                          const attrVal = userLegendPlayer.attrs?.[opt.attr] ?? userLegendPlayer.ovr ?? 76;
+                          const pct = Math.max(25, Math.min(92, Math.round((opt.baseProb + (attrVal - 75) * 0.012) * 100)));
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                const res = applyPlayerInGameDecision(liveState, userLegendPlayer.id, opt);
+                                if (res.success) soundFx.killAlert();
+                                else soundFx.click();
+                                setShoutNotice(res.text);
+                                setPendingDecision(null);
+                                setIsPlaying(true);
+                                setLiveTick((t) => t + 1);
+                              }}
+                              className="text-left p-3 rounded-md bg-[#0B0E14] border border-white/[0.12] hover:border-[#C89B3C] cursor-pointer transition-colors space-y-1"
+                            >
+                              <div className="text-xs font-bold text-white">{opt.label}</div>
+                              <div className="text-[11px] font-mono-num text-[#E4BD67]">
+                                Başarı Şansı: %{pct} ({opt.attr.toUpperCase()} {attrVal})
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* FM Touchline Shouts & Live Tactical Switches (Manager Mode only) */}
+                  {phase === 'LIVE' && !isPlayerMode && userTacticsLive && (
                     <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-4 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-white">

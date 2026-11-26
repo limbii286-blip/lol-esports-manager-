@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import {
   createNewCareer,
+  createPlayerCareer,
   ensureCalendarState,
   ensureTeamExtras,
   getPhaseLabel,
@@ -136,6 +137,19 @@ export default function App() {
     ensureCalendarState(st);
     setActiveTab('dashboard');
     commitState(st, `Yeni kariyer başladı! ${managerName} göreve getirildi.`);
+  };
+
+  const handleStartPlayerCareer = (opts: {
+    playerName: string;
+    role: string;
+    sigChamps: string[];
+    teamId: string;
+    archetype: string;
+  }) => {
+    const st = createPlayerCareer(opts);
+    ensureCalendarState(st);
+    setActiveTab('dashboard');
+    commitState(st, `Efsane Ol başladı! ${opts.playerName} (${opts.role}) sahneye çıkıyor.`);
   };
 
   const handleResumeAutoSave = () => {
@@ -286,6 +300,7 @@ export default function App() {
       <>
         <StartScreen
           onStartCareer={handleStartCareer}
+          onStartPlayerCareer={handleStartPlayerCareer}
           onResumeAutoSave={handleResumeAutoSave}
           onOpenSaveManager={() => setSaveModalOpen(true)}
           onOpenMayhem={() => setMayhemOpen(true)}
@@ -336,8 +351,16 @@ export default function App() {
 
           {/* Primary Management Navigation */}
           <nav className="p-2.5 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible">
-            {NAV_ITEMS.map((item) => {
+            {NAV_ITEMS.filter((item) =>
+              careerState.careerMode === 'PLAYER'
+                ? !['tactics', 'transfers', 'club'].includes(item.id)
+                : true
+            ).map((item) => {
               const active = activeTab === item.id;
+              const label =
+                careerState.careerMode === 'PLAYER' && item.id === 'dashboard'
+                  ? 'Oyuncu Merkezi'
+                  : item.label;
               return (
                 <button
                   key={item.id}
@@ -353,7 +376,7 @@ export default function App() {
                 >
                   <span className="flex items-center gap-2.5">
                     <item.icon className="w-4 h-4 shrink-0" />
-                    {item.label}
+                    {label}
                   </span>
                   {item.id === 'inbox' && unreadInboxCount > 0 && (
                     <span className="font-mono-num text-[11px] font-bold text-[#E4BD67]">{unreadInboxCount}</span>

@@ -1091,7 +1091,8 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   const cleanName = (managerName || 'Koç').trim() || 'Koç';
   const { teams, players } = createInitialDatabase();
   const { schedules, standings } = createRegionalSchedules(teams);
-  const userTeam = teams.find(t => t.id === userTeamId);
+  const userTeam = teams.find(t => t.id === userTeamId) || teams[0];
+  userTeamId = userTeam.id;
   userTeam.sponsor = SPONSORS[0];
   teams.forEach(t => {
     ensureTeamExtras(t);
@@ -1165,6 +1166,235 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   return state;
 }
 
+/**
+ * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, archetype?: string }} [opts]
+ */
+export function createPlayerCareer({
+  playerName = 'Rookie',
+  role = 'MID',
+  sigChamps = /** @type {string[]} */ ([]),
+  teamId = 'bro',
+  archetype = 'Aggressive',
+} = {}) {
+  const cleanPlayer = (playerName || 'Rookie').trim() || 'Rookie';
+  const state = createNewCareer(teamId, 'AI Baş Koç');
+  const team = state.teams.find(t => t.id === teamId) || state.teams[0];
+  state.managerName = `${team.tag} Baş Koçu`;
+  state.careerMode = 'PLAYER';
+
+  // Demote existing starter in the user's chosen role to bench
+  for (const p of state.players) {
+    if (p.teamId === team.id && p.role === role && p.isStarter) {
+      p.isStarter = false;
+    }
+  }
+
+  const baseAttrs = {
+    laning: archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 76 : 74,
+    mechanics: archetype === 'Aggressive' ? 80 : archetype === 'Playmaker' ? 78 : 74,
+    macro: archetype === 'Playmaker' ? 77 : archetype === 'Weakside' ? 79 : 73,
+    teamfight: archetype === 'Consistent' ? 78 : archetype === 'Weakside' ? 77 : 75,
+    clutch: archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 77 : 74,
+    pool: Math.min(82, 72 + sigChamps.length * 3),
+  };
+  const ovr = calcOVR(baseAttrs);
+  const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 2);
+
+  const userPlayer = {
+    id: 'user_legend_player',
+    name: cleanPlayer,
+    nat: 'TR',
+    lang: REGION_LANG[team.region] || 'EN',
+    role,
+    age: 18,
+    ovr,
+    pot: 96,
+    attrs: baseAttrs,
+    sigChamps: cleanSigs,
+    style: archetype || 'Aggressive',
+    trait: archetype === 'Aggressive' ? 'Clutch' : archetype === 'Consistent' ? 'Leader' : 'Grinder',
+    teamId: team.id,
+    isStarter: true,
+    contractYears: 2,
+    salary: 4500,
+    marketValue: 180000,
+    morale: 84,
+    form: 78,
+    fatigue: 8,
+    injuredWeeks: 0,
+    benchWeeks: 0,
+    importWeeksLeft: 0,
+    teamGames: 4,
+    rolePromise: 'STAR',
+    mastery: Object.fromEntries(cleanSigs.map(cid => [cid, 3])),
+    stats: { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 },
+    careerHistory: [],
+  };
+
+  state.players.unshift(userPlayer);
+  state.userPlayerId = userPlayer.id;
+  state.playerCareer = {
+    skillPoints: 2,
+    coachTrust: 60,
+    soloqLP: 640,
+    fame: 15,
+    weeklyActionDone: false,
+    transferOffers: [],
+  };
+
+  addInboxMessage(state, {
+    title: `Efsane Ol: ${team.name} İlk 5 Forması Senin, ${cleanPlayer}!`,
+    sender: `${team.tag} Baş Koçu`,
+    category: 'BOARD',
+    priority: 'HIGH',
+    body: `Hoş geldin ${cleanPlayer}! ${role} koridorunda ilk 5 şansını kaptın. Antrenman, SoloQ ve maç içi kritik kararlarınla OVR'ni yükselt; güvenimi kazanırsan Draft'ta istediğin şampiyonları da seçeceğim.`,
+  });
+
+  return state;
+}
+
+/**
+ * @param {any} state
+ * @param {string} activityType
+ * @param {string | null} [attrKey]
+ */
+export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return { ok: false, msg: 'Oyuncu kariyeri aktif değil.' };
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const pc = state.playerCareer;
+  if (!p) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+
+  if (activityType === 'TRAIN_ATTR') {
+    if ((pc.skillPoints || 0) <= 0) return { ok: false, msg: 'Yeterli Gelişim Puanın yok (Maç veya SoloQ ile kazan).' };
+    if (!attrKey || p.attrs[attrKey] === undefined) return { ok: false, msg: 'Geçersiz özellik.' };
+    if (p.attrs[attrKey] >= 99) return { ok: false, msg: `${attrKey} zaten maksimum (99)!` };
+    p.attrs[attrKey] = Math.min(99, p.attrs[attrKey] + 1);
+    p.ovr = calcOVR(p.attrs);
+    pc.skillPoints--;
+    recalculatePlayerMarketValue(state, p, true);
+    return { ok: true, msg: `${attrKey.toUpperCase()} +1 geliştirildi! Güncel OVR: ${p.ovr}` };
+  }
+
+  if (pc.weeklyActionDone) {
+    return { ok: false, msg: 'Bu hafta kişisel aktiviteni zaten yaptın.' };
+  }
+
+  if (activityType === 'SOLOQ') {
+    const lpGain = Math.round(25 + Math.random() * 28);
+    pc.soloqLP += lpGain;
+    p.form = Math.min(99, (p.form || 75) + 2);
+    p.fatigue = Math.min(100, (p.fatigue || 0) + 6);
+    const gotPoint = Math.random() < 0.55;
+    if (gotPoint) pc.skillPoints++;
+    pc.weeklyActionDone = true;
+    return {
+      ok: true,
+      msg: `SoloQ seansı tamamlandı (+${lpGain} LP, +2 Form${gotPoint ? ', +1 Gelişim Puanı!' : ''}).`,
+    };
+  }
+
+  if (activityType === 'VOD_COACH') {
+    pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 5);
+    p.fatigue = Math.min(100, (p.fatigue || 0) + 3);
+    if (Math.random() < 0.35 && p.attrs.macro < 99) {
+      p.attrs.macro++;
+      p.ovr = calcOVR(p.attrs);
+    }
+    pc.weeklyActionDone = true;
+    return { ok: true, msg: `Koç ile birebir VOD analizi yapıldı (Koç Güveni +5 → %${pc.coachTrust}).` };
+  }
+
+  if (activityType === 'REST') {
+    p.fatigue = Math.max(0, (p.fatigue || 0) - 18);
+    p.morale = Math.min(100, (p.morale || 75) + 6);
+    pc.weeklyActionDone = true;
+    return { ok: true, msg: `Dinlenme günü tamamlandı (Yorgunluk -18, Moral +6).` };
+  }
+
+  if (activityType === 'STREAM') {
+    pc.fame = Math.min(100, (pc.fame || 10) + 4);
+    p.morale = Math.min(100, (p.morale || 75) + 3);
+    p.fatigue = Math.min(100, (p.fatigue || 0) + 4);
+    pc.coachTrust = Math.max(10, (pc.coachTrust || 50) - 1);
+    pc.weeklyActionDone = true;
+    return { ok: true, msg: `Yayın açıldı (+4 Şöhret, +3 Moral, Koç Güveni -1).` };
+  }
+
+  if (activityType === 'SEEK_TRANSFER') {
+    if (p.ovr < 78) {
+      return { ok: false, msg: `Büyük kulüplerin radarına girmek için OVR en az 78 olmalı (Mevcut: ${p.ovr}).` };
+    }
+    const targets = state.teams
+      .filter(t => t.id !== state.userTeamId && t.prestige >= 78)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 2);
+    pc.transferOffers = targets.map(t => ({
+      teamId: t.id,
+      teamName: t.name,
+      tag: t.tag,
+      region: t.region,
+      prestige: t.prestige,
+      salary: Math.round(p.salary * (1.35 + (t.prestige - 75) * 0.02)),
+    }));
+    pc.weeklyActionDone = true;
+    return {
+      ok: true,
+      msg: targets.length
+        ? `${targets.map(t => t.tag).join(' ve ')} kulüplerinden transfer teklifi geldi!`
+        : 'Şu an uygun bir büyük kulüp teklifi bulunamadı.',
+    };
+  }
+
+  return { ok: false, msg: 'Geçersiz aktivite.' };
+}
+
+export function acceptPlayerTransferOffer(state, targetTeamId) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return { ok: false, msg: 'Geçersiz mod.' };
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const oldTeam = state.teams.find(t => t.id === state.userTeamId);
+  const newTeam = state.teams.find(t => t.id === targetTeamId);
+  if (!p || !newTeam) return { ok: false, msg: 'Kulüp bulunamadı.' };
+
+  if (oldTeam) {
+    if (!Array.isArray(p.careerHistory)) p.careerHistory = [];
+    p.careerHistory.unshift({
+      season: state.season,
+      teamTag: oldTeam.tag,
+      teamName: oldTeam.name,
+      region: oldTeam.region,
+      games: p.stats?.games || 0,
+      wins: p.stats?.wins || 0,
+      ovr: p.ovr,
+    });
+  }
+
+  // Demote existing starter in same role on newTeam
+  for (const op of state.players) {
+    if (op.teamId === newTeam.id && op.role === p.role && op.isStarter) op.isStarter = false;
+  }
+
+  const offer = (state.playerCareer.transferOffers || []).find(o => o.teamId === targetTeamId);
+  p.teamId = newTeam.id;
+  p.isStarter = true;
+  p.salary = offer?.salary || Math.round(p.salary * 1.4);
+  p.lang = REGION_LANG[newTeam.region] || p.lang;
+  p.teamGames = 0;
+  state.userTeamId = newTeam.id;
+  state.managerName = `${newTeam.tag} Baş Koçu`;
+  state.playerCareer.coachTrust = 55;
+  state.playerCareer.transferOffers = [];
+
+  addInboxMessage(state, {
+    title: `Büyük Transfer: ${p.name} → ${newTeam.name}!`,
+    sender: `${newTeam.tag} Yönetimi`,
+    category: 'TRANSFER',
+    priority: 'HIGH',
+    body: `${newTeam.name} (${newTeam.region}) ile yeni sözleşme imzaladın! Haftalık maaşın ${formatMoney(p.salary)}. Yeni takımında kendini kanıtlama zamanı.`,
+  });
+
+  return { ok: true, msg: `${newTeam.name} kulübüne transfer oldun!` };
+}
+
 export function getCurrentPatch(state) {
   const yrNum = state.season || 2027;
   const yr = yrNum >= 2100 ? String(yrNum) : String(yrNum).slice(-2);
@@ -1217,10 +1447,19 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
       state.records.currentStreak++;
       if (state.records.currentStreak > state.records.bestStreak) state.records.bestStreak = state.records.currentStreak;
       bumpManagerRep(state, isHighStage ? 1.2 : 0.6, 'tacticalRep', isHighStage ? 1.5 : 0.7);
+      if (state.careerMode === 'PLAYER' && state.playerCareer) {
+        state.playerCareer.skillPoints = (state.playerCareer.skillPoints || 0) + 1;
+        state.playerCareer.coachTrust = Math.min(100, (state.playerCareer.coachTrust || 55) + 3);
+        state.playerCareer.fame = Math.min(100, (state.playerCareer.fame || 15) + 2);
+        state.playerCareer.soloqLP = (state.playerCareer.soloqLP || 600) + 15;
+      }
     } else {
       state.records.careerLosses++;
       state.records.currentStreak = 0;
       bumpManagerRep(state, -0.4, 'tacticalRep', -0.4);
+      if (state.careerMode === 'PLAYER' && state.playerCareer) {
+        state.playerCareer.coachTrust = Math.max(15, (state.playerCareer.coachTrust || 55) - 2);
+      }
     }
   }
 
@@ -1824,6 +2063,7 @@ export function respondIncomingOffer(state, offerId, accept) {
 function runWeeklyClubTick(state) {
   ensureCalendarState(state);
   state.scrimDoneThisWeek = false;
+  if (state.playerCareer) state.playerCareer.weeklyActionDone = false;
   if ((state.koreanBootcampWeeks || 0) > 0) state.koreanBootcampWeeks--;
   for (const team of state.teams) {
     ensureTeamExtras(team);

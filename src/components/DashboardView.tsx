@@ -33,6 +33,8 @@ import {
   acceptJobOffer,
   dismissManagerJobOffer,
   getManagerProfile,
+  runPlayerWeeklyActivity,
+  acceptPlayerTransferOffer,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -80,6 +82,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     () => (state.notifications || []).filter((n: any) => !n.read && n.priority === 'URGENT').length,
     [state]
   );
+  const isPlayerMode = state.careerMode === 'PLAYER';
+  const userPlayer = useMemo(
+    () => (isPlayerMode ? state.players.find((p: any) => p.id === state.userPlayerId) : null),
+    [state, isPlayerMode]
+  );
+  const pc = state.playerCareer;
 
   const blueTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.blueId) : null;
   const redTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.redId) : null;
@@ -189,8 +197,142 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Manager Career Profile Strip */}
-      <div className="bg-[#121722] border border-white/[0.08] rounded-lg px-5 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+      {/* Manager Career Profile Strip or Be a Legend Player Career Panel */}
+      {isPlayerMode && userPlayer && pc ? (
+        <div className="bg-[#121722] border border-[#C89B3C]/40 rounded-lg p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-3">
+            <div>
+              <div className="text-xs text-[#E4BD67] font-semibold">
+                Efsane Ol · {userPlayer.role} · {userPlayer.age} Yaş · İmza:{' '}
+                {(userPlayer.sigChamps || []).map((id: string) => CHAMPION_MAP[id]?.name || id).join(', ')}
+              </div>
+              <h2 className="font-display text-2xl font-bold text-white mt-0.5">
+                {userPlayer.name} — OVR {userPlayer.ovr} (POT {userPlayer.pot})
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 font-mono-num text-xs">
+              <div>
+                <span className="text-slate-400">Koç Güveni:</span>{' '}
+                <span className="font-bold text-emerald-400">%{pc.coachTrust}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">SoloQ:</span>{' '}
+                <span className="font-bold text-sky-400">{pc.soloqLP} LP</span>
+              </div>
+              <div>
+                <span className="text-slate-400">Şöhret:</span>{' '}
+                <span className="font-bold text-[#E4BD67]">{pc.fame}/100</span>
+              </div>
+              <div>
+                <span className="text-slate-400">Yorgunluk:</span>{' '}
+                <span className={`font-bold ${userPlayer.fatigue >= 60 ? 'text-rose-400' : 'text-white'}`}>
+                  %{Math.round(userPlayer.fatigue || 0)}
+                </span>
+              </div>
+              <div className="px-2.5 py-1 rounded bg-[#171E2C] border border-[#C89B3C]/50 text-[#E4BD67] font-bold">
+                Gelişim Puanı: {pc.skillPoints || 0}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            {/* Attributes + Skill Points */}
+            <div className="lg:col-span-6 grid grid-cols-3 sm:grid-cols-6 gap-2 text-center font-mono-num">
+              {[
+                { key: 'laning', label: 'Koridor' },
+                { key: 'mechanics', label: 'Mekanik' },
+                { key: 'macro', label: 'Makro' },
+                { key: 'teamfight', label: 'Savaş' },
+                { key: 'clutch', label: 'Clutch' },
+                { key: 'pool', label: 'Havuz' },
+              ].map((at) => (
+                <div key={at.key} className="bg-[#0B0E14] border border-white/[0.08] rounded p-2 space-y-1">
+                  <div className="text-[10px] text-slate-500">{at.label}</div>
+                  <div className="text-base font-bold text-white">{userPlayer.attrs?.[at.key] ?? 75}</div>
+                  <button
+                    disabled={(pc.skillPoints || 0) <= 0}
+                    onClick={() => {
+                      soundFx.draftLock();
+                      const r = runPlayerWeeklyActivity(state, 'TRAIN_ATTR', at.key);
+                      onUpdate(r.msg);
+                    }}
+                    className={`w-full py-1 rounded text-[10px] font-bold ${
+                      (pc.skillPoints || 0) > 0
+                        ? 'bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] cursor-pointer'
+                        : 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
+                    }`}
+                  >
+                    +1
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Weekly Personal Activities */}
+            <div className="lg:col-span-6 flex flex-wrap gap-2 items-center">
+              {[
+                { id: 'SOLOQ', label: 'SoloQ Kas (+LP, +Puan)' },
+                { id: 'VOD_COACH', label: 'Koçla VOD (+5 Güven)' },
+                { id: 'REST', label: 'Dinlen (-18 Yorgunluk)' },
+                { id: 'STREAM', label: 'Yayın Aç (+4 Şöhret)' },
+                { id: 'SEEK_TRANSFER', label: 'Büyük Kulüp Teklifi Ara' },
+              ].map((act) => (
+                <button
+                  key={act.id}
+                  disabled={pc.weeklyActionDone}
+                  onClick={() => {
+                    soundFx.click();
+                    const r = runPlayerWeeklyActivity(state, act.id);
+                    onUpdate(r.msg);
+                  }}
+                  className={`px-3 py-2 rounded-md border text-xs font-semibold whitespace-nowrap ${
+                    pc.weeklyActionDone
+                      ? 'border-white/[0.05] bg-[#0B0E14]/50 text-slate-600 cursor-not-allowed'
+                      : 'border-[#C89B3C]/40 bg-[#171E2C] hover:border-[#C89B3C] text-slate-200 cursor-pointer'
+                  }`}
+                >
+                  {act.label}
+                </button>
+              ))}
+              {pc.weeklyActionDone && (
+                <span className="text-[11px] text-slate-400">Bu haftalık kişisel aktivite tamamlandı.</span>
+              )}
+            </div>
+          </div>
+
+          {Array.isArray(pc.transferOffers) && pc.transferOffers.length > 0 && (
+            <div className="pt-3 border-t border-white/[0.08] space-y-2">
+              <div className="text-xs font-bold text-[#E4BD67]">Sana Gelen Büyük Kulüp Transfer Teklifleri</div>
+              <div className="flex flex-wrap gap-3">
+                {pc.transferOffers.map((off: any) => (
+                  <div
+                    key={off.teamId}
+                    className="bg-[#0B0E14] border border-white/[0.1] rounded-md px-3.5 py-2 flex items-center gap-3 text-xs"
+                  >
+                    <div>
+                      <span className="font-bold text-white">{off.teamName}</span>{' '}
+                      <span className="text-slate-400 font-mono-num">
+                        ({off.region} · Maaş {formatMoney(off.salary)}/hf)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        soundFx.trophyFanfare();
+                        const r = acceptPlayerTransferOffer(state, off.teamId);
+                        onUpdate(r.msg);
+                      }}
+                      className="px-3 py-1 rounded bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] font-bold cursor-pointer"
+                    >
+                      İmzala
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-[#121722] border border-white/[0.08] rounded-lg px-5 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
         <div className="flex flex-wrap items-center gap-4 min-w-0">
           <div className="flex items-center gap-2">
             <Award className="w-4 h-4 text-[#E4BD67] shrink-0" />
@@ -231,6 +373,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         )}
       </div>
+      )}
 
       {/* Pending Drama Event Alert (Interactive FM Locker Room Event) */}
       {state.pendingEvent && (
