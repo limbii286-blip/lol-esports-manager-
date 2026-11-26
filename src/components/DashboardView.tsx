@@ -215,6 +215,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <h2 className="font-display text-2xl font-bold text-white mt-0.5">
                 {userPlayer.name} — OVR {userPlayer.ovr} (POT {userPlayer.pot})
               </h2>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono-num text-slate-300 mt-1">
+                <span>
+                  Oyun Tarzı:{' '}
+                  <strong className={pc.styleUnlocked ? 'text-[#E4BD67]' : 'text-slate-400'}>
+                    {pc.styleUnlocked ? userPlayer.style : `Şekilleniyor (${Math.min(8, pc.decisionCount || 0)}/8 karar)`}
+                  </strong>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span>
+                  Kişilik:{' '}
+                  <strong className={pc.traitUnlocked ? 'text-emerald-400' : 'text-slate-400'}>
+                    {pc.traitUnlocked ? userPlayer.trait : `Gelişiyor (${Math.min(14, pc.decisionCount || 0)}/14 karar)`}
+                  </strong>
+                </span>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-4 font-mono-num text-xs">
               <div>

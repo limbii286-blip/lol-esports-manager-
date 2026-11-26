@@ -1167,14 +1167,13 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 /**
- * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, archetype?: string, startInAcademy?: boolean }} [opts]
+ * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, startInAcademy?: boolean }} [opts]
  */
 export function createPlayerCareer({
   playerName = 'Rookie',
   role = 'MID',
   sigChamps = /** @type {string[]} */ ([]),
   teamId = 'bro',
-  archetype = 'Aggressive',
   startInAcademy = true,
 } = {}) {
   const cleanPlayer = (playerName || 'Rookie').trim() || 'Rookie';
@@ -1192,14 +1191,14 @@ export function createPlayerCareer({
     }
   }
 
-  const statOffset = startInAcademy ? -6 : 0;
+  const base = startInAcademy ? 69 : 75;
   const baseAttrs = {
-    laning: (archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 76 : 74) + statOffset,
-    mechanics: (archetype === 'Aggressive' ? 80 : archetype === 'Playmaker' ? 78 : 74) + statOffset,
-    macro: (archetype === 'Playmaker' ? 77 : archetype === 'Weakside' ? 79 : 73) + statOffset,
-    teamfight: (archetype === 'Consistent' ? 78 : archetype === 'Weakside' ? 77 : 75) + statOffset,
-    clutch: (archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 77 : 74) + statOffset,
-    pool: Math.min(82, (startInAcademy ? 67 : 72) + sigChamps.length * 3),
+    laning: base,
+    mechanics: base + 1,
+    macro: base - 1,
+    teamfight: base,
+    clutch: base,
+    pool: Math.min(80, (startInAcademy ? 67 : 72) + (sigChamps?.length ? 2 : 0)),
   };
   const ovr = calcOVR(baseAttrs);
   const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 1);
@@ -1216,8 +1215,8 @@ export function createPlayerCareer({
     pot: 96,
     attrs: baseAttrs,
     sigChamps: cleanSigs,
-    style: archetype || 'Aggressive',
-    trait: archetype === 'Aggressive' ? 'Clutch' : archetype === 'Consistent' ? 'Leader' : 'Grinder',
+    style: 'Şekilleniyor',
+    trait: 'Çaylak',
     teamId: team.id,
     isStarter: !startInAcademy,
     contractYears: 2,
@@ -1245,6 +1244,7 @@ export function createPlayerCareer({
     fame: startInAcademy ? 8 : 15,
     personalEarnings: 0,
     interviewDoneThisWeek: false,
+    contractTriedThisWeek: false,
     weeklyActionDone: false,
     academyPlayedThisWeek: false,
     inAcademy: Boolean(startInAcademy),
@@ -1254,6 +1254,11 @@ export function createPlayerCareer({
     academyWins: 0,
     academyMvps: 0,
     transferOffers: [],
+    styleUnlocked: false,
+    traitUnlocked: false,
+    decisionCount: 0,
+    stylePoints: { Aggressive: 0, Playmaker: 0, Consistent: 0, Weakside: 0 },
+    traitPoints: { Clutch: 0, Leader: 0, Grinder: 0, Ego: 0, Streamer: 0 },
   };
 
   addInboxMessage(state, {
@@ -1490,18 +1495,21 @@ export function runPlayerInterview(state, tone) {
   if (tone === 'humble') {
     pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 4);
     p.morale = Math.min(100, (p.morale || 75) + 3);
-    return { ok: true, msg: 'Mütevazı röportaj verdin: Koç Güveni +4, Moral +3.' };
+    const unlock = recordPlayerBehavior(state, 'Consistent', 'Leader', 1);
+    return { ok: true, msg: `Mütevazı röportaj verdin: Koç Güveni +4, Moral +3.${unlock ? ' ' + unlock : ''}` };
   }
   if (tone === 'confident') {
     pc.fame = Math.min(100, (pc.fame || 10) + 6);
     p.form = Math.min(99, (p.form || 75) + 2);
     pc.coachTrust = Math.max(15, (pc.coachTrust || 50) - 1);
-    return { ok: true, msg: 'İddialı / Trash-Talk açıklaması gündem oldu: Şöhret +6, Form +2, Koç Güveni -1.' };
+    const unlock = recordPlayerBehavior(state, 'Aggressive', 'Ego', 2);
+    return { ok: true, msg: `İddialı / Trash-Talk açıklaması gündem oldu: Şöhret +6, Form +2, Koç Güveni -1.${unlock ? ' ' + unlock : ''}` };
   }
   // team-first
   team.synergy = Math.min(100, +(team.synergy + 1.5).toFixed(1));
   pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 3);
-  return { ok: true, msg: 'Takım arkadaşlarını övdün: Takım Sinerjisi +1.5, Koç Güveni +3.' };
+  const unlock = recordPlayerBehavior(state, 'Playmaker', 'Leader', 2);
+  return { ok: true, msg: `Takım arkadaşlarını övdün: Takım Sinerjisi +1.5, Koç Güveni +3.${unlock ? ' ' + unlock : ''}` };
 }
 
 export function negotiatePlayerContract(state) {
@@ -1528,6 +1536,7 @@ export function negotiatePlayerContract(state) {
   const pct = Math.round(successProb * 100);
 
   pc.contractTriedThisWeek = true;
+  recordPlayerBehavior(state, null, 'Ego', 1);
   if (Math.random() < successProb) {
     const raiseMult = 1.25 + Math.min(0.2, (p.ovr - 74) * 0.015);
     p.salary = Math.round((p.salary || 4500) * raiseMult);
@@ -1550,6 +1559,75 @@ export function negotiatePlayerContract(state) {
     chancePct: pct,
     msg: `Yönetim zam talebini reddetti (%${pct} şanstı). Koç Güveni -2, Moral -3. Bütçe veya MVP performansıyla tekrar dene.`,
   };
+}
+
+/**
+ * @param {any} state
+ * @param {string | null} [styleKey]
+ * @param {string | null} [traitKey]
+ * @param {number} [weight]
+ */
+export function recordPlayerBehavior(state, styleKey = null, traitKey = null, weight = 1) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return null;
+  const pc = state.playerCareer;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  if (!p) return null;
+  if (!pc.stylePoints) pc.stylePoints = { Aggressive: 0, Playmaker: 0, Consistent: 0, Weakside: 0 };
+  if (!pc.traitPoints) pc.traitPoints = { Clutch: 0, Leader: 0, Grinder: 0, Ego: 0, Streamer: 0 };
+
+  pc.decisionCount = (pc.decisionCount || 0) + 1;
+  if (styleKey && pc.stylePoints[styleKey] !== undefined) {
+    pc.stylePoints[styleKey] += weight;
+  }
+  if (traitKey && pc.traitPoints[traitKey] !== undefined) {
+    pc.traitPoints[traitKey] += weight;
+  }
+
+  let unlockedMsg = null;
+  // Require at least 8 choices/actions before Playstyle emerges
+  if (!pc.styleUnlocked && pc.decisionCount >= 8) {
+    const topStyle = Object.entries(pc.stylePoints).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Aggressive';
+    p.style = topStyle;
+    pc.styleUnlocked = true;
+    const styleLabels = {
+      Aggressive: 'Agresif Taşıyıcı (Aggressive)',
+      Playmaker: 'Oyun Kurucu (Playmaker)',
+      Consistent: 'İstikrarlı Çapa (Consistent)',
+      Weakside: 'Takım Oyuncusu (Weakside)',
+    };
+    addInboxMessage(state, {
+      title: `Oyun Tarzın Şekillendi: ${styleLabels[topStyle] || topStyle}`,
+      sender: 'Analist Ekibi',
+      category: 'NEWS',
+      priority: 'HIGH',
+      body: `Şu ana kadar maçlarda ve antrenmanlarda verdiğin kararlar sonucunda sahadaki kimliğin netleşti: ${styleLabels[topStyle] || topStyle}!`,
+    });
+    unlockedMsg = `Oyun Tarzın Açıldı: ${styleLabels[topStyle] || topStyle}!`;
+  }
+
+  // Require at least 14 choices/actions before Personality Trait emerges
+  if (!pc.traitUnlocked && pc.decisionCount >= 14) {
+    const topTrait = Object.entries(pc.traitPoints).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Grinder';
+    p.trait = topTrait;
+    pc.traitUnlocked = true;
+    const traitLabels = {
+      Clutch: 'Clutch (Büyük Maç Yıldızı)',
+      Leader: 'Lider (Soyunma Odası Kaptanı)',
+      Grinder: 'Grinder (Çalışkan SoloQ Canavarı)',
+      Ego: 'Ego (Kendine Güvenen Süperstar)',
+      Streamer: 'Streamer (Sosyal Medya Fenomeni)',
+    };
+    addInboxMessage(state, {
+      title: `Kişiliğin Belirlendi: ${traitLabels[topTrait] || topTrait}`,
+      sender: 'Performans & Psikoloji Ekibi',
+      category: 'NEWS',
+      priority: 'HIGH',
+      body: `Kariyer başlangıcındaki seçimlerin karakterini ortaya çıkardı: ${traitLabels[topTrait] || topTrait}. Bu özellik kritik maçlarda ve medya ilişkilerinde etkili olacak!`,
+    });
+    unlockedMsg = `Kişiliğin Açıldı: ${traitLabels[topTrait] || topTrait}!`;
+  }
+
+  return unlockedMsg;
 }
 
 /**
@@ -1586,9 +1664,10 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
     const gotPoint = Math.random() < 0.55;
     if (gotPoint) pc.skillPoints++;
     pc.weeklyActionDone = true;
+    const unlock = recordPlayerBehavior(state, 'Consistent', 'Grinder', 1);
     return {
       ok: true,
-      msg: `SoloQ seansı tamamlandı (+${lpGain} LP, +2 Form${gotPoint ? ', +1 Gelişim Puanı!' : ''}).`,
+      msg: `SoloQ seansı tamamlandı (+${lpGain} LP, +2 Form${gotPoint ? ', +1 Gelişim Puanı!' : ''}).${unlock ? ' ' + unlock : ''}`,
     };
   }
 
@@ -1600,7 +1679,8 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
       p.ovr = calcOVR(p.attrs);
     }
     pc.weeklyActionDone = true;
-    return { ok: true, msg: `Koç ile birebir VOD analizi yapıldı (Koç Güveni +5 → %${pc.coachTrust}).` };
+    const unlock = recordPlayerBehavior(state, 'Weakside', 'Leader', 1);
+    return { ok: true, msg: `Koç ile birebir VOD analizi yapıldı (Koç Güveni +5 → %${pc.coachTrust}).${unlock ? ' ' + unlock : ''}` };
   }
 
   if (activityType === 'REST') {
@@ -1616,7 +1696,8 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
     p.fatigue = Math.min(100, (p.fatigue || 0) + 4);
     pc.coachTrust = Math.max(10, (pc.coachTrust || 50) - 1);
     pc.weeklyActionDone = true;
-    return { ok: true, msg: `Yayın açıldı (+4 Şöhret, +3 Moral, Koç Güveni -1).` };
+    const unlock = recordPlayerBehavior(state, 'Aggressive', 'Streamer', 2);
+    return { ok: true, msg: `Yayın açıldı (+4 Şöhret, +3 Moral, Koç Güveni -1).${unlock ? ' ' + unlock : ''}` };
   }
 
   if (activityType === 'SEEK_TRANSFER') {

@@ -14,7 +14,6 @@ interface StartScreenProps {
     role: string;
     sigChamps: string[];
     teamId: string;
-    archetype: string;
     startInAcademy: boolean;
   }) => void;
   onResumeAutoSave: () => void;
@@ -48,7 +47,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   // Be a Legend (Player Career) state
   const [playerName, setPlayerName] = useState<string>('Legend');
   const [playerRole, setPlayerRole] = useState<string>('MID');
-  const [playerArchetype, setPlayerArchetype] = useState<string>('Aggressive');
   const [sigChamps, setSigChamps] = useState<string[]>(['ahri']);
   const [startInAcademy, setStartInAcademy] = useState<boolean>(true);
   const [onlyUnderdogs, setOnlyUnderdogs] = useState<boolean>(true);
@@ -124,7 +122,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         role: playerRole,
         sigChamps,
         teamId: selectedTeam.id,
-        archetype: playerArchetype,
         startInAcademy,
       });
       return;
@@ -416,7 +413,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
               <div>
                 <div className="text-xs text-[#E4BD67] font-semibold">Efsane Ol — Pro Oyuncu Oluşturucu (16 Yaş)</div>
-                <h2 className="font-display text-2xl font-bold text-white">Koridorunu, Oyun Tarzını ve İmza Şampiyonunu Seç</h2>
+                <h2 className="font-display text-2xl font-bold text-white">Koridorunu ve İmza Şampiyonunu Seç</h2>
               </div>
               <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                 <input
@@ -447,28 +444,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     ))}
                   </div>
                 </div>
-                <div>
-                  <div className="text-[11px] text-slate-400 mb-1.5">Oyun Tarzı / Profil</div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { id: 'Aggressive', label: 'Mekanik Taşıyıcı' },
-                      { id: 'Playmaker', label: 'Oyun Kurucu' },
-                      { id: 'Consistent', label: 'İstikrarlı Çapa' },
-                      { id: 'Weakside', label: 'Takım Oyuncusu' },
-                    ].map((a) => (
-                      <button
-                        key={a.id}
-                        onClick={() => setPlayerArchetype(a.id)}
-                        className={`py-2 px-2.5 rounded text-xs font-semibold cursor-pointer ${
-                          playerArchetype === a.id
-                            ? 'bg-[#171E2C] border border-[#C89B3C] text-[#E4BD67]'
-                            : 'bg-[#0B0E14] border border-white/[0.08] text-slate-400'
-                        }`}
-                      >
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="bg-[#0B0E14] border border-white/[0.08] rounded p-3 text-[11px] text-slate-300 leading-relaxed">
+                  <span className="text-[#E4BD67] font-semibold">Dinamik Kimlik:</span> Oyun tarzın ve kişiliğin başlangıçta kilitli değil — maç içi kararların, SoloQ disiplinin ve basın röportajlarınla zaman içinde şekillenecek.
                 </div>
                 <div>
                   <div className="text-[11px] text-slate-400 mb-1.5">Başlangıç Ligi</div>

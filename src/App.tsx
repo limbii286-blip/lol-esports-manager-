@@ -145,7 +145,6 @@ export default function App() {
     role: string;
     sigChamps: string[];
     teamId: string;
-    archetype: string;
     startInAcademy: boolean;
   }) => {
     const st = createPlayerCareer(opts);

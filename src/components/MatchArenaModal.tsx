@@ -37,6 +37,7 @@ import {
   recordSeriesResult,
   recordAcademySeriesResult,
   applyPostMatchTeamTalk,
+  recordPlayerBehavior,
 } from '../engine/gameEngine.js';
 import { TOUCHLINE_SHOUTS, applyTouchlineShout } from '../engine/fmExtensions';
 import { soundFx } from '../engine/soundFx';
@@ -1385,9 +1386,27 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                               key={opt.id}
                               onClick={() => {
                                 const res = applyPlayerInGameDecision(liveState, userLegendPlayer.id, opt);
+                                const styleMap: Record<string, string> = {
+                                  AGGRO: 'Aggressive',
+                                  ROAM: 'Playmaker',
+                                  SAFE: 'Consistent',
+                                  OBJECTIVE: 'Weakside',
+                                };
+                                const traitKey =
+                                  opt.kind === 'AGGRO' && res.success
+                                    ? 'Clutch'
+                                    : opt.kind === 'ROAM' || opt.kind === 'OBJECTIVE'
+                                    ? 'Leader'
+                                    : 'Grinder';
+                                const unlock = recordPlayerBehavior(
+                                  careerState,
+                                  styleMap[opt.kind] || 'Consistent',
+                                  traitKey,
+                                  1
+                                );
                                 if (res.success) soundFx.killAlert();
                                 else soundFx.click();
-                                setShoutNotice(res.text);
+                                setShoutNotice(unlock ? `${res.text} · ${unlock}` : res.text);
                                 setPendingDecision(null);
                                 setIsPlaying(true);
                                 setLiveTick((t) => t + 1);
