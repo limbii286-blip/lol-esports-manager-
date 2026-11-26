@@ -16,6 +16,7 @@ import {
   Play,
   Home,
   Search,
+  Database,
 } from 'lucide-react';
 import {
   createNewCareer,
@@ -49,6 +50,7 @@ import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { PressConferenceModal } from './components/PressConferenceModal';
 import { SaveSlotsModal } from './components/SaveSlotsModal';
 import { WorldsMayhemModal } from './components/WorldsMayhemModal';
+import { DatabaseEditorModal } from './components/DatabaseEditorModal';
 
 const NAV_ITEMS: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
@@ -71,6 +73,7 @@ export default function App() {
   const [pressOpen, setPressOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [mayhemOpen, setMayhemOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [muted, setMuted] = useState(() => soundFx.isMuted());
   const [toast, setToast] = useState<string | null>(null);
   const [globalQuery, setGlobalQuery] = useState('');
@@ -328,6 +331,13 @@ export default function App() {
             Worlds Mayhem
           </button>
           <button
+            onClick={() => setEditorOpen(true)}
+            className="px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.03] flex items-center gap-2 cursor-pointer"
+          >
+            <Database className="w-3.5 h-3.5 text-[#E4BD67]" />
+            Veritabanı Editörü
+          </button>
+          <button
             onClick={() => setSaveModalOpen(true)}
             className="px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.03] flex items-center gap-2 cursor-pointer"
           >
@@ -543,6 +553,14 @@ export default function App() {
       )}
 
       {mayhemOpen && <WorldsMayhemModal onClose={() => setMayhemOpen(false)} />}
+
+      {editorOpen && (
+        <DatabaseEditorModal
+          state={careerState}
+          onUpdate={(msg) => commitState(careerState, msg)}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
 
       {/* Trophy & Prize Celebration Modal */}
       {careerState.pendingCelebration && (

@@ -289,6 +289,41 @@ export const DataHubView: React.FC<DataHubViewProps> = ({ state, userTeam, onSel
           )}
         </div>
       </div>
+
+      {/* Hall of Fame & Career Records Showcase */}
+      <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
+          <div className="text-sm font-bold text-white flex items-center gap-2">
+            <Award className="w-4 h-4 text-[#E4BD67]" />
+            Kariyer Rekorları & Hall of Fame (Şöhretler Müzesi)
+          </div>
+          <div className="font-mono-num text-xs text-slate-400">
+            Kariyer: <strong className="text-emerald-400">{state.records?.careerWins || 0}G</strong> –{' '}
+            <strong className="text-rose-400">{state.records?.careerLosses || 0}M</strong> · En İyi Seri:{' '}
+            <strong className="text-[#E4BD67]">{state.records?.bestStreak || 0}</strong>
+          </div>
+        </div>
+        {(state.records?.hallOfFame || []).length === 0 ? (
+          <div className="text-xs text-slate-400 py-3">
+            Worlds Finalleri MVP'leri ve kupa efsaneleri sezonlar ilerledikçe Hall of Fame vitrinine eklenecek.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            {(state.records.hallOfFame || []).slice(0, 8).map((h: any, idx: number) => (
+              <div key={idx} className="p-3 rounded-md bg-[#0B0E14] border border-white/[0.08] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{h.name}</span>
+                  <span className="font-mono-num text-[#E4BD67] font-bold">{h.titles}× Kupa</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono-num">
+                  {h.role} · {h.tag} · {h.lastSeason}
+                </div>
+                <div className="text-[11px] text-slate-500">{h.note}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

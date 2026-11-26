@@ -264,7 +264,7 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
             ctx.stroke();
           }
 
-          // 2. Jungle Camps (subtle glowing dots)
+          // 2. Jungle Camps (subtle glowing dots) & Vision Control Wards
           JUNGLE_CAMPS.forEach((camp, idx) => {
             const pulse = 0.45 + 0.25 * Math.sin(tick * 0.04 + idx);
             ctx.beginPath();
@@ -274,6 +274,54 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
             ctx.fill();
             ctx.globalAlpha = 1;
           });
+
+          // Control Wards around River / Baron / Dragon based on team vision & choke plan
+          const blueWardPts: [number, number][] = [
+            [36, 40],
+            [56, 62],
+            ...(st.blueTactics?.aheadPlan === 'choke' ? ([[42, 28], [62, 54]] as [number, number][]) : []),
+          ];
+          const redWardPts: [number, number][] = [
+            [64, 60],
+            [44, 38],
+            ...(st.redTactics?.aheadPlan === 'choke' ? ([[58, 72], [38, 46]] as [number, number][]) : []),
+          ];
+          const drawWard = (wx: number, wy: number, col: string) => {
+            const x = (wx / 100) * W;
+            const y = (wy / 100) * H;
+            ctx.beginPath();
+            ctx.arc(x, y, 16, 0, Math.PI * 2);
+            ctx.fillStyle = `${col}10`;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+            ctx.fillStyle = col;
+            ctx.fill();
+          };
+          if ((st.minute || 0) >= 4) {
+            blueWardPts.forEach(([wx, wy]) => drawWard(wx, wy, '#38BDF8'));
+            redWardPts.forEach(([wx, wy]) => drawWard(wx, wy, '#FB7185'));
+          }
+
+          // Jungler Tactical Path Line toward coach's selected laneFocus
+          const laneTargets: Record<string, [number, number]> = { TOP: [20, 20], MID: [50, 50], BOT: [80, 80] };
+          const drawJglPath = (side: 'blue' | 'red', tactics: any, col: string) => {
+            const jglPos = posMapRef.current[`${side}_JGL`];
+            const tgt = laneTargets[tactics?.laneFocus || 'MID'];
+            if (!jglPos || !tgt) return;
+            ctx.save();
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(jglPos.x, jglPos.y);
+            ctx.lineTo((tgt[0] / 100) * W, (tgt[1] / 100) * H);
+            ctx.strokeStyle = col;
+            ctx.globalAlpha = 0.28;
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            ctx.restore();
+          };
+          drawJglPath('blue', st.blueTactics, '#38BDF8');
+          drawJglPath('red', st.redTactics, '#FB7185');
 
           // 3. Animated Minion Waves on TOP, MID, BOT lanes (60 FPS marching & clashing)
           const wavePhase = (tick % 240) / 240; // 4-second wave loop
@@ -512,17 +560,25 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
             ctx.globalAlpha = 1;
           });
 
-          // 10. Smoothly Interpolated 10 Champion Tokens with Live HP Bars
+          // 10. Smoothly Interpolated 10 Champion Tokens with Live HP Bars & Respawn State
           allPlayers.forEach((p: any, idx: number) => {
             const key = `${p.side}_${p.role}`;
-            const targetX = ((p.x ?? 50) / 100) * W;
-            const targetY = ((p.y ?? 50) / 100) * H;
+            const isBlue = p.side === 'blue';
+            const isDead = (p.deadUntilMin || 0) > (st.minute || 0);
+            const targetX = ((isDead ? (isBlue ? 10 : 90) : (p.x ?? 50)) / 100) * W;
+            const targetY = ((isDead ? (isBlue ? 90 : 10) : (p.y ?? 50)) / 100) * H;
 
             // Check if champion is currently skirmishing near an enemy to animate dynamic HP bar
-            const inCombat = allPlayers.some(
-              (o: any) => o.side !== p.side && Math.hypot((o.x ?? 50) - (p.x ?? 50), (o.y ?? 50) - (p.y ?? 50)) < 14
-            );
-            const targetHp = inCombat ? 0.48 + 0.36 * (0.5 + 0.5 * Math.sin(tick * 0.12 + idx * 1.7)) : 1.0;
+            const inCombat =
+              !isDead &&
+              allPlayers.some(
+                (o: any) => o.side !== p.side && Math.hypot((o.x ?? 50) - (p.x ?? 50), (o.y ?? 50) - (p.y ?? 50)) < 14
+              );
+            const targetHp = isDead
+              ? 0.05
+              : inCombat
+              ? 0.48 + 0.36 * (0.5 + 0.5 * Math.sin(tick * 0.12 + idx * 1.7))
+              : 1.0;
 
             if (!posMapRef.current[key]) {
               posMapRef.current[key] = { x: targetX, y: targetY, hp: 1.0 };
@@ -535,24 +591,27 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
             const cx = posMapRef.current[key].x;
             const cy = posMapRef.current[key].y;
             const hpPct = posMapRef.current[key].hp;
-            const isBlue = p.side === 'blue';
-            const ringColor = isBlue ? '#38BDF8' : '#FB7185';
+            const ringColor = isDead ? '#64748B' : isBlue ? '#38BDF8' : '#FB7185';
 
             // Vision aura
-            ctx.beginPath();
-            ctx.arc(cx, cy, 19, 0, Math.PI * 2);
-            ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.08)' : 'rgba(251, 113, 133, 0.08)';
-            ctx.fill();
+            if (!isDead) {
+              ctx.beginPath();
+              ctx.arc(cx, cy, 19, 0, Math.PI * 2);
+              ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.08)' : 'rgba(251, 113, 133, 0.08)';
+              ctx.fill();
+            }
 
             // Live HP Bar above token
             const barW = 24;
             const barH = 3.5;
             ctx.fillStyle = 'rgba(11, 14, 20, 0.88)';
             ctx.fillRect(cx - barW / 2, cy - 16, barW, barH);
-            ctx.fillStyle = hpPct > 0.5 ? (isBlue ? '#38BDF8' : '#FB7185') : '#F59E0B';
-            ctx.fillRect(cx - barW / 2, cy - 16, barW * Math.max(0.12, hpPct), barH);
+            ctx.fillStyle = isDead ? '#475569' : hpPct > 0.5 ? (isBlue ? '#38BDF8' : '#FB7185') : '#F59E0B';
+            ctx.fillRect(cx - barW / 2, cy - 16, barW * Math.max(0.08, hpPct), barH);
 
             // Champion disc
+            ctx.save();
+            if (isDead) ctx.globalAlpha = 0.48;
             ctx.beginPath();
             ctx.arc(cx, cy, 10.5, 0, Math.PI * 2);
             ctx.fillStyle = '#0F172A';
@@ -564,16 +623,16 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
             // Champion inner accent
             ctx.beginPath();
             ctx.arc(cx, cy, 7.2, 0, Math.PI * 2);
-            ctx.fillStyle = p.champColor || ringColor;
-            ctx.globalAlpha = 0.88;
+            ctx.fillStyle = isDead ? '#334155' : p.champColor || ringColor;
+            ctx.globalAlpha = isDead ? 0.55 : 0.88;
             ctx.fill();
-            ctx.globalAlpha = 1;
+            ctx.restore();
 
-            // Role initial
+            // Role initial or Respawn X
             ctx.font = '700 8px "JetBrains Mono", monospace';
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(p.role.slice(0, 1), cx, cy + 3);
+            ctx.fillStyle = isDead ? '#94A3B8' : '#FFFFFF';
+            ctx.fillText(isDead ? '✕' : p.role.slice(0, 1), cx, cy + 3);
 
             // Player name micro-label
             ctx.font = '600 8.5px "Plus Jakarta Sans", sans-serif';
@@ -617,8 +676,11 @@ export const LiveRiftCanvas: React.FC<LiveRiftCanvasProps> = ({ matchState, clas
   return (
     <div className={`relative rounded-lg overflow-hidden border border-white/[0.1] bg-[#0B0E14] ${className}`}>
       <canvas ref={canvasRef} width={460} height={460} className="w-full h-auto block aspect-square" />
-      <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-[#0B0E14]/80 border border-white/[0.1] text-[10px] font-mono-num text-slate-300 pointer-events-none">
-        CANLI 2D · 60 FPS
+      <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-[#0B0E14]/80 border border-white/[0.1] text-[10px] font-mono-num text-slate-300 pointer-events-none flex items-center gap-2">
+        <span>CANLI 2D · 60 FPS</span>
+        {matchState?.riftElement && (
+          <span style={{ color: matchState.riftElement.color }}>· {matchState.riftElement.name}</span>
+        )}
       </div>
     </div>
   );

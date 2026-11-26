@@ -11,8 +11,11 @@ import {
   getTeamRoster,
   getTeamWeeklyWages,
   getTeamWageCap,
+  getTeamLuxuryTax,
+  getTeamFacilityUpkeep,
   getAgeFatigueProfile,
   playWeeklyScrim,
+  startKoreanBootcamp,
   upgradeFacility,
   upgradeStaff,
   promoteAcademyPlayer,
@@ -38,6 +41,15 @@ export const TrainingClubView: React.FC<TrainingClubViewProps> = ({
   const roster = useMemo(() => getTeamRoster(state, userTeam.id), [state, userTeam.id]);
   const weeklyWages = useMemo(() => getTeamWeeklyWages(state, userTeam.id), [state, userTeam.id]);
   const wageCap = useMemo(() => getTeamWageCap(userTeam), [userTeam]);
+  const luxuryTax = useMemo(() => getTeamLuxuryTax(state, userTeam.id), [state, userTeam.id]);
+  const facilityUpkeep = useMemo(() => getTeamFacilityUpkeep(userTeam), [userTeam]);
+  const scrimRep = userTeam.scrimRep ?? Math.min(85, Math.max(52, userTeam.prestige - 8));
+
+  const handleBootcamp = () => {
+    soundFx.objectiveSecured();
+    const res = startKoreanBootcamp(state);
+    onUpdate(res.reason);
+  };
 
   const scrimPartners = useMemo(
     () => state.teams.filter((t: any) => t.id !== userTeam.id).sort((a: any, b: any) => b.prestige - a.prestige),
@@ -203,6 +215,26 @@ export const TrainingClubView: React.FC<TrainingClubViewProps> = ({
               >
                 {state.scrimDoneThisWeek ? 'Bu Hafta Scrim Tamamlandı' : 'Scrim Bloğunu Oyna'}
               </button>
+
+              <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="text-slate-400 font-mono-num">
+                  Scrim İtibarı: <strong className="text-[#E4BD67]">{scrimRep}/100</strong>
+                  {(state.koreanBootcampWeeks || 0) > 0 && (
+                    <span className="text-emerald-400 ml-2">· Seul Kampı ({state.koreanBootcampWeeks}h)</span>
+                  )}
+                </div>
+                <button
+                  disabled={(state.koreanBootcampWeeks || 0) > 0}
+                  onClick={handleBootcamp}
+                  className={`px-3 py-1.5 rounded-md border text-[11px] font-semibold ${
+                    (state.koreanBootcampWeeks || 0) > 0
+                      ? 'border-white/[0.06] text-slate-500 cursor-not-allowed'
+                      : 'border-[#C89B3C]/60 text-[#E4BD67] hover:bg-[#C89B3C]/15 cursor-pointer'
+                  }`}
+                >
+                  {(state.koreanBootcampWeeks || 0) > 0 ? 'Kore Kampında' : 'Kore Bootcamp ($180K)'}
+                </button>
+              </div>
             </div>
 
             <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-5 space-y-3">
@@ -260,6 +292,10 @@ export const TrainingClubView: React.FC<TrainingClubViewProps> = ({
             <div className="text-slate-500">Haftalık Maaş / Limit</div>
             <div className="text-sm font-bold text-white">
               {formatMoney(weeklyWages)} / {formatMoney(wageCap)}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              Bakım: {formatMoney(facilityUpkeep)}/hf
+              {luxuryTax > 0 && <span className="text-rose-400 ml-2">· Lüks Vergisi: {formatMoney(luxuryTax)}/hf</span>}
             </div>
           </div>
         </div>

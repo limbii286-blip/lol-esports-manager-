@@ -11,6 +11,41 @@ function rand(min, max) { return min + Math.random() * (max - min); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+export const DRAGON_ELEMENTS = [
+  { id: 'INFERNAL', name: 'Alev Ejderi', soulName: 'Alev Ruhu', color: '#EF4444', bonusDesc: 'Takım savaşlarında ekstra patlama hasarı (+4.0)' },
+  { id: 'MOUNTAIN', name: 'Dağ Ejderi', soulName: 'Dağ Ruhu', color: '#D97706', bonusDesc: 'Kalkan ve kule savunması direnci (+3.8)' },
+  { id: 'OCEAN', name: 'Okyanus Ejderi', soulName: 'Okyanus Ruhu', color: '#0EA5E9', bonusDesc: 'Uzun takım savaşlarında yüksek can yenilenmesi (+4.2)' },
+  { id: 'CLOUD', name: 'Bulut Ejderi', soulName: 'Bulut Ruhu', color: '#94A3B8', bonusDesc: 'Harita rotasyonu ve objektif temposu (+3.6)' },
+  { id: 'HEXTECH', name: 'Hextech Ejderi', soulName: 'Hextech Ruhu', color: '#38BDF8', bonusDesc: 'Yetenek hızı ve zincirleme engage gücü (+4.1)' },
+  { id: 'CHEMTECH', name: 'Kimya Ejderi', soulName: 'Kimya Ruhu', color: '#22C55E', bonusDesc: 'Düşük canda clutch direnç ve geri dönüş gücü (+3.9)' },
+];
+
+const ROLE_ITEM_BUILDS = {
+  TOP_AD: ['Black Cleaver', 'Sterak', 'Death Dance', 'Guardian Angel', 'Maw', 'JakSho'],
+  TOP_AP: ['Riftmaker', 'Liandry', 'Zhonya', 'Rabadon', 'Void Staff', 'Banshee'],
+  TOP_Tank: ['Sunfire', 'JakSho', 'Thornmail', 'Randuin', 'Kaenic', 'Warmog'],
+  JGL_AD: ['Eclipse', 'Sundered Sky', 'Black Cleaver', 'Sterak', 'Guardian Angel', 'Death Dance'],
+  JGL_AP: ['Liandry', 'Zhonya', 'Shadowflame', 'Rabadon', 'Void Staff', 'Banshee'],
+  JGL_Tank: ['Sunfire', 'Kaenic', 'Thornmail', 'Frozen Heart', 'JakSho', 'Locket'],
+  MID_AP: ['Luden', 'Shadowflame', 'Zhonya', 'Rabadon', 'Void Staff', 'Banshee'],
+  MID_AD: ['Eclipse', 'Muramana', 'Serylda', 'Edge of Night', 'Guardian Angel', 'Maw'],
+  BOT_AD: ['Kraken', 'Infinity Edge', 'Lord Dominik', 'Bloodthirster', 'Guardian Angel', 'Rapid Fire'],
+  BOT_AP: ['Nashor', 'Shadowflame', 'Zhonya', 'Rabadon', 'Void Staff', 'Banshee'],
+  SUP_Tank: ['Locket', 'Zeke', 'Knight Vow', 'Redemption', 'Frozen Heart', 'Wardstone'],
+  SUP_AP: ['Shurelya', 'Ardent', 'Redemption', 'Mikael', 'Zhonya', 'Wardstone'],
+};
+
+export function getPlayerItems(gold, role, dmg = 'AD') {
+  const thresholds = [3100, 6200, 9400, 12600, 15800, 18800];
+  let count = 0;
+  for (const th of thresholds) {
+    if (gold >= th) count++;
+  }
+  const key = `${role}_${dmg === 'Tank' ? 'Tank' : dmg === 'AP' ? 'AP' : 'AD'}`;
+  const pool = ROLE_ITEM_BUILDS[key] || ROLE_ITEM_BUILDS.MID_AP;
+  return pool.slice(0, count);
+}
+
 const HOME_POS = {
   blue: { TOP: [18, 28], JGL: [34, 62], MID: [44, 56], BOT: [70, 82], SUP: [66, 84] },
   red:  { TOP: [28, 18], JGL: [66, 38], MID: [56, 44], BOT: [82, 70], SUP: [84, 66] },
@@ -172,6 +207,7 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
         champId,
         oppChampId: oppPicks[role] || null,
         champName: CHAMPION_MAP[champId]?.name || champId,
+        champDmg: CHAMPION_MAP[champId]?.dmg || 'AD',
         champColor: CHAMPION_MAP[champId]?.color || '#64748b',
         playerRef: p,
         kills: 0,
@@ -180,6 +216,9 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
         spree: 0,
         cs: 0,
         gold: 500,
+        items: [],
+        itemCount: 0,
+        deadUntilMin: 0,
         dmg: 0,
         vision: 0,
         rating: 6.4,
@@ -202,6 +241,35 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     behindPlan: t.tactics?.behindPlan || 'scale',   // crossmap | scale | pick
   });
 
+  const riftElement = pick(DRAGON_ELEMENTS);
+  const openingPlan = {
+    junglePath: options.junglePath || 'bot', // 'bot' | 'top' | 'invade'
+    laneSwap: Boolean(options.laneSwap),
+  };
+  const initEvents = [
+    {
+      min: 0,
+      type: 'SYSTEM',
+      tag: 'BAŞLANGIÇ',
+      text: `${blueTeam.tag} (Mavi · ${blueAnalysis.compLabel}) vs ${redTeam.tag} (Kırmızı · ${redAnalysis.compLabel}) · Vadi Elementi: ${riftElement.name}.`,
+    },
+  ];
+  if (openingPlan.laneSwap) {
+    initEvents.push({
+      min: 1,
+      type: 'TACTIC',
+      tag: 'LANE SWAP',
+      text: `Koç kararıyla Lane Swap uygulanıyor! Alt koridor ikilisi erken eşleşmeyi kırmak için üst koridora geçti.`,
+    });
+  } else if (openingPlan.junglePath === 'invade') {
+    initEvents.push({
+      min: 1,
+      type: 'TACTIC',
+      tag: 'INVADE',
+      text: `Agresif Seviye 1–3 Orman Baskını planı seçildi; erken nehir çatışması bekleniyor.`,
+    });
+  }
+
   return {
     minute: 0,
     finished: false,
@@ -209,6 +277,8 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     userSide,
     highStakes,
     teamTalk: options.teamTalk || 'none',
+    openingPlan,
+    riftElement,
     hasScrimIntel: !!options.hasScrimIntel,
     grantedRequestIds: options.grantedRequestIds || [],
     ignoredEgoIds: options.ignoredEgoIds || [],
@@ -257,9 +327,7 @@ export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, b
     redNexusHP: 100,
 
     lastEventPos: null,
-    events: [
-      { min: 0, type: 'SYSTEM', tag: 'BAŞLANGIÇ', text: `${blueTeam.tag} (Mavi) vs ${redTeam.tag} (Kırmızı)${highStakes ? ' — Yüksek gerilimli karşılaşma' : ''} başladı.` }
-    ],
+    events: initEvents,
     mvp: null,
     coachReport: null,
   };
@@ -386,7 +454,33 @@ function getMatchStrengthPair(state) {
 
     const baronMod = state.baronBuffSide === side && m <= state.baronBuffUntil ? 4.2 : 0;
     const elderMod = state.elderBuffSide === side && m <= state.elderBuffUntil ? 6.5 : 0;
-    const soulMod = state.soulSide === side ? 3.2 : 0;
+
+    // Elemental Dragon Soul identity bonus!
+    const elId = state.riftElement?.id || 'INFERNAL';
+    let soulMod = 0;
+    if (state.soulSide === side) {
+      if (elId === 'INFERNAL') soulMod = 4.0;
+      else if (elId === 'OCEAN') soulMod = m >= 26 ? 4.3 : 3.5;
+      else if (elId === 'HEXTECH') soulMod = 4.1;
+      else if (elId === 'CHEMTECH') soulMod = myGoldDiff < 0 ? 4.6 : 3.4;
+      else if (elId === 'MOUNTAIN') soulMod = 3.8;
+      else soulMod = 3.6;
+    }
+
+    // Pro Comp Archetype Matchup Edge (Engage > Poke > Disengage > Engage) + Item Power Spike bonus
+    const compMatchupMod = (analysis.compCounterEdge || 0) * (m >= 16 ? 1.0 : 0.45);
+    const myItems = players.reduce((s, p) => s + (p.itemCount || 0), 0);
+    const oppItems = oppPlayers.reduce((s, p) => s + (p.itemCount || 0), 0);
+    const itemSpikeMod = clamp((myItems - oppItems) * 0.55, -2.5, 2.5);
+
+    // Pre-Game Opening Plan (Lane Swap & Jungle Pathing)
+    let openingMod = 0;
+    if (isUser && state.openingPlan) {
+      if (state.openingPlan.laneSwap && m <= 12) openingMod += 1.4;
+      if (state.openingPlan.junglePath === 'invade' && m <= 9) openingMod += 1.8;
+      if (state.openingPlan.junglePath === 'top' && m <= 13 && tactics.laneFocus === 'TOP') openingMod += 1.2;
+      if (state.openingPlan.junglePath === 'bot' && m <= 13 && tactics.laneFocus === 'BOT') openingMod += 1.2;
+    }
 
     // Weekly Match Preparation Focus bonus (amplified!)
     let prepMod = 0;
@@ -397,8 +491,8 @@ function getMatchStrengthPair(state) {
     else if (prep === 'comeback' && myGoldDiff < -1200) prepMod = 3.0;
 
     return {
-      total: ovrCompressed + chemMod + phaseScore * 0.95 + totalTacticImpact + baronMod + elderMod + soulMod + prepMod,
-      tacticOnly: +(totalTacticImpact + prepMod).toFixed(1),
+      total: ovrCompressed + chemMod + phaseScore * 0.95 + totalTacticImpact + compMatchupMod + itemSpikeMod + openingMod + baronMod + elderMod + soulMod + prepMod,
+      tacticOnly: +(totalTacticImpact + prepMod + openingMod).toFixed(1),
       chemOnly: +chemMod.toFixed(1),
       chemIndex: chem.chemIndex,
       counterMod: +counterMod.toFixed(1),
@@ -499,6 +593,7 @@ function awardKill(state, killerSide, killerRole, victimRole, assistRoles = []) 
   killer.dmg += Math.round(rand(780, 1320));
 
   victim.deaths++;
+  victim.deadUntilMin = state.minute + 1;
   victim.dmg += Math.round(rand(260, 580));
 
   // Real League of Legends rule: 150g total assist pool split among unique assisters
@@ -626,6 +721,8 @@ export function stepMatchMinute(state) {
       const ambientGold = m === 1 ? 30 : 122;
       const supItemGold = pl.role === 'SUP' && m >= 2 && m <= 22 ? 85 : pl.role === 'SUP' ? 40 : 0;
       pl.gold += Math.round(ambientGold + gainedCS * 20 + supItemGold);
+      pl.items = getPlayerItems(pl.gold, pl.role, pl.champDmg);
+      pl.itemCount = pl.items.length;
 
       let dmgMult = pl.role === 'BOT' || pl.role === 'MID' ? 1.32 : pl.role === 'TOP' ? 1.05 : pl.role === 'JGL' ? 0.88 : 0.45;
       if (pl.role === 'BOT' && tactics.supStyle === 'peel' && m >= 18) dmgMult *= 1.1;

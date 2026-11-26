@@ -6,6 +6,7 @@ import {
   getTransferWindowStatus,
   evaluateTransferInterest,
   getPlayerValuationDetails,
+  getFreeAgentBiddingWar,
   getTeamWeeklyWages,
   getTeamWageCap,
   attemptSignOrTransfer,
@@ -128,6 +129,11 @@ export const TransfersScoutingView: React.FC<TransfersScoutingViewProps> = ({
 
   const negValuation = useMemo(
     () => (negPlayer ? getPlayerValuationDetails(state, negPlayer, userTeam) : null),
+    [state, negPlayer, userTeam]
+  );
+
+  const negBiddingWar = useMemo(
+    () => (negPlayer ? getFreeAgentBiddingWar(state, negPlayer, userTeam) : null),
     [state, negPlayer, userTeam]
   );
 
@@ -569,6 +575,18 @@ export const TransfersScoutingView: React.FC<TransfersScoutingViewProps> = ({
               {negInterest?.reason && (
                 <div className="text-[11px] text-slate-400 pt-2 border-t border-white/[0.06]">
                   {negInterest.reason}
+                </div>
+              )}
+
+              {negBiddingWar && (
+                <div className="pt-2 border-t border-amber-500/30 text-[11px] text-amber-300 space-y-1">
+                  <div className="font-bold">
+                    Kasım Free Agency Açık Artırması: {negBiddingWar.rivals.join(' & ')} devrede!
+                  </div>
+                  <div className="text-slate-300 font-mono-num">
+                    {negBiddingWar.topRivalName} masada yaklaşık{' '}
+                    <strong className="text-[#E4BD67]">{formatMoney(negBiddingWar.competingSalary)}/hf</strong> maaş öneriyor.
+                  </div>
                 </div>
               )}
             </div>

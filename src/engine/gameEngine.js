@@ -502,6 +502,84 @@ export function getTeamWeeklyWages(state, teamId) {
   return playerWages + staffWages;
 }
 
+// LCK/LPL Style Franchise Player Exception (Faker Rule): loyal stars (45+ games at club) count 35% less against Salary Cap!
+export function getTeamCapHit(state, teamId) {
+  const playerCapHit = state.players
+    .filter(p => p.teamId === teamId)
+    .reduce((s, p) => s + ((p.teamGames ?? 0) >= 45 ? Math.round(p.salary * 0.65) : p.salary), 0);
+  const team = state.teams.find(t => t.id === teamId);
+  if (!team) return playerCapHit;
+  ensureTeamExtras(team);
+  const staffWages = Object.entries(STAFF_INFO).reduce((s, [k, info]) => s + (info.wages[team.staff[k] || 1] || 0), 0);
+  return playerCapHit + staffWages;
+}
+
+export function getTeamLuxuryTax(state, teamId) {
+  const team = state.teams.find(t => t.id === teamId);
+  if (!team) return 0;
+  const capHit = getTeamCapHit(state, teamId);
+  const cap = getTeamWageCap(team);
+  return capHit > cap ? Math.round((capHit - cap) * 2.5) : 0;
+}
+
+export function getTeamFacilityUpkeep(team) {
+  if (!team?.facilities) return 20000;
+  const totalLvls = Object.values(team.facilities).reduce((s, v) => s + (Number(v) || 1), 0);
+  return totalLvls * 9500;
+}
+
+// November Free Agency Bidding War: rival clubs compete for high-OVR Free Agents!
+export function getFreeAgentBiddingWar(state, player, userTeam) {
+  if (!player || player.teamId || (player.ovr || 0) < 81) return null;
+  const rivals = state.teams
+    .filter(t => t.id !== userTeam?.id && t.budget >= 750000 && t.prestige >= Math.max(72, (player.ovr - 12)))
+    .filter(t => evaluateTransferInterest(state, player, t).willing)
+    .sort((a, b) => b.prestige - a.prestige)
+    .slice(0, 2);
+  if (rivals.length === 0) return null;
+  const topRival = rivals[0];
+  const rivalSalary = Math.round(((player.salary || 18000) * (1.16 + Math.min(0.18, (player.ovr - 80) * 0.014))) / 500) * 500;
+  return {
+    rivals: rivals.map(r => `${r.tag} (${r.region})`),
+    topRivalName: topRival.name,
+    topRivalTag: topRival.tag,
+    competingSalary: rivalSalary,
+  };
+}
+
+export function startKoreanBootcamp(state) {
+  ensureCalendarState(state);
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  if (!userTeam) return { ok: false, reason: 'Kulüp bulunamadı.' };
+  const cost = 180000;
+  if ((state.koreanBootcampWeeks || 0) > 0) {
+    return { ok: false, reason: `Kore Bootcamp'i zaten aktif (${state.koreanBootcampWeeks} hafta kaldı).` };
+  }
+  if (userTeam.budget < cost) {
+    return { ok: false, reason: `Kore Bootcamp'i için ${formatMoney(cost)} bütçe gerekiyor.` };
+  }
+  userTeam.budget -= cost;
+  state.koreanBootcampWeeks = 3;
+  userTeam.scrimRep = Math.min(100, (userTeam.scrimRep ?? 62) + 15);
+  userTeam.synergy = Math.min(100, +(userTeam.synergy + 3.5).toFixed(1));
+  for (const p of getTeamRoster(state, userTeam.id)) {
+    p.form = Math.min(99, (p.form || 75) + 3);
+    p.fatigue = Math.min(100, (p.fatigue || 20) + 6);
+    recalculatePlayerMarketValue(state, p, true);
+  }
+  addSocialPost(state, {
+    platform: 'X',
+    handle: '@KorizonEsports',
+    author: 'Korizon Esports',
+    badge: 'BOOTCAMP',
+    body: `${userTeam.name} ekibi Seul'e indi! 3 haftalık Kore Bootcamp'i boyunca LCK/LPL devleriyle yoğun scrim blokları ve Kore SoloQ kampı yapacaklar.`,
+  });
+  return {
+    ok: true,
+    reason: `Seul Kore Bootcamp'i başladı (-${formatMoney(cost)})! 3 hafta boyunca tüm LCK/LPL devleriyle scrim açıldı (+3.5 Sinerji, +3 Form, +15 Scrim İtibarı).`,
+  };
+}
+
 function generateRoundRobin(teamIds, bestOf = 3) {
   const arr = [...teamIds];
   const n = arr.length;
@@ -1471,20 +1549,24 @@ export function respondIncomingOffer(state, offerId, accept) {
 function runWeeklyClubTick(state) {
   ensureCalendarState(state);
   state.scrimDoneThisWeek = false;
+  if ((state.koreanBootcampWeeks || 0) > 0) state.koreanBootcampWeeks--;
   for (const team of state.teams) {
     ensureTeamExtras(team);
     const wages = getTeamWeeklyWages(state, team.id);
+    const luxuryTax = getTeamLuxuryTax(state, team.id);
+    const upkeep = getTeamFacilityUpkeep(team);
     const roster = state.players.filter(p => p.teamId === team.id);
     const streamerBonus = roster.filter(p => p.trait === 'Streamer').length * 18000;
     const fanIncome = team.fanbase * 950 + streamerBonus;
     const sponsorIncome = team.sponsor ? team.sponsor.weekly : 45000;
-    const netCash = fanIncome + sponsorIncome - wages;
+    const totalExpenses = wages + upkeep + luxuryTax;
+    const netCash = fanIncome + sponsorIncome - totalExpenses;
     team.budget += netCash;
     if (team.id === state.userTeamId) {
       state.financeLog.unshift({
         label: `S${state.season} ${getPhaseLabel(state.phase).split(' ')[0]} H${state.week}`,
         income: fanIncome + sponsorIncome,
-        expenses: wages,
+        expenses: totalExpenses,
         net: netCash,
         balance: team.budget,
       });
@@ -2388,19 +2470,22 @@ function runOffSeasonProgression(state) {
   const remainingPlayers = [];
   const expiringUserNames = [];
 
-  // Annual Board Transfer Budget Allocation for all clubs!
+  // Annual Riot Global Revenue Pool (GRP) Payout tied to Fanbase, Digital Sales & Prestige (prevents flat cash inflation!)
   let userGrant = 0;
   for (const t of state.teams) {
-    const grant = Math.round((t.prestige >= 90 ? 2200000 : t.prestige >= 82 ? 1600000 : t.prestige >= 75 ? 1200000 : 900000) / 50000) * 50000;
+    const grpBase = t.prestige >= 88 ? 1050000 : t.prestige >= 80 ? 800000 : 580000;
+    const grpFanShare = Math.round((t.fanbase || 70) * 6500);
+    const grpTrophyShare = (t.trophies || []).filter(tr => tr.includes(String(state.season))).length * 320000;
+    const grant = Math.round((grpBase + grpFanShare + grpTrophyShare) / 50000) * 50000;
     t.budget += grant;
     if (t.id === state.userTeamId) userGrant = grant;
   }
   if (userGrant > 0) {
     addInboxMessage(state, {
-      title: `Yeni Sezon Transfer Bütçesi Onaylandı (+${formatMoney(userGrant)})`,
-      sender: 'Yönetim Kurulu',
+      title: `Riot Global Revenue Pool (GRP) Geliri Yatırıldı (+${formatMoney(userGrant)})`,
+      sender: 'Riot Esports Finans',
       category: 'BOARD',
-      body: `Yönetim Kurulu, sezon arası transfer dönemi için kulüp kasasına +${formatMoney(userGrant)} yeni sezon bütçesi aktardı!`,
+      body: `Dijital kostüm kapsülleri, taraftar etkileşimi ve sezon performansına bağlı Küresel Gelir Havuzu (GRP) payı kulüp kasasına +${formatMoney(userGrant)} olarak aktarıldı.`,
     });
   }
 
@@ -2716,14 +2801,15 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
   if (!player || !userTeam) return { ok: false, reason: 'Oyuncu bulunamadı.' };
   if (offeredBuyout > userTeam.budget) return { ok: false, reason: 'Yeterli transfer bütçen yok.' };
 
-  // Enforce League Salary Cap (Maaş Tavanı) so no club can infinitely stack 93+ OVR superstars!
-  const currentWages = getTeamWeeklyWages(state, userTeam.id);
+  // Enforce League Salary Cap with LCK-style Luxury Tax zone (up to 1.20x cap allowed with 2.5x weekly tax!)
+  const currentCapHit = getTeamCapHit(state, userTeam.id);
   const wageCap = getTeamWageCap(userTeam);
-  if (currentWages + offeredSalary > wageCap) {
-    const room = Math.max(0, wageCap - currentWages);
+  const hardLimit = Math.round(wageCap * 1.2);
+  if (currentCapHit + offeredSalary > hardLimit) {
+    const room = Math.max(0, hardLimit - currentCapHit);
     return {
       ok: false,
-      reason: `Haftalık Maaş Tavanı (Salary Cap: ${formatMoney(wageCap)}/hf) aşılıyor! Kalan maaş boşluğun: ${formatMoney(room)}/hf. Önce yüksek maaşlı bir oyuncuyu sat veya daha ekonomik bir hedef seç.`,
+      reason: `Sert Maaş Tavanı + Lüks Vergisi Limiti (${formatMoney(hardLimit)}/hf) aşılıyor! Kalan limit: ${formatMoney(room)}/hf.`,
     };
   }
 
@@ -3380,10 +3466,20 @@ export function playWeeklyScrim(state, opponentTeamId) {
   ensureCalendarState(state);
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   const oppTeam = state.teams.find(t => t.id === opponentTeamId);
+  // Real Esports Scrim Gatekeeping: Elite LCK/LPL clubs reject low-prestige scrim requests unless Korean Bootcamp is active or Scrim Rep >= 72!
+  const isEliteEastern = (oppTeam.region === 'LCK' || oppTeam.region === 'LPL') && oppTeam.prestige >= 88;
+  const scrimRep = userTeam.scrimRep ?? Math.min(85, Math.max(52, userTeam.prestige - 8));
+  if (isEliteEastern && userTeam.prestige < 78 && scrimRep < 72 && !(state.koreanBootcampWeeks > 0)) {
+    return {
+      ok: false,
+      reason: `${oppTeam.name} (${oppTeam.region}) scrim teklifini reddetti! Elit LCK/LPL devleriyle scrim yapabilmek için Scrim İtibarın 72+ olmalı (Mevcut: ${scrimRep}) veya Kore Bootcamp'i başlatmalısın.`,
+    };
+  }
   const userRoster = getTeamRoster(state, userTeam.id);
   const oppRoster = getTeamRoster(state, oppTeam.id);
   const { match: m } = quickSimulateGame(userTeam, oppTeam, userRoster, oppRoster, getCurrentPatch(state));
   state.scrimDoneThisWeek = true;
+  userTeam.scrimRep = Math.min(100, scrimRep + (m.winner === 'blue' ? 4 : 2));
 
   const won = m.winner === 'blue';
   const scrimSynGain = userTeam.synergy >= 80 ? (won ? 0.9 : 0.4) : (won ? 1.8 : 0.9);

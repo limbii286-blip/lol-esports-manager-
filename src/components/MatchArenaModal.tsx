@@ -18,6 +18,7 @@ import {
   DRAFT_STEPS,
   createDraftState,
   applyDraftAction,
+  swapDraftRoles,
   chooseAIDraftAction,
   analyzeDraftSide,
   getMissingRoles,
@@ -56,7 +57,19 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   onSeriesFinished,
   onAbort,
 }) => {
-  const { match, blueTeam, redTeam, userSide, bo, highStakes } = seriesCtx;
+  const { match, blueTeam: initBlueTeam, redTeam: initRedTeam, userSide: initUserSide, bo, highStakes } = seriesCtx;
+  const [activeUserSide, setActiveUserSide] = useState<'blue' | 'red'>(initUserSide);
+  const [canPickSide, setCanPickSide] = useState(false);
+  const [junglePath, setJunglePath] = useState<'bot' | 'top' | 'invade'>('bot');
+  const [laneSwap, setLaneSwap] = useState(false);
+  const [swapRoleA, setSwapRoleA] = useState<string | null>(null);
+
+  const userSide = activeUserSide;
+  const userClub = initUserSide === 'blue' ? initBlueTeam : initRedTeam;
+  const oppClub = initUserSide === 'blue' ? initRedTeam : initBlueTeam;
+  const blueTeam = userSide === 'blue' ? userClub : oppClub;
+  const redTeam = userSide === 'red' ? userClub : oppClub;
+
   const patch = useMemo(() => getCurrentPatch(careerState), [careerState]);
   const rivalryName = useMemo(() => getRivalryName(blueTeam.id, redTeam.id), [blueTeam.id, redTeam.id]);
   const winsNeeded = Math.ceil(bo / 2);
@@ -160,6 +173,8 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       {
         teamTalk: selectedTalk,
         hasScrimIntel,
+        junglePath,
+        laneSwap,
       }
     );
     setLiveState(ms);
@@ -228,8 +243,10 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
 
   const handleSingleGameComplete = (ms: any) => {
     applyMatchOutcomeToPlayers(ms);
-    const nextBlue = blueScore + (ms.winner === 'blue' ? 1 : 0);
-    const nextRed = redScore + (ms.winner === 'red' ? 1 : 0);
+    // Track series score by original match blue/red teams regardless of game-by-game side swap!
+    const winnerTeamId = ms.winner === 'blue' ? blueTeam.id : redTeam.id;
+    const nextBlue = blueScore + (winnerTeamId === initBlueTeam.id ? 1 : 0);
+    const nextRed = redScore + (winnerTeamId === initRedTeam.id ? 1 : 0);
     setBlueScore(nextBlue);
     setRedScore(nextRed);
 
@@ -249,6 +266,15 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       setPostTalkDone(false);
       setPhase('SERIES_DONE');
     } else {
+      // Real Pro LoL Rule: loser of the game chooses Blue or Red side for the next game!
+      if (!userWonGame) {
+        setCanPickSide(true);
+      } else {
+        setCanPickSide(false);
+        // AI loser picks Blue 65% of the time (for B1 priority), Red 35% (for R5 counter)
+        const aiWantsBlue = Math.random() < 0.65;
+        setActiveUserSide(aiWantsBlue ? 'red' : 'blue');
+      }
       setPhase('POST_GAME');
     }
   };
@@ -315,8 +341,38 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     if (!liveState) return;
     const userTactics = userSide === 'blue' ? liveState.blueTactics : liveState.redTactics;
     userTactics[field] = val;
+    const labelMap: Record<string, string> = {
+      gameplan: `Oyun Planı → ${val.toUpperCase()}`,
+      laneFocus: `Orman/Koridor Odağı → ${val}`,
+      objective: `Objektif Önceliği → ${val.toUpperCase()}`,
+      aheadPlan: `Öndeyken Plan → ${val.toUpperCase()}`,
+      behindPlan: `Gerideyken Plan → ${val.toUpperCase()}`,
+    };
+    liveState.events.push({
+      min: liveState.minute,
+      type: 'TACTIC',
+      tag: 'KOÇ PLANI',
+      text: `${userClub.tag} kenar yönetimi taktik değiştirdi: ${labelMap[field] || val}.`,
+    });
     soundFx.click();
     setLiveTick((t) => t + 1);
+  };
+
+  const handleFlexSwapClick = (role: string) => {
+    if (!draft) return;
+    if (!swapRoleA) {
+      setSwapRoleA(role);
+      soundFx.click();
+    } else if (swapRoleA === role) {
+      setSwapRoleA(null);
+    } else {
+      const ok = swapDraftRoles(draft, userSide, swapRoleA, role);
+      setSwapRoleA(null);
+      if (ok) {
+        soundFx.draftLock();
+        setDraftVersion((v) => v + 1);
+      }
+    }
   };
 
   const handlePostMatchTalk = (talkType: string) => {
@@ -438,6 +494,63 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                 </div>
               </div>
 
+              {/* Pro LoL Opening Plan: Jungle Pathing & Lane Swap */}
+              <div className="bg-[#0B0E14] border border-white/[0.08] rounded-md p-4 space-y-3 text-xs">
+                <div className="font-bold text-[#E4BD67]">Açılış Planı (0–12 dk Orman Rotası & Lane Swap)</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] text-slate-400">Orman Başlangıç Rotası</div>
+                    <div className="flex gap-1.5">
+                      {[
+                        { id: 'bot', label: 'Bot Temizliği' },
+                        { id: 'top', label: 'Top / Kurtçuk' },
+                        { id: 'invade', label: 'Sv.3 Invade' },
+                      ].map((jp) => (
+                        <button
+                          key={jp.id}
+                          type="button"
+                          onClick={() => setJunglePath(jp.id as any)}
+                          className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
+                            junglePath === jp.id
+                              ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                              : 'bg-[#121722] text-slate-300 border-white/[0.1]'
+                          }`}
+                        >
+                          {jp.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] text-slate-400">Erken Koridor Düzeni</div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLaneSwap(false)}
+                        className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
+                          !laneSwap
+                            ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                            : 'bg-[#121722] text-slate-300 border-white/[0.1]'
+                        }`}
+                      >
+                        Standart Koridor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLaneSwap(true)}
+                        className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
+                          laneSwap
+                            ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                            : 'bg-[#121722] text-slate-300 border-white/[0.1]'
+                        }`}
+                      >
+                        Lane Swap (Weakside Koru)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {TEAM_TALK_OPTIONS.map((opt: any) => (
                   <button
@@ -543,8 +656,16 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       const cid = draft.bluePicks[role];
                       const champ = cid ? CHAMPION_MAP[cid] : null;
                       const isSig = cid && player?.sigChamps?.includes(cid);
+                      const isSwapSelected = userSide === 'blue' && swapRoleA === role;
                       return (
-                        <div key={role} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                        <div
+                          key={role}
+                          onClick={() => userSide === 'blue' && handleFlexSwapClick(role)}
+                          title={userSide === 'blue' ? 'Flex Pick: Rol takası yapmak için iki koridora tıkla' : undefined}
+                          className={`py-2.5 px-1.5 flex items-center justify-between gap-2 text-xs rounded ${
+                            userSide === 'blue' ? 'cursor-pointer hover:bg-white/[0.04]' : ''
+                          } ${isSwapSelected ? 'bg-[#C89B3C]/20 ring-1 ring-[#E4BD67]' : ''}`}
+                        >
                           <div className="min-w-0">
                             <div className="text-[10px] font-mono-num text-slate-500">
                               {role} · {player?.name}
@@ -568,6 +689,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
 
                   {blueDraftAnalysis && (
                     <div className="space-y-1.5 text-[11px] text-slate-400">
+                      <div className="flex items-center justify-between text-[11px] font-mono-num">
+                        <span className="text-sky-400 font-semibold">{blueDraftAnalysis.compLabel}</span>
+                        {blueDraftAnalysis.compCounterEdge !== 0 && (
+                          <span className={blueDraftAnalysis.compCounterEdge > 0 ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                            {blueDraftAnalysis.compCounterEdge > 0 ? '+Comp Avantaj' : 'Comp Dezavantaj'}
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-3 gap-2 font-mono-num text-center pt-1">
                         <div>
                           <div className="text-slate-500">Erken</div>
@@ -713,8 +842,16 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       const cid = draft.redPicks[role];
                       const champ = cid ? CHAMPION_MAP[cid] : null;
                       const isSig = cid && player?.sigChamps?.includes(cid);
+                      const isSwapSelected = userSide === 'red' && swapRoleA === role;
                       return (
-                        <div key={role} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                        <div
+                          key={role}
+                          onClick={() => userSide === 'red' && handleFlexSwapClick(role)}
+                          title={userSide === 'red' ? 'Flex Pick: Rol takası yapmak için iki koridora tıkla' : undefined}
+                          className={`py-2.5 px-1.5 flex items-center justify-between gap-2 text-xs rounded ${
+                            userSide === 'red' ? 'cursor-pointer hover:bg-white/[0.04]' : ''
+                          } ${isSwapSelected ? 'bg-[#C89B3C]/20 ring-1 ring-[#E4BD67]' : ''}`}
+                        >
                           <div className="min-w-0">
                             <div className="text-[10px] font-mono-num text-slate-500">
                               {role} · {player?.name}
@@ -738,6 +875,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
 
                   {redDraftAnalysis && (
                     <div className="space-y-1.5 text-[11px] text-slate-400">
+                      <div className="flex items-center justify-between text-[11px] font-mono-num">
+                        <span className="text-rose-400 font-semibold">{redDraftAnalysis.compLabel}</span>
+                        {redDraftAnalysis.compCounterEdge !== 0 && (
+                          <span className={redDraftAnalysis.compCounterEdge > 0 ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                            {redDraftAnalysis.compCounterEdge > 0 ? '+Comp Avantaj' : 'Comp Dezavantaj'}
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-3 gap-2 font-mono-num text-center pt-1">
                         <div>
                           <div className="text-slate-500">Erken</div>
@@ -1068,15 +1213,42 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                             {(liveState.winner === 'blue' ? blueTeam.name : redTeam.name)} Galip Geldi · MVP: {liveState.mvp?.name}
                           </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            setGameNum((g) => g + 1);
-                            setPhase('TEAM_TALK');
-                          }}
-                          className="px-5 py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer whitespace-nowrap"
-                        >
-                          Oyun {gameNum + 1} Draftına Geç
-                        </button>
+                        {canPickSide ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setActiveUserSide('blue');
+                                setCanPickSide(false);
+                                setGameNum((g) => g + 1);
+                                setPhase('TEAM_TALK');
+                              }}
+                              className="px-4 py-2.5 rounded-md bg-sky-500 hover:bg-sky-400 text-[#0B0E14] text-xs font-bold cursor-pointer whitespace-nowrap"
+                            >
+                              Mavi Tarafı Seç (İlk Seçim B1)
+                            </button>
+                            <button
+                              onClick={() => {
+                                setActiveUserSide('red');
+                                setCanPickSide(false);
+                                setGameNum((g) => g + 1);
+                                setPhase('TEAM_TALK');
+                              }}
+                              className="px-4 py-2.5 rounded-md bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold cursor-pointer whitespace-nowrap"
+                            >
+                              Kırmızı Tarafı Seç (Son Counter R5)
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setGameNum((g) => g + 1);
+                              setPhase('TEAM_TALK');
+                            }}
+                            className="px-5 py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer whitespace-nowrap"
+                          >
+                            Oyun {gameNum + 1} Draftına Geç ({userSide === 'blue' ? 'Mavi' : 'Kırmızı'})
+                          </button>
+                        )}
                       </div>
                       {liveState.coachReport && (
                         <div className="pt-3 border-t border-white/[0.08] space-y-1 text-xs text-slate-300">
@@ -1133,7 +1305,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                               <div className="col-span-5 flex items-center justify-between gap-2 min-w-0">
                                 <div className="min-w-0">
                                   <div className="font-semibold text-white truncate">{bp?.name}</div>
-                                  <div className="text-[10px] text-sky-400 truncate">{bp?.champName}</div>
+                                  <div className="text-[10px] text-sky-400 truncate">
+                                    {bp?.champName}
+                                    {(bp?.itemCount || 0) > 0 && (
+                                      <span className="text-[#E4BD67] font-mono-num ml-1.5">
+                                        · {bp.itemCount} Eşya ({bp.items[bp.items.length - 1]})
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="text-right font-mono-num shrink-0">
                                   <div className="text-slate-200 font-semibold">
@@ -1162,7 +1341,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                                 </div>
                                 <div className="min-w-0 text-right">
                                   <div className="font-semibold text-white truncate">{rp?.name}</div>
-                                  <div className="text-[10px] text-rose-400 truncate">{rp?.champName}</div>
+                                  <div className="text-[10px] text-rose-400 truncate">
+                                    {(rp?.itemCount || 0) > 0 && (
+                                      <span className="text-[#E4BD67] font-mono-num mr-1.5">
+                                        ({rp.items[rp.items.length - 1]}) {rp.itemCount} Eşya ·
+                                      </span>
+                                    )}
+                                    {rp?.champName}
+                                  </div>
                                 </div>
                               </div>
                             </div>
