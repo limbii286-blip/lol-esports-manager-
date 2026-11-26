@@ -1507,16 +1507,49 @@ export function runPlayerInterview(state, tone) {
 export function negotiatePlayerContract(state) {
   if (state.careerMode !== 'PLAYER' || !state.playerCareer) return { ok: false, msg: 'Geçersiz mod.' };
   const pc = state.playerCareer;
-  const p = state.players.find(x => x.id === state.userPlayerId);
-  if (!p) return { ok: false, msg: 'Oyuncu bulunamadı.' };
-  if (pc.inAcademy) return { ok: false, msg: 'Maaş zammı için önce Ana Kadroya yükselmelisin.' };
-  if (p.ovr < 76 || (pc.coachTrust || 50) < 65) {
-    return { ok: false, msg: `Yeni sözleşme için OVR 76+ (${p.ovr}) ve Koç Güveni %65+ (%${pc.coachTrust}) gerekli.` };
+  if (pc.contractTriedThisWeek) {
+    return { ok: false, msg: 'Bu hafta zaten sözleşme görüşmesi yaptın. Haftaya tekrar deneyebilirsin.' };
   }
-  p.salary = Math.round((p.salary || 4500) * 1.35);
-  p.contractYears = 2;
-  pc.personalEarnings = (pc.personalEarnings || 0) + 25000;
-  return { ok: true, msg: `Sözleşme yenilendi! Yeni haftalık maaşın ${formatMoney(p.salary)} (+$25K imza bonusu).` };
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+  if (pc.inAcademy) return { ok: false, msg: 'Maaş zammı için önce Ana Kadroya yükselmelisin.' };
+  if (p.ovr < 74) {
+    return { ok: false, msg: `Pazarlık masasına oturmak için OVR en az 74 olmalı (Mevcut: ${p.ovr}).` };
+  }
+
+  // Probability-driven negotiation based on Coach Trust, OVR, Fame, MVPs & Club Budget!
+  const trustScore = ((pc.coachTrust || 50) - 50) * 0.008;
+  const ovrScore = (p.ovr - 74) * 0.032;
+  const fameScore = (pc.fame || 10) * 0.0025;
+  const mvpScore = Math.min(0.14, (p.stats?.mvps || 0) * 0.03);
+  const budgetMod = team.budget >= 1200000 ? 0.08 : team.budget < 400000 ? -0.18 : 0;
+  const successProb = Math.max(0.18, Math.min(0.92, 0.36 + trustScore + ovrScore + fameScore + mvpScore + budgetMod));
+  const pct = Math.round(successProb * 100);
+
+  pc.contractTriedThisWeek = true;
+  if (Math.random() < successProb) {
+    const raiseMult = 1.25 + Math.min(0.2, (p.ovr - 74) * 0.015);
+    p.salary = Math.round((p.salary || 4500) * raiseMult);
+    p.contractYears = 2;
+    pc.personalEarnings = (pc.personalEarnings || 0) + 25000;
+    p.morale = Math.min(100, (p.morale || 80) + 4);
+    return {
+      ok: true,
+      accepted: true,
+      chancePct: pct,
+      msg: `Pazarlık başarılı (%${pct} şans)! Yeni maaşın ${formatMoney(p.salary)}/hf (+$25K imza bonusu).`,
+    };
+  }
+
+  pc.coachTrust = Math.max(15, (pc.coachTrust || 50) - 2);
+  p.morale = Math.max(30, (p.morale || 80) - 3);
+  return {
+    ok: true,
+    accepted: false,
+    chancePct: pct,
+    msg: `Yönetim zam talebini reddetti (%${pct} şanstı). Koç Güveni -2, Moral -3. Bütçe veya MVP performansıyla tekrar dene.`,
+  };
 }
 
 /**
@@ -1587,27 +1620,37 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
   }
 
   if (activityType === 'SEEK_TRANSFER') {
-    if (p.ovr < 78) {
-      return { ok: false, msg: `Büyük kulüplerin radarına girmek için OVR en az 78 olmalı (Mevcut: ${p.ovr}).` };
+    if (p.ovr < 76) {
+      return { ok: false, msg: `Büyük kulüplerin radarına girmek için OVR en az 76 olmalı (Mevcut: ${p.ovr}).` };
     }
-    const targets = state.teams
-      .filter(t => t.id !== state.userTeamId && t.prestige >= 78)
+    const mvpCount = p.stats?.mvps || 0;
+    const lpBonus = Math.max(0, ((pc.soloqLP || 500) - 500) / 1000);
+    const interestChance = Math.max(
+      0.22,
+      Math.min(0.92, 0.25 + (p.ovr - 76) * 0.055 + (pc.fame || 10) * 0.004 + mvpCount * 0.04 + lpBonus)
+    );
+    const candidates = state.teams
+      .filter(t => t.id !== state.userTeamId && t.prestige >= 76 && t.budget >= 350000)
       .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+      .filter(() => Math.random() < interestChance)
       .slice(0, 2);
-    pc.transferOffers = targets.map(t => ({
+
+    pc.transferOffers = candidates.map(t => ({
       teamId: t.id,
       teamName: t.name,
       tag: t.tag,
       region: t.region,
       prestige: t.prestige,
-      salary: Math.round(p.salary * (1.35 + (t.prestige - 75) * 0.02)),
+      salary: Math.round(p.salary * (1.28 + (t.prestige - 75) * 0.02)),
     }));
     pc.weeklyActionDone = true;
+    const pct = Math.round(interestChance * 100);
     return {
       ok: true,
-      msg: targets.length
-        ? `${targets.map(t => t.tag).join(' ve ')} kulüplerinden transfer teklifi geldi!`
-        : 'Şu an uygun bir büyük kulüp teklifi bulunamadı.',
+      msg: candidates.length
+        ? `Transfer ilgisi (%${pct} şans): ${candidates.map(t => t.tag).join(' ve ')} kulüplerinden resmi teklif geldi!`
+        : `Bu hafta büyük kulüplerden teklif gelmedi (İlgi olasılığı: %${pct}). OVR, Şöhret ve MVP sayını artırarak tekrar dene.`,
     };
   }
 
@@ -2337,6 +2380,7 @@ function runWeeklyClubTick(state) {
     state.playerCareer.weeklyActionDone = false;
     state.playerCareer.academyPlayedThisWeek = false;
     state.playerCareer.interviewDoneThisWeek = false;
+    state.playerCareer.contractTriedThisWeek = false;
     const up = state.players.find(x => x.id === state.userPlayerId);
     if (up) state.playerCareer.personalEarnings = (state.playerCareer.personalEarnings || 0) + (up.salary || 0);
   }

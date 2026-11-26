@@ -404,14 +404,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
               {!pc.inAcademy && (
                 <button
+                  disabled={pc.contractTriedThisWeek}
                   onClick={() => {
-                    soundFx.draftLock();
-                    const r = negotiatePlayerContract(state);
+                    const r: any = negotiatePlayerContract(state);
+                    if (r.accepted) soundFx.trophyFanfare();
+                    else soundFx.click();
                     onUpdate(r.msg);
                   }}
-                  className="px-3 py-1 rounded border border-[#C89B3C]/50 bg-[#C89B3C]/10 hover:bg-[#C89B3C]/20 text-[11px] font-bold text-[#E4BD67] cursor-pointer"
+                  title="OVR, Koç Güveni, Şöhret, MVP ve kulüp bütçesine bağlı olasılıkla maaş pazarlığı yap"
+                  className={`px-3 py-1 rounded border text-[11px] font-bold ${
+                    pc.contractTriedThisWeek
+                      ? 'border-white/[0.06] bg-white/[0.03] text-slate-500 cursor-not-allowed'
+                      : 'border-[#C89B3C]/50 bg-[#C89B3C]/10 hover:bg-[#C89B3C]/20 text-[#E4BD67] cursor-pointer'
+                  }`}
                 >
-                  Maaş Zammı İste
+                  {pc.contractTriedThisWeek ? 'Pazarlık Yapıldı' : 'Maaş Pazarlığı Yap'}
                 </button>
               )}
             </div>
@@ -519,7 +526,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Manager Job Offers Alert */}
-      {state.managerJobOffers && state.managerJobOffers.length > 0 && (
+      {!isPlayerMode && state.managerJobOffers && state.managerJobOffers.length > 0 && (
         <div className="bg-[#121722] border border-[#C89B3C]/50 rounded-lg p-5 space-y-3">
           <div className="text-xs font-bold text-[#E4BD67] flex items-center gap-2">
             <Briefcase className="w-4 h-4" />
