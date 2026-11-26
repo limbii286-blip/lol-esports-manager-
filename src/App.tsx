@@ -350,15 +350,19 @@ export default function App() {
       {/* Left Persistent FM Sidebar (248px) */}
       <aside className="lg:w-[248px] shrink-0 bg-[#0E121B] border-b lg:border-b-0 lg:border-r border-white/[0.08] flex flex-col justify-between">
         <div>
-          {/* Club Identity Header */}
+          {/* Club / Player Identity Header */}
           <div className="h-16 px-4 border-b border-white/[0.08] flex items-center gap-3">
             <TeamCrest tag={userTeam.tag} color={userTeam.color} color2={userTeam.color2} size="sm" />
             <div className="min-w-0">
               <div className="font-display text-lg font-extrabold text-white tracking-wide leading-none truncate">
-                {userTeam.name}
+                {careerState.careerMode === 'PLAYER'
+                  ? careerState.players?.find((p: any) => p.id === careerState.userPlayerId)?.name || userTeam.name
+                  : userTeam.name}
               </div>
               <div className="text-[11px] text-slate-400 font-mono-num mt-0.5 truncate">
-                {userTeam.region} · S{careerState.season}
+                {careerState.careerMode === 'PLAYER'
+                  ? `${careerState.playerCareer?.inAcademy ? careerState.playerCareer.academyClub : userTeam.tag} · S${careerState.season}`
+                  : `${userTeam.region} · S${careerState.season}`}
               </div>
             </div>
           </div>
@@ -367,13 +371,17 @@ export default function App() {
           <nav className="p-2.5 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible">
             {NAV_ITEMS.filter((item) =>
               careerState.careerMode === 'PLAYER'
-                ? !['tactics', 'transfers', 'club'].includes(item.id)
+                ? !['tactics', 'training', 'transfers', 'club'].includes(item.id)
                 : true
             ).map((item) => {
               const active = activeTab === item.id;
               const label =
-                careerState.careerMode === 'PLAYER' && item.id === 'dashboard'
-                  ? 'Oyuncu Merkezi'
+                careerState.careerMode === 'PLAYER'
+                  ? item.id === 'dashboard'
+                    ? 'Oyuncu Merkezi'
+                    : item.id === 'squad'
+                    ? 'Takım Kadrosu'
+                    : item.label
                   : item.label;
               return (
                 <button

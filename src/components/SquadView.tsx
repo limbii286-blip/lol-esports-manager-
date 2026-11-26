@@ -45,6 +45,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const weeklyWages = useMemo(() => getTeamWeeklyWages(state, userTeam.id), [state, userTeam.id]);
   const wageCap = useMemo(() => getTeamWageCap(userTeam), [userTeam]);
 
+  const isPlayerMode = state.careerMode === 'PLAYER';
   const expiringCount = allClubPlayers.filter((p: any) => (p.contractYears || 0) <= 1).length;
 
   const handleBulkRenew = () => {
@@ -81,7 +82,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
               <span className="text-slate-500">/ {formatMoney(wageCap)}</span>
             </div>
           </div>
-          {expiringCount > 0 && (
+          {!isPlayerMode && expiringCount > 0 && (
             <button
               onClick={handleBulkRenew}
               className="px-3.5 py-2 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
@@ -203,7 +204,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     </td>
                     <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        {!p.isStarter && (
+                        {!isPlayerMode && !p.isStarter && (
                           <button
                             onClick={() => handleToggleStarter(p.id, p.name)}
                             className="px-2.5 py-1 rounded border border-[#C89B3C]/50 text-[#E4BD67] hover:bg-[#C89B3C]/15 text-[11px] font-semibold cursor-pointer whitespace-nowrap"

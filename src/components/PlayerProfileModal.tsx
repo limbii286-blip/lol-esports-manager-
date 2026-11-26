@@ -158,7 +158,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             {[
               { id: 'overview', label: 'Genel & Değerleme', icon: Shield },
               { id: 'history', label: 'Kariyer Geçmişi', icon: History },
-              ...(isOwned
+              ...(isOwned && state.careerMode !== 'PLAYER'
                 ? [
                     { id: 'training', label: 'Bireysel Antrenman', icon: Dumbbell },
                     { id: 'contract', label: 'Sözleşme Yenileme', icon: FileText },
@@ -178,7 +178,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </button>
             ))}
           </div>
-          {isOwned && (
+          {isOwned && state.careerMode !== 'PLAYER' && (
             <div className="flex items-center gap-2 flex-wrap">
               {!player.isStarter && !player.loanedTo && (
                 <button

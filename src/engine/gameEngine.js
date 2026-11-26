@@ -1933,17 +1933,22 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
       const userRoster = getTeamRoster(state, state.userTeamId);
       const topFormP = [...userRoster].sort((a, b) => (b.form || 75) - (a.form || 75))[0];
       const boardConf = getBoardConfidence(state);
+      const isPlayerMode = state.careerMode === 'PLAYER';
       addInboxMessage(state, {
         title: `Maç Raporu: ${bTeam.tag} ${blueScore} - ${redScore} ${rTeam.tag}`,
         sender: 'Analist Ekibi',
         category: 'TOURNAMENT',
         priority: 'NORMAL',
-        body: `${bTeam.name} ${blueScore} - ${redScore} ${rTeam.name} serisi tamamlandı (${userWon ? `GALİBİYET · +${formatMoney(winCash)} maç primi` : 'MAĞLUBİYET'}). Güncel seri: ${state.records.currentStreak} galibiyet. Öne çıkan oyuncu: ${topFormP ? `${topFormP.name} (Form ${topFormP.form})` : '-'}. Yönetim Güveni: %${boardConf.score}.`,
-        actions: [{ id: 'nav_tactics', label: 'Taktik Tahtasına Git', type: 'NAV', payload: { tab: 'tactics' } }],
+        body: isPlayerMode
+          ? `${bTeam.name} ${blueScore} - ${redScore} ${rTeam.name} serisi tamamlandı (${userWon ? 'GALİBİYET' : 'MAĞLUBİYET'}). Güncel seri: ${state.records.currentStreak} galibiyet. Öne çıkan isim: ${topFormP ? `${topFormP.name} (Form ${topFormP.form})` : '-'}.`
+          : `${bTeam.name} ${blueScore} - ${redScore} ${rTeam.name} serisi tamamlandı (${userWon ? `GALİBİYET · +${formatMoney(winCash)} maç primi` : 'MAĞLUBİYET'}). Güncel seri: ${state.records.currentStreak} galibiyet. Öne çıkan oyuncu: ${topFormP ? `${topFormP.name} (Form ${topFormP.form})` : '-'}. Yönetim Güveni: %${boardConf.score}.`,
+        actions: isPlayerMode
+          ? null
+          : [{ id: 'nav_tactics', label: 'Taktik Tahtasına Git', type: 'NAV', payload: { tab: 'tactics' } }],
       });
 
       // Career & Streak Milestones
-      if (userWon && (state.records.currentStreak === 5 || state.records.currentStreak === 10)) {
+      if (!isPlayerMode && userWon && (state.records.currentStreak === 5 || state.records.currentStreak === 10)) {
         bumpManagerRep(state, 1, 'tacticalRep', 1);
         addInboxMessage(state, {
           title: `Kilometre Taşı: ${state.records.currentStreak} Maçlık Galibiyet Serisi!`,
@@ -1954,7 +1959,7 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
         });
       }
       const cw = state.records.careerWins;
-      if (userWon && (cw === 10 || cw === 25 || cw === 50 || cw === 100)) {
+      if (!isPlayerMode && userWon && (cw === 10 || cw === 25 || cw === 50 || cw === 100)) {
         bumpManagerRep(state, 1, 'tacticalRep', 1);
         addInboxMessage(state, {
           title: `Kariyer Başarısı: ${cw}. Resmi Galibiyet!`,
@@ -2029,9 +2034,12 @@ function maybeGenerateLivingWorldNews(state, dow) {
 
   // Tuesday / Wednesday: Varied World & Club Stories + Interactive Decisions (58% chance so inbox feels alive)
   if (Math.random() > 0.58) return;
+  const isMgr = state.careerMode !== 'PLAYER';
   const stories = [
-    {
-      id: 'sponsor_shoot',
+    ...(isMgr
+      ? [
+          {
+            id: 'sponsor_shoot',
       run: () => {
         addInboxMessage(state, {
           title: 'Sponsor Çekimi & Medya Günü Teklifi (+$95K)',
@@ -2086,6 +2094,8 @@ function maybeGenerateLivingWorldNews(state, dow) {
         });
       },
     },
+        ]
+      : []),
     {
       id: 'power_rank',
       run: () => {
@@ -2163,6 +2173,7 @@ function maybeGenerateLivingWorldNews(state, dow) {
 
 // ==================== DRAMA & PRESS CONFERENCE EVENTS (16 UNIQUE FM EVENTS) ====================
 function maybeTriggerDramaEvent(state) {
+  if (state.careerMode === 'PLAYER') return;
   ensureCalendarState(state);
   if (state.pendingEvent || Math.random() > 0.48) return;
   const mgr = state.managerName || 'Koç';
@@ -2622,9 +2633,9 @@ function runWeeklyClubTick(state) {
     }
   }
 
-  // Weekly Assistant Coach Executive Digest for User Team
+  // Weekly Assistant Coach Executive Digest for User Team (Manager Mode only)
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
-  if (userTeam) {
+  if (userTeam && state.careerMode !== 'PLAYER') {
     const userStarters = getTeamRoster(state, userTeam.id);
     const allUserPlayers = state.players.filter(p => p.teamId === userTeam.id);
     const topForm = [...userStarters].sort((a, b) => (b.form || 75) - (a.form || 75))[0];
@@ -4257,6 +4268,7 @@ export function buildJobOffers(state, excludeTeamId) {
 }
 
 export function evaluateBoardJobSecurity(state) {
+  if (state.careerMode === 'PLAYER') return;
   if (state.sackedState) return;
   if (state.phase !== 'SPRING_SPLIT' && state.phase !== 'SUMMER_SPLIT') return;
   if (state.week < 3) return; // Give at least 3 weeks grace period

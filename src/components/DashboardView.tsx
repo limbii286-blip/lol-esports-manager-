@@ -154,52 +154,88 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <TeamCrest tag={userTeam.tag} color={userTeam.color} color2={userTeam.color2} size="lg" />
             <div className="min-w-0">
               <div className="text-xs text-[#E4BD67] font-semibold">
-                {userTeam.region} · Sezon {state.season} · {getPhaseLabel(state.phase)} (Hafta {state.week})
+                {isPlayerMode && userPlayer
+                  ? `${pc?.inAcademy ? pc.academyLeague : userTeam.region} · Sezon ${state.season} · ${getPhaseLabel(state.phase)} (Hafta ${state.week})`
+                  : `${userTeam.region} · Sezon ${state.season} · ${getPhaseLabel(state.phase)} (Hafta ${state.week})`}
               </div>
               <h1 className="font-display text-3xl sm:text-4xl font-extrabold text-white tracking-wide truncate">
-                {userTeam.name} Kulüp Merkezi
+                {isPlayerMode && userPlayer
+                  ? `${userPlayer.name} — ${pc?.inAcademy ? pc.academyClub : userTeam.name}`
+                  : `${userTeam.name} Kulüp Merkezi`}
               </h1>
               <div className="text-xs text-slate-400 font-mono-num mt-0.5">
-                {formatTurkishDate(state.currentDate)} · Yama {patch.version} ({patch.name}) · Koç {state.managerName}
+                {isPlayerMode && userPlayer
+                  ? `${formatTurkishDate(state.currentDate)} · Yama ${patch.version} · Baş Koç: ${state.managerName}`
+                  : `${formatTurkishDate(state.currentDate)} · Yama ${patch.version} (${patch.name}) · Koç ${state.managerName}`}
               </div>
             </div>
           </div>
 
-          {/* 4 Executive KPI Readouts */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 lg:gap-7 font-mono-num shrink-0 border-t lg:border-t-0 lg:border-l border-white/[0.1] pt-4 lg:pt-0 lg:pl-7">
-            <div>
-              <div className="text-[11px] text-slate-400">OVR / Kimya</div>
-              <div className="flex items-baseline gap-2">
-                <OvrValue ovr={userOvr} size="lg" />
-                <span
-                  className={`text-sm font-bold ${
-                    teamChem.chemIndex >= 72 ? 'text-emerald-400' : teamChem.chemIndex >= 52 ? 'text-[#E4BD67]' : 'text-rose-400'
+          {/* 4 Executive KPI Readouts (Separated for Player Mode vs Manager Mode) */}
+          {isPlayerMode && userPlayer && pc ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 lg:gap-7 font-mono-num shrink-0 border-t lg:border-t-0 lg:border-l border-white/[0.1] pt-4 lg:pt-0 lg:pl-7">
+              <div>
+                <div className="text-[11px] text-slate-400">OVR / POT</div>
+                <div className="flex items-baseline gap-2">
+                  <OvrValue ovr={userPlayer.ovr} size="lg" />
+                  <span className="text-sm font-bold text-slate-400">/ {userPlayer.pot}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">{pc.inAcademy ? 'Durum' : 'Lig Sırası'}</div>
+                <div className="text-xl font-bold text-white">{pc.inAcademy ? 'Akademi' : `#${userRank || '—'}`}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">Koç Güveni</div>
+                <div
+                  className={`text-2xl font-bold ${
+                    pc.coachTrust >= 70 ? 'text-emerald-400' : pc.coachTrust >= 45 ? 'text-[#E4BD67]' : 'text-rose-400'
                   }`}
-                  title="Takım Oyunu & Kimya İndeksi"
                 >
-                  · {teamChem.chemIndex}
-                </span>
+                  %{pc.coachTrust}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">Haftalık Maaş</div>
+                <div className="text-xl font-bold text-[#E4BD67]">{formatMoney(userPlayer.salary || 1800)}</div>
               </div>
             </div>
-            <div>
-              <div className="text-[11px] text-slate-400">Lig Sırası</div>
-              <div className="text-2xl font-bold text-white">#{userRank || '—'}</div>
-            </div>
-            <div>
-              <div className="text-[11px] text-slate-400">Yönetim Güveni</div>
-              <div
-                className={`text-2xl font-bold ${
-                  boardConf.score >= 70 ? 'text-emerald-400' : boardConf.score >= 45 ? 'text-[#E4BD67]' : 'text-rose-400'
-                }`}
-              >
-                %{boardConf.score}
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 lg:gap-7 font-mono-num shrink-0 border-t lg:border-t-0 lg:border-l border-white/[0.1] pt-4 lg:pt-0 lg:pl-7">
+              <div>
+                <div className="text-[11px] text-slate-400">OVR / Kimya</div>
+                <div className="flex items-baseline gap-2">
+                  <OvrValue ovr={userOvr} size="lg" />
+                  <span
+                    className={`text-sm font-bold ${
+                      teamChem.chemIndex >= 72 ? 'text-emerald-400' : teamChem.chemIndex >= 52 ? 'text-[#E4BD67]' : 'text-rose-400'
+                    }`}
+                    title="Takım Oyunu & Kimya İndeksi"
+                  >
+                    · {teamChem.chemIndex}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">Lig Sırası</div>
+                <div className="text-2xl font-bold text-white">#{userRank || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">Yönetim Güveni</div>
+                <div
+                  className={`text-2xl font-bold ${
+                    boardConf.score >= 70 ? 'text-emerald-400' : boardConf.score >= 45 ? 'text-[#E4BD67]' : 'text-rose-400'
+                  }`}
+                >
+                  %{boardConf.score}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400">Kulüp Bütçesi</div>
+                <div className="text-xl font-bold text-[#E4BD67]">{formatMoney(userTeam.budget)}</div>
               </div>
             </div>
-            <div>
-              <div className="text-[11px] text-slate-400">Kulüp Bütçesi</div>
-              <div className="text-xl font-bold text-[#E4BD67]">{formatMoney(userTeam.budget)}</div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -514,8 +550,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
       )}
 
-      {/* Pending Drama Event Alert (Interactive FM Locker Room Event) */}
-      {state.pendingEvent && (
+      {/* Pending Drama Event Alert (Manager Mode only) */}
+      {!isPlayerMode && state.pendingEvent && (
         <div className="bg-[#171E2C] border border-amber-500/50 rounded-lg p-5 space-y-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -711,18 +747,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       Hızlı Simüle Et
                     </button>
                   </div>
-                  <button
-                    disabled={pressDone}
-                    onClick={onOpenPress}
-                    className={`px-3.5 py-2.5 rounded-md border text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap ${
-                      pressDone
-                        ? 'border-white/[0.06] text-slate-500 cursor-not-allowed'
-                        : 'border-[#C89B3C]/50 text-[#E4BD67] hover:bg-[#C89B3C]/15 cursor-pointer'
-                    }`}
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    {pressDone ? 'Basın Toplantısı Yapıldı' : 'Basın Toplantısı'}
-                  </button>
+                  {!isPlayerMode && (
+                    <button
+                      disabled={pressDone}
+                      onClick={onOpenPress}
+                      className={`px-3.5 py-2.5 rounded-md border text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap ${
+                        pressDone
+                          ? 'border-white/[0.06] text-slate-500 cursor-not-allowed'
+                          : 'border-[#C89B3C]/50 text-[#E4BD67] hover:bg-[#C89B3C]/15 cursor-pointer'
+                      }`}
+                    >
+                      <Mic className="w-3.5 h-3.5" />
+                      {pressDone ? 'Basın Toplantısı Yapıldı' : 'Basın Toplantısı'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Pre-Match Opponent Scout Report & 1-Click Counter-Tactic */}
@@ -737,12 +775,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {scoutReport.hasScrimIntel ? ' · Scrim İstihbaratı Açık' : ''}
                         </span>
                       </div>
-                      <button
-                        onClick={handleApplyCounterTactic}
-                        className="px-3 py-1.5 rounded-md border border-[#C89B3C]/60 bg-[#C89B3C]/12 hover:bg-[#C89B3C]/25 text-[#E4BD67] text-[11px] font-bold cursor-pointer whitespace-nowrap"
-                      >
-                        Karşı Taktik Uygula
-                      </button>
+                      {!isPlayerMode && (
+                        <button
+                          onClick={handleApplyCounterTactic}
+                          className="px-3 py-1.5 rounded-md border border-[#C89B3C]/60 bg-[#C89B3C]/12 hover:bg-[#C89B3C]/25 text-[#E4BD67] text-[11px] font-bold cursor-pointer whitespace-nowrap"
+                        >
+                          Karşı Taktik Uygula
+                        </button>
+                      )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                       <div>
@@ -816,47 +856,89 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right 5 Cols: Board Vision & Regional Standings */}
+        {/* Right 5 Cols: Player Milestones (Player Mode) or Board Vision (Manager Mode) + Standings */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Board Objectives */}
-          <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-5 space-y-3">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <span className="text-sm font-bold text-white flex items-center gap-2">
-                <Target className="w-4 h-4 text-[#E4BD67]" />
-                Yönetim Kurulu Vizyonu
-              </span>
-              <span className="font-mono-num text-xs text-[#E4BD67] font-bold">
-                Not: {boardConf.grade} (%{boardConf.score})
-              </span>
-            </div>
-            <div className="divide-y divide-white/[0.06]">
-              {objectives.map((obj: any, i: number) => (
-                <div key={i} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+          {isPlayerMode && userPlayer && pc ? (
+            <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <span className="text-sm font-bold text-white flex items-center gap-2">
+                  <Target className="w-4 h-4 text-[#E4BD67]" />
+                  Kariyer Hedefleri
+                </span>
+                <span className="font-mono-num text-xs text-[#E4BD67] font-bold">
+                  OVR {userPlayer.ovr} / {userPlayer.pot}
+                </span>
+              </div>
+              <div className="divide-y divide-white/[0.06] text-xs">
+                <div className="py-2.5 flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-slate-200 font-medium">{obj.title}</div>
-                    <div className="text-[11px] text-slate-500">{obj.detail}</div>
+                    <div className="text-slate-200 font-medium">Ana Kadroya Yüksel</div>
+                    <div className="text-[11px] text-slate-500">OVR 73+ veya Koç Güveni %75+</div>
                   </div>
-                  <span
-                    className={`font-mono-num font-semibold shrink-0 ${
-                      obj.status === 'DONE' || obj.status === 'ON_TRACK'
-                        ? 'text-emerald-400'
-                        : obj.status === 'WARN'
-                        ? 'text-amber-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {obj.status === 'DONE'
-                      ? 'Tamamlandı'
-                      : obj.status === 'ON_TRACK'
-                      ? 'Yolunda'
-                      : obj.status === 'WARN'
-                      ? 'Dikkat'
-                      : 'Risk'}
+                  <span className={`font-mono-num font-semibold ${!pc.inAcademy ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {!pc.inAcademy ? 'Tamamlandı' : 'Akademide'}
                   </span>
                 </div>
-              ))}
+                <div className="py-2.5 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-slate-200 font-medium">Oyun Tarzı & Kişilik</div>
+                    <div className="text-[11px] text-slate-500">Kararlarınla kimliğini oluştur</div>
+                  </div>
+                  <span className={`font-mono-num font-semibold ${pc.traitUnlocked ? 'text-emerald-400' : 'text-slate-300'}`}>
+                    {pc.traitUnlocked ? 'Açıldı' : `${Math.min(14, pc.decisionCount || 0)}/14`}
+                  </span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-slate-200 font-medium">Büyük Kulüp Radarı</div>
+                    <div className="text-[11px] text-slate-500">OVR 76+ ile dev kulüplerden teklif al</div>
+                  </div>
+                  <span className={`font-mono-num font-semibold ${userPlayer.ovr >= 76 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {userPlayer.ovr >= 76 ? 'Aktif' : `${userPlayer.ovr}/76`}
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <span className="text-sm font-bold text-white flex items-center gap-2">
+                  <Target className="w-4 h-4 text-[#E4BD67]" />
+                  Yönetim Kurulu Vizyonu
+                </span>
+                <span className="font-mono-num text-xs text-[#E4BD67] font-bold">
+                  Not: {boardConf.grade} (%{boardConf.score})
+                </span>
+              </div>
+              <div className="divide-y divide-white/[0.06]">
+                {objectives.map((obj: any, i: number) => (
+                  <div key={i} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <div className="text-slate-200 font-medium">{obj.title}</div>
+                      <div className="text-[11px] text-slate-500">{obj.detail}</div>
+                    </div>
+                    <span
+                      className={`font-mono-num font-semibold shrink-0 ${
+                        obj.status === 'DONE' || obj.status === 'ON_TRACK'
+                          ? 'text-emerald-400'
+                          : obj.status === 'WARN'
+                          ? 'text-amber-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {obj.status === 'DONE'
+                        ? 'Tamamlandı'
+                        : obj.status === 'ON_TRACK'
+                        ? 'Yolunda'
+                        : obj.status === 'WARN'
+                        ? 'Dikkat'
+                        : 'Risk'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Regional Standings Table */}
           <div className="bg-[#121722] border border-white/[0.08] rounded-lg overflow-hidden">
