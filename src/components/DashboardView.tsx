@@ -37,6 +37,8 @@ import {
   acceptPlayerTransferOffer,
   playAcademyMatch,
   promoteFromAcademy,
+  runPlayerInterview,
+  negotiatePlayerContract,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -48,6 +50,7 @@ interface DashboardViewProps {
   state: any;
   userTeam: any;
   onPlayMatch: (match: any) => void;
+  onPlayAcademyMatch?: () => void;
   onQuickSimMatch: (match: any) => void;
   onAdvanceDay: () => void;
   onSkipToKeyDay: () => void;
@@ -61,6 +64,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   state,
   userTeam,
   onPlayMatch,
+  onPlayAcademyMatch,
   onQuickSimMatch,
   onAdvanceDay,
   onSkipToKeyDay,
@@ -313,6 +317,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {onPlayAcademyMatch && (
+                  <button
+                    disabled={pc.academyPlayedThisWeek}
+                    onClick={onPlayAcademyMatch}
+                    className={`px-3.5 py-2 rounded-md text-xs font-bold whitespace-nowrap ${
+                      pc.academyPlayedThisWeek
+                        ? 'bg-white/[0.04] text-slate-500 cursor-not-allowed'
+                        : 'bg-sky-500 hover:bg-sky-400 text-[#0B0E14] cursor-pointer'
+                    }`}
+                  >
+                    {pc.academyPlayedThisWeek ? 'Bu Hafta Oynandı' : 'Akademi Maçına Çık (Canlı 2D)'}
+                  </button>
+                )}
                 <button
                   disabled={pc.academyPlayedThisWeek}
                   onClick={() => {
@@ -321,13 +338,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     else soundFx.click();
                     onUpdate(r.msg);
                   }}
-                  className={`px-3.5 py-2 rounded-md text-xs font-bold whitespace-nowrap ${
+                  className={`px-3 py-2 rounded-md border text-xs font-semibold whitespace-nowrap ${
                     pc.academyPlayedThisWeek
-                      ? 'bg-white/[0.04] text-slate-500 cursor-not-allowed'
-                      : 'bg-sky-500 hover:bg-sky-400 text-[#0B0E14] cursor-pointer'
+                      ? 'border-white/[0.05] text-slate-500 cursor-not-allowed'
+                      : 'border-white/[0.15] bg-[#171E2C] hover:border-sky-400 text-slate-200 cursor-pointer'
                   }`}
                 >
-                  {pc.academyPlayedThisWeek ? 'Bu Hafta Akademi Maçı Oynandı' : 'Akademi Maçına Çık'}
+                  Hızlı Simüle Et
                 </button>
                 {(userPlayer.ovr >= 73 || pc.coachTrust >= 75) && (
                   <button
@@ -344,6 +361,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Player Media Interview & Contract Negotiation Strip */}
+          <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3 font-mono-num text-slate-300">
+              <span>Maaş: <strong className="text-[#E4BD67]">{formatMoney(userPlayer.salary || 1800)}/hf</strong></span>
+              <span className="text-slate-600">·</span>
+              <span>Birikim: <strong className="text-emerald-400">{formatMoney(pc.personalEarnings || 0)}</strong></span>
+              <span className="text-slate-600">·</span>
+              <span>
+                Kariyer KDA:{' '}
+                <strong className="text-white">
+                  {userPlayer.stats?.kills || 0}/{userPlayer.stats?.deaths || 0}/{userPlayer.stats?.assists || 0}
+                </strong>{' '}
+                ({userPlayer.stats?.mvps || 0} MVP)
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {!pc.interviewDoneThisWeek ? (
+                <>
+                  <span className="text-[11px] text-slate-400">Haftalık Röportaj:</span>
+                  {[
+                    { id: 'humble', label: 'Mütevazı (+Güven)' },
+                    { id: 'confident', label: 'İddialı (+Şöhret)' },
+                    { id: 'team', label: 'Takım Odaklı (+Sinerji)' },
+                  ].map((iv) => (
+                    <button
+                      key={iv.id}
+                      onClick={() => {
+                        soundFx.click();
+                        const r = runPlayerInterview(state, iv.id);
+                        onUpdate(r.msg);
+                      }}
+                      className="px-2.5 py-1 rounded border border-white/[0.12] bg-[#0B0E14] hover:border-[#C89B3C] text-[11px] text-slate-200 cursor-pointer"
+                    >
+                      {iv.label}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <span className="text-[11px] text-slate-500">Haftalık röportaj verildi</span>
+              )}
+              {!pc.inAcademy && (
+                <button
+                  onClick={() => {
+                    soundFx.draftLock();
+                    const r = negotiatePlayerContract(state);
+                    onUpdate(r.msg);
+                  }}
+                  className="px-3 py-1 rounded border border-[#C89B3C]/50 bg-[#C89B3C]/10 hover:bg-[#C89B3C]/20 text-[11px] font-bold text-[#E4BD67] cursor-pointer"
+                >
+                  Maaş Zammı İste
+                </button>
+              )}
+            </div>
+          </div>
 
           {Array.isArray(pc.transferOffers) && pc.transferOffers.length > 0 && (
             <div className="pt-3 border-t border-white/[0.08] space-y-2">

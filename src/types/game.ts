@@ -16,4 +16,7 @@ export interface ActiveSeriesContext {
   userSide: 'blue' | 'red';
   bo: number;
   highStakes: boolean;
+  isAcademy?: boolean;
+  customBlueRoster?: any[];
+  customRedRoster?: any[];
 }

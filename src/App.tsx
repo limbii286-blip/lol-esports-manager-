@@ -36,6 +36,7 @@ import {
   saveGame,
   loadFromSlot,
   markAllNotificationsRead,
+  createAcademyMatchContext,
 } from './engine/gameEngine.js';
 import { soundFx } from './engine/soundFx';
 import { ActiveSeriesContext, NavTab } from './types/game';
@@ -215,6 +216,14 @@ export default function App() {
       bo: match.bestOf || match.bo || 3,
       highStakes,
     });
+  };
+
+  const handlePlayAcademyMatch = () => {
+    if (!careerState) return;
+    const ctx = createAcademyMatchContext(careerState);
+    if (!ctx) return;
+    soundFx.draftLock();
+    setActiveSeries({ ...ctx, userSide: ctx.userSide as 'blue' | 'red' });
   };
 
   const handleQuickSim = (match: any) => {
@@ -589,6 +598,7 @@ export default function App() {
               state={careerState}
               userTeam={userTeam}
               onPlayMatch={handleOpenMatchArena}
+              onPlayAcademyMatch={handlePlayAcademyMatch}
               onQuickSimMatch={handleQuickSim}
               onAdvanceDay={handleAdvanceDay}
               onSkipToKeyDay={handleSkipToKeyDay}

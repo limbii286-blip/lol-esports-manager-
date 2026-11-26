@@ -35,6 +35,7 @@ import {
   getTeamRoster,
   getCurrentPatch,
   recordSeriesResult,
+  recordAcademySeriesResult,
   applyPostMatchTeamTalk,
 } from '../engine/gameEngine.js';
 import { TOUCHLINE_SHOUTS, applyTouchlineShout } from '../engine/fmExtensions';
@@ -76,14 +77,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const winsNeeded = Math.ceil(bo / 2);
 
   const blueRoster = useMemo(() => {
+    if (seriesCtx.customBlueRoster && userSide === 'blue') return seriesCtx.customBlueRoster;
+    if (seriesCtx.customRedRoster && userSide === 'red') return seriesCtx.customRedRoster;
     const r = getTeamRoster(careerState, blueTeam.id);
     return ROLES.map((role: string) => r.find((p: any) => p.role === role && p.isStarter) || r.find((p: any) => p.role === role) || r[0]);
-  }, [careerState, blueTeam.id]);
+  }, [careerState, blueTeam.id, seriesCtx, userSide]);
 
   const redRoster = useMemo(() => {
+    if (seriesCtx.customRedRoster && userSide === 'blue') return seriesCtx.customRedRoster;
+    if (seriesCtx.customBlueRoster && userSide === 'red') return seriesCtx.customBlueRoster;
     const r = getTeamRoster(careerState, redTeam.id);
     return ROLES.map((role: string) => r.find((p: any) => p.role === role && p.isStarter) || r.find((p: any) => p.role === role) || r[0]);
-  }, [careerState, redTeam.id]);
+  }, [careerState, redTeam.id, seriesCtx, userSide]);
 
   const isPlayerMode = careerState.careerMode === 'PLAYER';
   const userLegendPlayer = useMemo(
@@ -436,7 +441,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     else soundFx.defeat();
 
     if (nextBlue >= winsNeeded || nextRed >= winsNeeded) {
-      recordSeriesResult(careerState, match, nextBlue, nextRed);
+      if (seriesCtx.isAcademy) {
+        const myLiveP = (userSide === 'blue' ? ms.bluePlayers : ms.redPlayers).find(
+          (mp: any) => mp.playerId === careerState.userPlayerId
+        );
+        recordAcademySeriesResult(careerState, userWonGame, myLiveP);
+      } else {
+        recordSeriesResult(careerState, match, nextBlue, nextRed);
+      }
       setPostTalkDone(false);
       setPhase('SERIES_DONE');
     } else {

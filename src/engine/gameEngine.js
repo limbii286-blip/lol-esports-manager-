@@ -1243,6 +1243,8 @@ export function createPlayerCareer({
     coachTrust: startInAcademy ? 50 : 60,
     soloqLP: startInAcademy ? 480 : 640,
     fame: startInAcademy ? 8 : 15,
+    personalEarnings: 0,
+    interviewDoneThisWeek: false,
     weeklyActionDone: false,
     academyPlayedThisWeek: false,
     inAcademy: Boolean(startInAcademy),
@@ -1369,6 +1371,152 @@ export function promoteFromAcademy(state) {
   });
 
   return { ok: true, msg: `Tebrikler! ${team.name} Ana Kadrosuna (İlk 5) yükseldin!` };
+}
+
+export function createAcademyMatchContext(state) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer?.inAcademy) return null;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return null;
+
+  const pc = state.playerCareer;
+  const sub = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
+  const oppClubName = sub.clubs.find(c => !c.includes(team.tag)) || sub.clubs[0] || 'Rival Academy';
+  const oppTag = oppClubName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ACD';
+
+  const makeAcadMate = (role, prefix, ovrBase) => {
+    const o = Math.round(ovrBase + (Math.random() * 4 - 2));
+    return {
+      id: `acad_${prefix}_${role}`,
+      name: `${prefix}_${role}`,
+      role,
+      age: 18,
+      ovr: o,
+      pot: 78,
+      attrs: { laning: o, mechanics: o, macro: o - 1, teamfight: o, clutch: o - 1, pool: 72 },
+      sigChamps: [],
+      style: 'Consistent',
+      trait: 'Grinder',
+      isStarter: true,
+      morale: 78,
+      form: 75,
+      fatigue: 10,
+      stats: { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 },
+      mastery: {},
+    };
+  };
+
+  const blueTeam = {
+    ...team,
+    id: `acad_user_${team.id}`,
+    name: pc.academyClub,
+    tag: `${team.tag}A`,
+    synergy: 68,
+    tactics: { gameplan: 'balanced', laneFocus: p.role, objective: 'dragon', topStyle: 'balanced', supStyle: 'balanced', adcStyle: 'balanced', aheadPlan: 'choke', behindPlan: 'scale' },
+  };
+  const redTeam = {
+    id: `acad_opp_${oppTag}`,
+    name: oppClubName,
+    tag: oppTag,
+    region: team.region,
+    color: '#e11d48',
+    color2: '#ffffff',
+    prestige: 64,
+    synergy: 66,
+    facilities: { gamingHouse: 1, analystDesk: 1, youthAcademy: 1, psychologist: 1 },
+    staff: { headCoach: 1, draftAnalyst: 1, perfCoach: 1, scout: 1 },
+    tactics: { gameplan: 'balanced', laneFocus: 'MID', objective: 'dragon', topStyle: 'balanced', supStyle: 'balanced', adcStyle: 'balanced', aheadPlan: 'choke', behindPlan: 'scale' },
+    duoSynergy: {},
+  };
+
+  const blueRoster = ROLES.map(r => (r === p.role ? p : makeAcadMate(r, team.tag, 68)));
+  const redRoster = ROLES.map(r => makeAcadMate(r, oppTag, 68));
+
+  return {
+    match: { id: `acad_match_${Date.now()}`, blueId: blueTeam.id, redId: redTeam.id, bestOf: 1, played: false },
+    blueTeam,
+    redTeam,
+    userSide: 'blue',
+    bo: 1,
+    highStakes: false,
+    isAcademy: true,
+    customBlueRoster: blueRoster,
+    customRedRoster: redRoster,
+  };
+}
+
+export function recordAcademySeriesResult(state, won, userLivePlayer = null) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return '';
+  const pc = state.playerCareer;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return '';
+
+  const isMvp = won && ((userLivePlayer?.rating || 7) >= 8.0 || Math.random() < 0.45);
+  pc.academyGames = (pc.academyGames || 0) + 1;
+  if (won) pc.academyWins = (pc.academyWins || 0) + 1;
+  if (isMvp) pc.academyMvps = (pc.academyMvps || 0) + 1;
+  pc.academyPlayedThisWeek = true;
+
+  let spGain = won ? 1 : (Math.random() < 0.45 ? 1 : 0);
+  if (isMvp) spGain += 1;
+  pc.skillPoints = (pc.skillPoints || 0) + spGain;
+  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 6 : 4) : -1)));
+  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 3 : 1));
+  pc.personalEarnings = (pc.personalEarnings || 0) + (p.salary || 1800);
+
+  if (p.ovr >= 73 || pc.coachTrust >= 75) {
+    addInboxMessage(state, {
+      title: `Ana Takım Kapısı Açıldı! (${p.name} · OVR ${p.ovr})`,
+      sender: `${team.tag} Baş Koçu`,
+      category: 'BOARD',
+      priority: 'URGENT',
+      body: `${pc.academyLeague} performansın göz doldurdu! Ana takımda ${p.role} pozisyonu için hazırsın. Oyuncu Merkezinden "Ana Kadroya Yüksel" butonuna basarak ana lige çıkabilirsin!`,
+    });
+  }
+
+  return `Akademi Maçı Tamamlandı (${won ? 'GALİBİYET' : 'MAĞLUBİYET'}${isMvp ? ' · MVP!' : ''}) · +${spGain} Gelişim Puanı.`;
+}
+
+export function runPlayerInterview(state, tone) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return { ok: false, msg: 'Geçersiz mod.' };
+  const pc = state.playerCareer;
+  if (pc.interviewDoneThisWeek) return { ok: false, msg: 'Bu haftaki basın röportajını zaten verdin.' };
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+
+  pc.interviewDoneThisWeek = true;
+  if (tone === 'humble') {
+    pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 4);
+    p.morale = Math.min(100, (p.morale || 75) + 3);
+    return { ok: true, msg: 'Mütevazı röportaj verdin: Koç Güveni +4, Moral +3.' };
+  }
+  if (tone === 'confident') {
+    pc.fame = Math.min(100, (pc.fame || 10) + 6);
+    p.form = Math.min(99, (p.form || 75) + 2);
+    pc.coachTrust = Math.max(15, (pc.coachTrust || 50) - 1);
+    return { ok: true, msg: 'İddialı / Trash-Talk açıklaması gündem oldu: Şöhret +6, Form +2, Koç Güveni -1.' };
+  }
+  // team-first
+  team.synergy = Math.min(100, +(team.synergy + 1.5).toFixed(1));
+  pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 3);
+  return { ok: true, msg: 'Takım arkadaşlarını övdün: Takım Sinerjisi +1.5, Koç Güveni +3.' };
+}
+
+export function negotiatePlayerContract(state) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return { ok: false, msg: 'Geçersiz mod.' };
+  const pc = state.playerCareer;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  if (!p) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+  if (pc.inAcademy) return { ok: false, msg: 'Maaş zammı için önce Ana Kadroya yükselmelisin.' };
+  if (p.ovr < 76 || (pc.coachTrust || 50) < 65) {
+    return { ok: false, msg: `Yeni sözleşme için OVR 76+ (${p.ovr}) ve Koç Güveni %65+ (%${pc.coachTrust}) gerekli.` };
+  }
+  p.salary = Math.round((p.salary || 4500) * 1.35);
+  p.contractYears = 2;
+  pc.personalEarnings = (pc.personalEarnings || 0) + 25000;
+  return { ok: true, msg: `Sözleşme yenilendi! Yeni haftalık maaşın ${formatMoney(p.salary)} (+$25K imza bonusu).` };
 }
 
 /**
@@ -2188,6 +2336,9 @@ function runWeeklyClubTick(state) {
   if (state.playerCareer) {
     state.playerCareer.weeklyActionDone = false;
     state.playerCareer.academyPlayedThisWeek = false;
+    state.playerCareer.interviewDoneThisWeek = false;
+    const up = state.players.find(x => x.id === state.userPlayerId);
+    if (up) state.playerCareer.personalEarnings = (state.playerCareer.personalEarnings || 0) + (up.salary || 0);
   }
   if ((state.koreanBootcampWeeks || 0) > 0) state.koreanBootcampWeeks--;
   for (const team of state.teams) {
