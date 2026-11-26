@@ -78,7 +78,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       {/* Top Bar Contract: 3 zones */}
       <header className="h-16 px-6 lg:px-10 border-b border-white/[0.08] bg-[#0B0E14]/95 backdrop-blur flex items-center justify-between gap-8 sticky top-0 z-30">
         <span className="font-display text-2xl font-extrabold tracking-wide text-white whitespace-nowrap shrink-0">
-          LOL ESPORTS <span className="text-[#E4BD67]">MANAGER 26</span>
+          LOL ESPORTS <span className="text-[#E4BD67]">MANAGER 27</span>
         </span>
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
           <button
@@ -126,7 +126,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         <div className="relative max-w-[1400px] mx-auto px-6 lg:px-10 py-10 lg:py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
           <div className="lg:col-span-7 space-y-4">
             <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4BD67] font-medium">
-              <span>2026 Pro Sezonu</span>
+              <span>2027 Pro Sezonu</span>
               <span aria-hidden="true">·</span>
               <span>7 Küresel Lig</span>
               <span aria-hidden="true">·</span>

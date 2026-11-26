@@ -212,7 +212,7 @@ export const CHAMPION_MAP = Object.fromEntries(CHAMPIONS.map(c => [c.id, c]));
 
 export const PATCHES = [
   {
-    version: '26.1',
+    version: '27.1',
     name: 'Erken Oyun & Ejder Baskısı',
     desc: 'Erken koridor hakimiyeti ve ilk iki ejderin altın/stat değeri artırıldı. Agresif ormancılar ve erken güçlü nişancılar öne çıkıyor.',
     buffedClasses: ['Dive', 'Skirmish', 'Bruiser'],
@@ -222,7 +222,7 @@ export const PATCHES = [
     lateWeight: 0.9,
   },
   {
-    version: '26.2',
+    version: '27.2',
     name: 'Hypercarry & Geç Oyun Metası',
     desc: 'Kritik vuruş eşyaları güçlendirildi ve kule plakası altını azaltıldı. Geç oyunda parlayan nişancılar ve koruyucu destekler meta lideri.',
     buffedClasses: ['Hypercarry', 'Scaling'],
@@ -232,7 +232,7 @@ export const PATCHES = [
     lateWeight: 1.2,
   },
   {
-    version: '26.3',
+    version: '27.3',
     name: 'Tank & Takım Savaşı Metası',
     desc: 'Ön saflardaki tank eşyaları ve alan hasarı büyücüleri güçlendi. Baron ve Ejder çevresindeki 5v5 savaşlar maçları belirliyor.',
     buffedClasses: ['Tank', 'Teamfight'],
@@ -242,7 +242,7 @@ export const PATCHES = [
     lateWeight: 1.05,
   },
   {
-    version: '26.4',
+    version: '27.4',
     name: 'Suikastçı & Skirmish Kaosu',
     desc: 'Hiçlik Kurtçukları güçlendi, orta koridor suikastçıları ve bireysel mekanik odaklı şampiyonlar bufflandı.',
     buffedClasses: ['Assassin', 'Skirmish', 'Split'],
@@ -252,7 +252,7 @@ export const PATCHES = [
     lateWeight: 0.88,
   },
   {
-    version: '26.5',
+    version: '27.5',
     name: 'Worlds Dengeli Meta',
     desc: 'Uluslararası turnuva öncesi tüm sınıflar dengelendi. Takım sinerjisi, draft uyumu ve oyuncu şampiyon havuzu her zamankinden önemli.',
     buffedClasses: ['Teamfight', 'Hypercarry', 'Tank'],

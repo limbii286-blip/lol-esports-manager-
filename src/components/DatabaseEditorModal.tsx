@@ -61,7 +61,7 @@ export const DatabaseEditorModal: React.FC<DatabaseEditorModalProps> = ({ state,
   const handleExportJson = () => {
     soundFx.click();
     const payload = {
-      version: 'LEM26_DB_V1',
+      version: 'LEM27_DB_V1',
       season: state.season,
       teams: state.teams.map((t: any) => ({
         id: t.id,

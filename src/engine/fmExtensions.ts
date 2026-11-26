@@ -330,7 +330,7 @@ export function generatePressConference(state: any, nextMatch: any, userTeam: an
   const oppId = nextMatch ? (nextMatch.blueId === userTeam.id ? nextMatch.redId : nextMatch.blueId) : null;
   const oppTeam = oppId ? state.teams.find((t: any) => t.id === oppId) : null;
   const oppName = oppTeam ? oppTeam.name : 'rakipleriniz';
-  const patchVer = `Yama ${state.season ? String(state.season).slice(-2) : '26'}.${(state.patchIndex % 5) + 1}`;
+  const patchVer = `Yama ${state.season ? String(state.season).slice(-2) : '27'}.${(state.patchIndex % 5) + 1}`;
 
   return [
     {

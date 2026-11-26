@@ -678,7 +678,7 @@ const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma
 const TR_DAYS_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
 
 export function ensureCalendarState(state) {
-  if (!state.currentDate) state.currentDate = `${state.season || 2026}-01-12`; // Monday
+  if (!state.currentDate) state.currentDate = `${state.season || 2027}-01-11`; // Monday
   if (!state.scrimIntel) state.scrimIntel = {};
   if (!state.transferFeed) state.transferFeed = [];
   if (!state.tournamentArchive) state.tournamentArchive = [];
@@ -709,7 +709,7 @@ export function ensureCalendarState(state) {
         handle: 'r/leagueoflegends',
         author: 'u/RiftAnalyst26',
         badge: 'TARTIŞMA',
-        body: `[Sezon ${state.season || 2026} Tahminleri] ${ut.tag} bu kadroyla Playoff ve uluslararası sahnede ne yapar? Yeni Fearless Draft metası şampiyon havuzu geniş takımları öne çıkaracak.`,
+        body: `[Sezon ${state.season || 2027} Tahminleri] ${ut.tag} bu kadroyla Playoff ve uluslararası sahnede ne yapar? Yeni Fearless Draft metası şampiyon havuzu geniş takımları öne çıkaracak.`,
       });
     }
   }
@@ -775,7 +775,7 @@ export function addDaysISO(iso, days) {
 }
 
 export function formatTurkishDate(iso) {
-  const dt = parseISO(iso || '2026-01-12');
+  const dt = parseISO(iso || '2027-01-11');
   return `${dt.getUTCDate()} ${TR_MONTHS[dt.getUTCMonth()]} ${dt.getUTCFullYear()}, ${TR_DAYS[dt.getUTCDay()]}`;
 }
 
@@ -931,8 +931,8 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   });
 
   const state = {
-    season: 2026,
-    currentDate: '2026-01-12',
+    season: 2027,
+    currentDate: '2027-01-11',
     managerName: cleanName,
     phase: 'SPRING_SPLIT',
     week: 1,
@@ -973,7 +973,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     title: `Hoş Geldin ${cleanName} — ${userTeam.name} Görev Başlangıcı`,
     sender: 'Yönetim Kurulu',
     category: 'BOARD',
-    body: `Hoş geldin ${cleanName}! ${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. Hedefimiz ${userTeam.region} şampiyonluğu, MSI ve Worlds 2026 kupası!`,
+    body: `Hoş geldin ${cleanName}! ${userTeam.name} Genel Menajeri ve Baş Koçu olarak göreve başladın. Bütçen ${formatMoney(userTeam.budget)}. Hedefimiz ${userTeam.region} şampiyonluğu, MSI ve Worlds 2027 kupası!`,
   });
 
   const p0 = PATCHES[0];
@@ -988,11 +988,11 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 export function getCurrentPatch(state) {
-  const yrNum = state.season || 2026;
+  const yrNum = state.season || 2027;
   const yr = yrNum >= 2100 ? String(yrNum) : String(yrNum).slice(-2);
   const sub = (state.patchIndex % PATCHES.length) + 1;
-  // Procedurally shift meta slightly on future seasons (2027..2100+) so every year feels fresh!
-  const offset = Math.max(0, yrNum - 2026) % PATCHES.length;
+  // Procedurally shift meta slightly on future seasons (2028..2100+) so every year feels fresh!
+  const offset = Math.max(0, yrNum - 2027) % PATCHES.length;
   const shifted = PATCHES[(state.patchIndex + offset) % PATCHES.length];
   return {
     ...shifted,
@@ -1962,7 +1962,7 @@ export function advanceWeekOrRound(state) {
       state.week = 1;
       setCalendarToMonday(state, 8, 18); // Late August Playoffs
       state.bracket = createRegionalPlayoffsBracket(state, `Sezon ${state.season} Yaz Playoffları`);
-      addInboxMessage(state, { title: 'Yaz Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: 'Yaz Mevsimi bitti! Şimdi Worlds 2026 öncesi bölge finalleri!' });
+      addInboxMessage(state, { title: 'Yaz Playoffları Başlıyor!', sender: 'Lig Komitesi', category: 'TOURNAMENT', body: `Yaz Mevsimi bitti! Şimdi Worlds ${state.season} öncesi bölge finalleri!` });
     }
     return;
   }
