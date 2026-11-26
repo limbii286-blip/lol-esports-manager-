@@ -191,93 +191,28 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-transparent to-[#0B0E14]/30" />
         </div>
 
-        <div className="relative max-w-[1400px] mx-auto px-6 lg:px-10 py-10 lg:py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
-          <div className="lg:col-span-7 space-y-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4BD67] font-medium">
-              <span>2027 Pro Sezonu</span>
-              <span aria-hidden="true">·</span>
-              <span>7 Küresel Lig</span>
-              <span aria-hidden="true">·</span>
-              <span>Fearless Draft</span>
-              <span aria-hidden="true">·</span>
-              <span>Canlı 2D Maç Motoru</span>
-            </div>
-            <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.03] max-w-2xl">
-              Kulübünü Zirveye Taşı, Worlds Kupasını Kaldır
-            </h1>
-            <p className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed">
-              Taktik tahtası, gerçek zamanlı 2D Vadi simülasyonu, kenar yönetimi talimatları, basın toplantıları, Challenger wonderkid scout ağı ve Fearless Draft stratejileriyle tam ölçekli espor menajerliği.
-            </p>
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              {/* Career Mode Switcher */}
-              <div className="flex items-center gap-1 p-1 bg-[#121722]/95 border border-white/[0.12] rounded-md">
-                <button
-                  onClick={() => handleModeSwitch('MANAGER')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
-                    careerMode === 'MANAGER' ? 'bg-[#C89B3C] text-[#0B0E14]' : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <Briefcase className="w-3.5 h-3.5" />
-                  Menajer Ol
-                </button>
-                <button
-                  onClick={() => handleModeSwitch('PLAYER')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
-                    careerMode === 'PLAYER' ? 'bg-[#C89B3C] text-[#0B0E14]' : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  Efsane Ol (Oyuncu)
-                </button>
+        <div className="relative max-w-[1400px] mx-auto px-6 lg:px-10 py-8 lg:py-10 space-y-7">
+          {/* Top Hero Row: Headline + Quick Resume / Utility */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4BD67] font-semibold">
+                <span>2027 Pro Sezonu</span>
+                <span aria-hidden="true">·</span>
+                <span>7 Küresel Lig · 56 Kulüp</span>
+                <span aria-hidden="true">·</span>
+                <span>Fearless Draft · Canlı 2D Vadi</span>
               </div>
-
-              {careerMode === 'MANAGER' ? (
-                <div className="flex items-center bg-[#121722]/90 border border-white/[0.12] rounded-md px-3 py-2 gap-2.5 min-w-[240px]">
-                  <span className="text-xs text-slate-400 whitespace-nowrap">Baş Koç:</span>
-                  <input
-                    type="text"
-                    value={managerName}
-                    onChange={(e) => setManagerName(e.target.value)}
-                    maxLength={24}
-                    placeholder="Koç adın..."
-                    className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder:text-slate-600"
-                  />
-                </div>
-              ) : (
-                <div className="flex items-center bg-[#121722]/90 border border-[#C89B3C]/50 rounded-md px-3 py-2 gap-2.5 min-w-[240px]">
-                  <span className="text-xs text-[#E4BD67] whitespace-nowrap">Oyuncu Adı:</span>
-                  <input
-                    type="text"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    maxLength={18}
-                    placeholder="Nickname..."
-                    className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder:text-slate-600"
-                  />
-                </div>
-              )}
-              <button
-                onClick={onOpenMayhem}
-                className="px-4 py-2.5 rounded-md border border-white/[0.14] bg-[#121722]/85 hover:bg-[#1A2233] text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Flame className="w-4 h-4 text-[#E4BD67]" />
-                Worlds Mayhem (Efsaneler)
-              </button>
-              <button
-                onClick={onOpenSaveManager}
-                className="px-4 py-2.5 rounded-md border border-white/[0.14] bg-[#121722]/85 hover:bg-[#1A2233] text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <FolderOpen className="w-4 h-4 text-slate-400" />
-                Kayıt Slotları ({filledCount})
-              </button>
+              <h1 className="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white leading-[1.03]">
+                Sahneye Nasıl Çıkacaksın?
+              </h1>
+              <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Kulübün başına geçip hanedanlık kur ya da Akademi liginden yükselen bir çaylak olarak kendi efsaneni yaz.
+              </p>
             </div>
-          </div>
 
-          {/* Resume Career Quick Card */}
-          <div className="lg:col-span-5">
-            {autoRec ? (
-              <div className="bg-[#121722]/95 border border-[#C89B3C]/40 rounded-lg p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
+            <div className="lg:col-span-5 flex flex-col gap-3">
+              {autoRec ? (
+                <div className="bg-[#121722]/95 border border-[#C89B3C]/45 rounded-lg p-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <TeamCrest
                       tag={autoRec.teamTag}
@@ -286,9 +221,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                       size="md"
                     />
                     <div className="min-w-0">
-                      <div className="text-xs text-[#E4BD67] font-semibold">Kaldığın Yerden Devam Et</div>
-                      <div className="text-base font-bold text-white truncate">{autoRec.teamName}</div>
-                      <div className="text-xs text-slate-400 font-mono-num truncate">
+                      <div className="text-[11px] text-[#E4BD67] font-semibold">Kaldığın Yerden Devam Et</div>
+                      <div className="text-sm font-bold text-white truncate">{autoRec.teamName}</div>
+                      <div className="text-[11px] text-slate-400 font-mono-num truncate">
                         {autoRec.managerName || 'Koç'} · S{autoRec.season} · {autoRec.phaseLabel} (H{autoRec.week})
                       </div>
                     </div>
@@ -304,27 +239,176 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     Devam Et
                   </button>
                 </div>
-                <div className="text-[11px] text-slate-500 border-t border-white/[0.06] pt-2.5 flex justify-between font-mono-num">
-                  <span>Son otomatik kayıt</span>
-                  <span>{autoRec.savedAt}</span>
+              ) : null}
+
+              <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
+                <button
+                  onClick={onOpenMayhem}
+                  className="px-4 py-2 rounded-md border border-white/[0.14] bg-[#121722]/90 hover:bg-[#1A2233] text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <Flame className="w-4 h-4 text-[#E4BD67]" />
+                  Worlds Mayhem (Efsaneler)
+                </button>
+                <button
+                  onClick={onOpenSaveManager}
+                  className="px-4 py-2 rounded-md border border-white/[0.14] bg-[#121722]/90 hover:bg-[#1A2233] text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <FolderOpen className="w-4 h-4 text-slate-400" />
+                  Kayıt Slotları ({filledCount})
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* AAA Primary Career Mode Poster Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* CARD 1: MANAGER CAREER */}
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('MANAGER')}
+              className={`group relative text-left rounded-xl overflow-hidden border transition-all duration-200 min-h-[215px] p-6 sm:p-7 flex flex-col justify-between cursor-pointer ${
+                careerMode === 'MANAGER'
+                  ? 'border-[#C89B3C] ring-1 ring-[#E4BD67]/50 shadow-2xl scale-[1.005]'
+                  : 'border-white/[0.1] hover:border-white/[0.28] opacity-85 hover:opacity-100'
+              }`}
+            >
+              <div className="absolute inset-0">
+                <SafeImage
+                  src={MEDIA_ASSETS.coachHq}
+                  alt="Baş Koç ve Menajerlik"
+                  className="w-full h-full object-cover object-center opacity-45 group-hover:scale-105 transition-transform duration-500"
+                  fallbackLabel="Manager Mode"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-[#0B0E14]/80 to-[#0B0E14]/40" />
+              </div>
+
+              <div className="relative flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#E4BD67]">
+                  <Briefcase className="w-4 h-4" />
+                  KULÜP YÖNETİMİ & TAKTİK
+                </span>
+                <span
+                  className={`px-3 py-1 rounded text-[11px] font-extrabold tracking-wide ${
+                    careerMode === 'MANAGER'
+                      ? 'bg-[#C89B3C] text-[#0B0E14]'
+                      : 'bg-white/[0.08] text-slate-300'
+                  }`}
+                >
+                  {careerMode === 'MANAGER' ? 'SEÇİLİ MOD' : 'MODU SEÇ'}
+                </span>
+              </div>
+
+              <div className="relative space-y-2 mt-6">
+                <h2 className="font-display text-3xl sm:text-4xl font-extrabold text-white tracking-wide">
+                  MENAJER OL
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-lg">
+                  56 profesyonel kulüpten birinin başına geç. Transfer pazarlıkları, Fearless Draft stratejileri, tesis yatırımları ve canlı 2D kenar yönetimiyle hanedanlık kur.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[11px] font-mono-num text-slate-300">
+                  <span className="text-[#E4BD67]">56 Kulüp · 300+ Oyuncu</span>
+                  <span>·</span>
+                  <span>Tam Draft Kontrolü</span>
+                  <span>·</span>
+                  <span>Bütçe & Scout Ağı</span>
                 </div>
               </div>
-            ) : (
-              <div className="bg-[#121722]/90 border border-white/[0.08] rounded-lg p-5 grid grid-cols-3 gap-4 text-left">
-                <div>
-                  <div className="font-mono-num text-2xl font-bold text-white">{previewDB.teams.length}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">Pro Kulüp</div>
-                </div>
-                <div>
-                  <div className="font-mono-num text-2xl font-bold text-white">{previewDB.players.length}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">Lisanslı Oyuncu</div>
-                </div>
-                <div>
-                  <div className="font-mono-num text-2xl font-bold text-[#E4BD67]">7 Lig</div>
-                  <div className="text-xs text-slate-400 mt-0.5">LCK'den TCL'ye</div>
+            </button>
+
+            {/* CARD 2: BE A LEGEND (PLAYER CAREER) */}
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('PLAYER')}
+              className={`group relative text-left rounded-xl overflow-hidden border transition-all duration-200 min-h-[215px] p-6 sm:p-7 flex flex-col justify-between cursor-pointer ${
+                careerMode === 'PLAYER'
+                  ? 'border-[#C89B3C] ring-1 ring-[#E4BD67]/50 shadow-2xl scale-[1.005]'
+                  : 'border-white/[0.1] hover:border-white/[0.28] opacity-85 hover:opacity-100'
+              }`}
+            >
+              <div className="absolute inset-0">
+                <SafeImage
+                  src={MEDIA_ASSETS.worldsTrophy}
+                  alt="Efsane Ol Oyuncu Kariyeri"
+                  className="w-full h-full object-cover object-center opacity-45 group-hover:scale-105 transition-transform duration-500"
+                  fallbackLabel="Be a Legend Mode"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-[#0B0E14]/80 to-[#0B0E14]/40" />
+              </div>
+
+              <div className="relative flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-400">
+                  <UserCheck className="w-4 h-4" />
+                  PRO OYUNCU KARİYERİ
+                </span>
+                <span
+                  className={`px-3 py-1 rounded text-[11px] font-extrabold tracking-wide ${
+                    careerMode === 'PLAYER'
+                      ? 'bg-[#C89B3C] text-[#0B0E14]'
+                      : 'bg-white/[0.08] text-slate-300'
+                  }`}
+                >
+                  {careerMode === 'PLAYER' ? 'SEÇİLİ MOD' : 'MODU SEÇ'}
+                </span>
+              </div>
+
+              <div className="relative space-y-2 mt-6">
+                <h2 className="font-display text-3xl sm:text-4xl font-extrabold text-white tracking-wide">
+                  EFSANE OL
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-lg">
+                  17 yaşında Akademi liginden başla veya doğrudan ilk 5'e çık. Koçtan imza şampiyonunu iste, maç içi kritik kararlarla parlayıp dev kulüplere transfer ol.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[11px] font-mono-num text-slate-300">
+                  <span className="text-sky-400">Akademi → Worlds Yolu</span>
+                  <span>·</span>
+                  <span>Maç İçi Karar Anları</span>
+                  <span>·</span>
+                  <span>Röportaj & Maaş Pazarlığı</span>
                 </div>
               </div>
-            )}
+            </button>
+          </div>
+
+          {/* Active Mode Identity Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-[#121722]/90 border border-white/[0.1] rounded-lg px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-4">
+              {careerMode === 'MANAGER' ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-semibold text-[#E4BD67] whitespace-nowrap">Baş Koç Adın:</span>
+                  <input
+                    type="text"
+                    value={managerName}
+                    onChange={(e) => setManagerName(e.target.value)}
+                    maxLength={24}
+                    placeholder="Koç adın..."
+                    className="bg-[#0B0E14] border border-white/[0.12] focus:border-[#C89B3C] rounded-md px-3 py-1.5 text-sm font-semibold text-white outline-none w-56"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-semibold text-sky-400 whitespace-nowrap">Oyuncu Nickname:</span>
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    maxLength={18}
+                    placeholder="Nickname..."
+                    className="bg-[#0B0E14] border border-[#C89B3C]/50 focus:border-[#E4BD67] rounded-md px-3 py-1.5 text-sm font-semibold text-white outline-none w-56"
+                  />
+                </div>
+              )}
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                Seçili Kulüp: <strong className="text-white">{selectedTeam?.name}</strong> ({selectedTeam?.region})
+              </span>
+            </div>
+
+            <button
+              onClick={handleLaunch}
+              className="px-6 py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] font-extrabold text-xs flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+            >
+              {careerMode === 'PLAYER' ? 'Efsane Kariyerini Başlat' : 'Menajer Sözleşmesini İmzala'}
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </section>
