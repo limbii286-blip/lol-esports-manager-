@@ -145,11 +145,17 @@ export default function App() {
     sigChamps: string[];
     teamId: string;
     archetype: string;
+    startInAcademy: boolean;
   }) => {
     const st = createPlayerCareer(opts);
     ensureCalendarState(st);
     setActiveTab('dashboard');
-    commitState(st, `Efsane Ol başladı! ${opts.playerName} (${opts.role}) sahneye çıkıyor.`);
+    commitState(
+      st,
+      opts.startInAcademy
+        ? `Akademi Kariyeri başladı! ${opts.playerName} (${opts.role}) alt ligde sahneye çıkıyor.`
+        : `Efsane Ol başladı! ${opts.playerName} (${opts.role}) ana kadroda!`
+    );
   };
 
   const handleResumeAutoSave = () => {

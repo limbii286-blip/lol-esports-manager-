@@ -35,6 +35,8 @@ import {
   getManagerProfile,
   runPlayerWeeklyActivity,
   acceptPlayerTransferOffer,
+  playAcademyMatch,
+  promoteFromAcademy,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -299,6 +301,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
           </div>
+
+          {pc.inAcademy && (
+            <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 bg-[#0B0E14]/70 rounded-md p-3.5">
+              <div className="space-y-0.5 text-xs">
+                <div className="font-bold text-sky-400">
+                  Akademi Ligi: {pc.academyClub} ({pc.academyLeague})
+                </div>
+                <div className="text-slate-400 font-mono-num">
+                  {pc.academyGames || 0} Maç · {pc.academyWins || 0} Galibiyet · {pc.academyMvps || 0} MVP · Terfi Şartı: OVR ≥ 73 ({userPlayer.ovr}/73) veya Güven ≥ %75 (%{pc.coachTrust}/75)
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  disabled={pc.academyPlayedThisWeek}
+                  onClick={() => {
+                    const r = playAcademyMatch(state);
+                    if (r.won) soundFx.victory();
+                    else soundFx.click();
+                    onUpdate(r.msg);
+                  }}
+                  className={`px-3.5 py-2 rounded-md text-xs font-bold whitespace-nowrap ${
+                    pc.academyPlayedThisWeek
+                      ? 'bg-white/[0.04] text-slate-500 cursor-not-allowed'
+                      : 'bg-sky-500 hover:bg-sky-400 text-[#0B0E14] cursor-pointer'
+                  }`}
+                >
+                  {pc.academyPlayedThisWeek ? 'Bu Hafta Akademi Maçı Oynandı' : 'Akademi Maçına Çık'}
+                </button>
+                {(userPlayer.ovr >= 73 || pc.coachTrust >= 75) && (
+                  <button
+                    onClick={() => {
+                      soundFx.trophyFanfare();
+                      const r = promoteFromAcademy(state);
+                      onUpdate(r.msg);
+                    }}
+                    className="px-4 py-2 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-extrabold cursor-pointer whitespace-nowrap"
+                  >
+                    Ana Kadroya Yüksel! (İlk 5)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {Array.isArray(pc.transferOffers) && pc.transferOffers.length > 0 && (
             <div className="pt-3 border-t border-white/[0.08] space-y-2">

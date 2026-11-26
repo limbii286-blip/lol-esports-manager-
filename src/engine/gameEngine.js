@@ -1167,7 +1167,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 /**
- * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, archetype?: string }} [opts]
+ * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, archetype?: string, startInAcademy?: boolean }} [opts]
  */
 export function createPlayerCareer({
   playerName = 'Rookie',
@@ -1175,6 +1175,7 @@ export function createPlayerCareer({
   sigChamps = /** @type {string[]} */ ([]),
   teamId = 'bro',
   archetype = 'Aggressive',
+  startInAcademy = true,
 } = {}) {
   const cleanPlayer = (playerName || 'Rookie').trim() || 'Rookie';
   const state = createNewCareer(teamId, 'AI Baş Koç');
@@ -1182,23 +1183,27 @@ export function createPlayerCareer({
   state.managerName = `${team.tag} Baş Koçu`;
   state.careerMode = 'PLAYER';
 
-  // Demote existing starter in the user's chosen role to bench
-  for (const p of state.players) {
-    if (p.teamId === team.id && p.role === role && p.isStarter) {
-      p.isStarter = false;
+  // Only demote existing starter if starting directly in Main Roster
+  if (!startInAcademy) {
+    for (const p of state.players) {
+      if (p.teamId === team.id && p.role === role && p.isStarter) {
+        p.isStarter = false;
+      }
     }
   }
 
+  const statOffset = startInAcademy ? -6 : 0;
   const baseAttrs = {
-    laning: archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 76 : 74,
-    mechanics: archetype === 'Aggressive' ? 80 : archetype === 'Playmaker' ? 78 : 74,
-    macro: archetype === 'Playmaker' ? 77 : archetype === 'Weakside' ? 79 : 73,
-    teamfight: archetype === 'Consistent' ? 78 : archetype === 'Weakside' ? 77 : 75,
-    clutch: archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 77 : 74,
-    pool: Math.min(82, 72 + sigChamps.length * 3),
+    laning: (archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 76 : 74) + statOffset,
+    mechanics: (archetype === 'Aggressive' ? 80 : archetype === 'Playmaker' ? 78 : 74) + statOffset,
+    macro: (archetype === 'Playmaker' ? 77 : archetype === 'Weakside' ? 79 : 73) + statOffset,
+    teamfight: (archetype === 'Consistent' ? 78 : archetype === 'Weakside' ? 77 : 75) + statOffset,
+    clutch: (archetype === 'Aggressive' ? 78 : archetype === 'Consistent' ? 77 : 74) + statOffset,
+    pool: Math.min(82, (startInAcademy ? 67 : 72) + sigChamps.length * 3),
   };
   const ovr = calcOVR(baseAttrs);
   const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 2);
+  const subLeague = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
 
   const userPlayer = {
     id: 'user_legend_player',
@@ -1206,7 +1211,7 @@ export function createPlayerCareer({
     nat: 'TR',
     lang: REGION_LANG[team.region] || 'EN',
     role,
-    age: 18,
+    age: startInAcademy ? 17 : 18,
     ovr,
     pot: 96,
     attrs: baseAttrs,
@@ -1214,18 +1219,18 @@ export function createPlayerCareer({
     style: archetype || 'Aggressive',
     trait: archetype === 'Aggressive' ? 'Clutch' : archetype === 'Consistent' ? 'Leader' : 'Grinder',
     teamId: team.id,
-    isStarter: true,
+    isStarter: !startInAcademy,
     contractYears: 2,
-    salary: 4500,
-    marketValue: 180000,
+    salary: startInAcademy ? 1800 : 4500,
+    marketValue: startInAcademy ? 85000 : 180000,
     morale: 84,
     form: 78,
     fatigue: 8,
     injuredWeeks: 0,
     benchWeeks: 0,
     importWeeksLeft: 0,
-    teamGames: 4,
-    rolePromise: 'STAR',
+    teamGames: startInAcademy ? 0 : 4,
+    rolePromise: startInAcademy ? 'ROTATION' : 'STAR',
     mastery: Object.fromEntries(cleanSigs.map(cid => [cid, 3])),
     stats: { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 },
     careerHistory: [],
@@ -1234,23 +1239,136 @@ export function createPlayerCareer({
   state.players.unshift(userPlayer);
   state.userPlayerId = userPlayer.id;
   state.playerCareer = {
-    skillPoints: 2,
-    coachTrust: 60,
-    soloqLP: 640,
-    fame: 15,
+    skillPoints: startInAcademy ? 3 : 2,
+    coachTrust: startInAcademy ? 50 : 60,
+    soloqLP: startInAcademy ? 480 : 640,
+    fame: startInAcademy ? 8 : 15,
     weeklyActionDone: false,
+    academyPlayedThisWeek: false,
+    inAcademy: Boolean(startInAcademy),
+    academyLeague: subLeague.name,
+    academyClub: `${team.tag} Academy`,
+    academyGames: 0,
+    academyWins: 0,
+    academyMvps: 0,
     transferOffers: [],
   };
 
   addInboxMessage(state, {
-    title: `Efsane Ol: ${team.name} İlk 5 Forması Senin, ${cleanPlayer}!`,
+    title: startInAcademy
+      ? `Akademi Kontratı: ${team.tag} Academy (${subLeague.name})`
+      : `Efsane Ol: ${team.name} İlk 5 Forması Senin, ${cleanPlayer}!`,
     sender: `${team.tag} Baş Koçu`,
     category: 'BOARD',
     priority: 'HIGH',
-    body: `Hoş geldin ${cleanPlayer}! ${role} koridorunda ilk 5 şansını kaptın. Antrenman, SoloQ ve maç içi kritik kararlarınla OVR'ni yükselt; güvenimi kazanırsan Draft'ta istediğin şampiyonları da seçeceğim.`,
+    body: startInAcademy
+      ? `Hoş geldin ${cleanPlayer}! Kariyerine ${subLeague.name} liginde ${team.tag} Academy formasıyla başlıyorsun (OVR ${ovr}). Akademi maçlarında parlayıp OVR 73+ veya Koç Güveni %75+ seviyesine ulaştığında ana takıma terfi edeceksin!`
+      : `Hoş geldin ${cleanPlayer}! ${role} koridorunda ilk 5 şansını kaptın. Antrenman, SoloQ ve maç içi kritik kararlarınla OVR'ni yükselt; güvenimi kazanırsan Draft'ta istediğin şampiyonları da seçeceğim.`,
   });
 
   return state;
+}
+
+export function playAcademyMatch(state) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer?.inAcademy) {
+    return { ok: false, msg: 'Şu anda Akademi Liginde değilsin.' };
+  }
+  const pc = state.playerCareer;
+  if (pc.academyPlayedThisWeek) {
+    return { ok: false, msg: 'Bu haftaki Akademi maçını zaten oynadın.' };
+  }
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+
+  const sub = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
+  const oppClub = sub.clubs[Math.floor(Math.random() * sub.clubs.length)] || 'Rival Academy';
+
+  const winChance = Math.max(0.32, Math.min(0.82, 0.44 + (p.ovr - 68) * 0.04 + ((p.form || 75) - 75) * 0.006));
+  const won = Math.random() < winChance;
+  const k = Math.max(1, Math.round((won ? 5 : 2) + Math.random() * 5));
+  const d = Math.max(0, Math.round((won ? 2 : 4) + Math.random() * 3));
+  const a = Math.max(2, Math.round((won ? 7 : 3) + Math.random() * 6));
+  const isMvp = won && Math.random() < (0.35 + (p.ovr - 68) * 0.05);
+
+  pc.academyGames = (pc.academyGames || 0) + 1;
+  if (won) pc.academyWins = (pc.academyWins || 0) + 1;
+  if (isMvp) pc.academyMvps = (pc.academyMvps || 0) + 1;
+  pc.academyPlayedThisWeek = true;
+
+  p.fatigue = Math.min(100, (p.fatigue || 0) + 8);
+  p.form = Math.min(99, Math.max(55, (p.form || 75) + (won ? 3 : -1)));
+  p.morale = Math.min(100, Math.max(30, (p.morale || 80) + (won ? 3 : -2)));
+
+  let spGain = won ? 1 : (Math.random() < 0.4 ? 1 : 0);
+  if (isMvp) spGain += 1;
+  pc.skillPoints = (pc.skillPoints || 0) + spGain;
+  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 6 : 4) : -1)));
+  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 3 : 1));
+
+  const ready = p.ovr >= 73 || pc.coachTrust >= 75;
+  if (ready) {
+    addInboxMessage(state, {
+      title: `Ana Takım Kapısı Açıldı! (${p.name} · OVR ${p.ovr})`,
+      sender: `${team.tag} Baş Koçu`,
+      category: 'BOARD',
+      priority: 'URGENT',
+      body: `${pc.academyLeague} performansın göz doldurdu! Ana takımda ${p.role} pozisyonu için hazırsın. Oyuncu Merkezinden "Ana Kadroya Yüksel" butonuna basarak ana lige çıkabilirsin!`,
+    });
+  }
+
+  return {
+    ok: true,
+    won,
+    isMvp,
+    msg: `${pc.academyClub} vs ${oppClub}: ${won ? 'GALİBİYET' : 'MAĞLUBİYET'} (${k}/${d}/${a}${isMvp ? ' · MAÇIN MVP\'Sİ!' : ''}) · +${spGain} Gelişim Puanı.`,
+  };
+}
+
+export function promoteFromAcademy(state) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer?.inAcademy) {
+    return { ok: false, msg: 'Zaten ana kadrodasın.' };
+  }
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  const pc = state.playerCareer;
+  if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
+
+  if (p.ovr < 73 && pc.coachTrust < 75) {
+    return { ok: false, msg: `Terfi için OVR 73+ (Mevcut: ${p.ovr}) veya Koç Güveni %75+ (Mevcut: %${pc.coachTrust}) gerekli.` };
+  }
+
+  for (const op of state.players) {
+    if (op.teamId === team.id && op.role === p.role && op.isStarter) {
+      op.isStarter = false;
+    }
+  }
+  p.isStarter = true;
+  p.rolePromise = 'STAR';
+  p.salary = 4500;
+  pc.inAcademy = false;
+  pc.fame = Math.min(100, (pc.fame || 10) + 10);
+
+  if (!Array.isArray(p.careerHistory)) p.careerHistory = [];
+  p.careerHistory.unshift({
+    season: state.season,
+    teamTag: `${team.tag} AC`,
+    teamName: pc.academyClub,
+    region: pc.academyLeague,
+    games: pc.academyGames || 0,
+    wins: pc.academyWins || 0,
+    ovr: p.ovr,
+  });
+
+  addInboxMessage(state, {
+    title: `TERFİ! ${p.name} Artık ${team.name} Ana Kadrosunda!`,
+    sender: `${team.tag} Baş Koçu`,
+    category: 'BOARD',
+    priority: 'HIGH',
+    body: `Tebrikler ${p.name}! ${pc.academyLeague} seviyesindeki performansınla ${team.name} İlk 5 kadrosuna yükseldin. Artık ${team.region} ana sahnesinde mücadele edeceksin!`,
+  });
+
+  return { ok: true, msg: `Tebrikler! ${team.name} Ana Kadrosuna (İlk 5) yükseldin!` };
 }
 
 /**
@@ -1411,6 +1529,10 @@ export function getCurrentPatch(state) {
 export function getUserNextMatch(state) {
   const uid = state.userTeamId;
   const userTeam = state.teams.find(t => t.id === uid);
+
+  if (state.careerMode === 'PLAYER' && state.playerCareer?.inAcademy) {
+    return null;
+  }
 
   if (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') {
     const regMatches = state.schedules[userTeam.region]?.[state.week - 1] || [];
@@ -2063,7 +2185,10 @@ export function respondIncomingOffer(state, offerId, accept) {
 function runWeeklyClubTick(state) {
   ensureCalendarState(state);
   state.scrimDoneThisWeek = false;
-  if (state.playerCareer) state.playerCareer.weeklyActionDone = false;
+  if (state.playerCareer) {
+    state.playerCareer.weeklyActionDone = false;
+    state.playerCareer.academyPlayedThisWeek = false;
+  }
   if ((state.koreanBootcampWeeks || 0) > 0) state.koreanBootcampWeeks--;
   for (const team of state.teams) {
     ensureTeamExtras(team);

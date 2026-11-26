@@ -15,6 +15,7 @@ interface StartScreenProps {
     sigChamps: string[];
     teamId: string;
     archetype: string;
+    startInAcademy: boolean;
   }) => void;
   onResumeAutoSave: () => void;
   onOpenSaveManager: () => void;
@@ -49,6 +50,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const [playerRole, setPlayerRole] = useState<string>('MID');
   const [playerArchetype, setPlayerArchetype] = useState<string>('Aggressive');
   const [sigChamps, setSigChamps] = useState<string[]>(['ahri', 'syndra']);
+  const [startInAcademy, setStartInAcademy] = useState<boolean>(true);
   const [onlyUnderdogs, setOnlyUnderdogs] = useState<boolean>(true);
 
   const roleChampions = useMemo(
@@ -127,6 +129,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         sigChamps,
         teamId: selectedTeam.id,
         archetype: playerArchetype,
+        startInAcademy,
       });
       return;
     }
@@ -385,6 +388,31 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                         {a.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 mb-1.5">Başlangıç Ligi</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => setStartInAcademy(true)}
+                      className={`py-2 px-2.5 rounded text-xs font-semibold cursor-pointer ${
+                        startInAcademy
+                          ? 'bg-[#C89B3C] text-[#0B0E14]'
+                          : 'bg-[#0B0E14] border border-white/[0.08] text-slate-400'
+                      }`}
+                    >
+                      Akademi Ligi (Önerilen)
+                    </button>
+                    <button
+                      onClick={() => setStartInAcademy(false)}
+                      className={`py-2 px-2.5 rounded text-xs font-semibold cursor-pointer ${
+                        !startInAcademy
+                          ? 'bg-[#C89B3C] text-[#0B0E14]'
+                          : 'bg-[#0B0E14] border border-white/[0.08] text-slate-400'
+                      }`}
+                    >
+                      Doğrudan Ana Kadro
+                    </button>
                   </div>
                 </div>
               </div>
