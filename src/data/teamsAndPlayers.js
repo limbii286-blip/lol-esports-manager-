@@ -70,11 +70,109 @@ export function calcOVR(attrs) {
   );
 }
 
-export function calcMarketValue(ovr, age, pot) {
-  const ageFactor = age <= 20 ? 1.32 : age <= 23 ? 1.12 : age <= 26 ? 1.0 : age <= 28 ? 0.8 : 0.65;
-  const potBonus = Math.max(0, pot - ovr) * 14000;
-  const base = Math.pow(Math.max(1, ovr - 48), 2.35) * 115;
-  return Math.max(25000, Math.round((base * ageFactor + potBonus) / 5000) * 5000);
+export function getAgeFatigueProfile(age = 22) {
+  const a = Number(age) || 22;
+  if (a <= 20) {
+    return {
+      gainMult: 0.78,
+      recMult: 1.26,
+      injuryThreshold: 87,
+      perfThreshold: 58,
+      label: 'Genç Dayanıklılık',
+      desc: 'Maç ve yoğun antrenmanlarda daha az yorulur, çok hızlı toparlanır.',
+    };
+  }
+  if (a <= 23) {
+    return {
+      gainMult: 0.90,
+      recMult: 1.12,
+      injuryThreshold: 84,
+      perfThreshold: 56,
+      label: 'Yüksek Kondisyon',
+      desc: 'Yoğun maç takviminde yüksek tempo ve hızlı yenilenme sağlar.',
+    };
+  }
+  if (a <= 26) {
+    return {
+      gainMult: 1.02,
+      recMult: 1.00,
+      injuryThreshold: 81,
+      perfThreshold: 54,
+      label: 'Dengeli Kondisyon',
+      desc: 'Standart profesyonel maç yükü ve toparlanma dengesi.',
+    };
+  }
+  if (a <= 28) {
+    return {
+      gainMult: 1.24,
+      recMult: 0.85,
+      injuryThreshold: 77,
+      perfThreshold: 51,
+      label: 'Tecrübeli Yük',
+      desc: 'Uzun serilerde ve yoğun antrenmanda daha hızlı yorulur; rotasyon faydalıdır.',
+    };
+  }
+  return {
+    gainMult: 1.46,
+    recMult: 0.70,
+    injuryThreshold: 72,
+    perfThreshold: 47,
+    label: 'Veteran Yük Yönetimi',
+    desc: 'Yorgunluk hızla birikir, toparlanma yavaştır; dinlenme ve bilek sağlığı kritik.',
+  };
+}
+
+export function calcMarketValue(ovr, age, pot, opts = {}) {
+  const safeOvr = Math.max(48, Number(ovr) || 70);
+  const safeAge = Math.max(16, Number(age) || 22);
+  const safePot = Math.max(safeOvr, Number(pot) || safeOvr);
+  const form = opts.form ?? 75;
+  const hasTeam = opts.teamId !== undefined ? Boolean(opts.teamId) : true;
+  const contractYears = opts.contractYears ?? 2;
+  const leaguePrestige = opts.leaguePrestige ?? 82;
+  const stats = opts.stats || null;
+
+  // 1. Exponential OVR baseline (separates generational superstars from average starters)
+  const ovrBase = Math.pow(Math.max(1, safeOvr - 48), 2.42) * 110;
+
+  // 2. Age valuation curve (Wonderkid premium -> Prime peak -> Steep veteran depreciation)
+  const ageMult =
+    safeAge <= 19 ? 1.34 :
+    safeAge <= 21 ? 1.24 :
+    safeAge <= 24 ? 1.12 :
+    safeAge <= 26 ? 1.00 :
+    safeAge <= 28 ? 0.81 :
+    safeAge <= 30 ? 0.63 : 0.45;
+
+  // 3. Potential & growth headroom (age-weighted upside)
+  const headroom = Math.max(0, safePot - safeOvr);
+  const potSlope = safeAge <= 20 ? 0.044 : safeAge <= 23 ? 0.028 : safeAge <= 26 ? 0.014 : 0.004;
+  const eliteCeilingBonus = safePot >= 91 && safeAge <= 22 ? 0.11 : safePot >= 87 && safeAge <= 21 ? 0.06 : 0;
+  const potMult = 1 + Math.min(0.56, headroom * potSlope) + eliteCeilingBonus;
+
+  // 4. Rolling Form & Season Performance multiplier
+  let formMult = form >= 75
+    ? 1 + Math.min(0.28, (form - 75) * 0.0115)
+    : 1 - Math.min(0.26, (75 - form) * 0.009);
+  if (stats && stats.games >= 3) {
+    const kda = (stats.kills + stats.assists) / Math.max(1, stats.deaths);
+    const mvpRate = (stats.mvps || 0) / stats.games;
+    const perfBoost = Math.max(-0.07, Math.min(0.10, (kda - 3.2) * 0.018 + mvpRate * 0.12));
+    formMult += perfBoost;
+  }
+
+  // 5. Contract Length Leverage (FM-style: final year plummets transfer value; 3+ yrs protects club!)
+  let contractMult = 1.0;
+  if (!hasTeam || contractYears <= 0) contractMult = 0.78;
+  else if (contractYears === 1) contractMult = 0.68;
+  else if (contractYears === 2) contractMult = 1.00;
+  else contractMult = 1.22;
+
+  // 6. League Reputation scale
+  const repMult = 0.84 + Math.max(0, Math.min(1, (leaguePrestige - 70) / 28)) * 0.26;
+
+  const raw = ovrBase * ageMult * potMult * formMult * contractMult * repMult;
+  return Math.max(25000, Math.round(raw / 5000) * 5000);
 }
 
 export function calcWeeklySalary(ovr, prestige = 80) {
@@ -120,7 +218,13 @@ function mkPlayer(name, role, nat, age, rawBaseOvr, rawPot, style, sigChamps, te
   const ovr = calcOVR(attrs);
   const finalPot = Math.max(ovr, pot);
   const salary = calcWeeklySalary(ovr);
-  const marketValue = calcMarketValue(ovr, age, finalPot);
+  const contractYears = overrides.contractYears ?? (teamId ? (Math.random() < 0.35 ? 1 : Math.random() < 0.74 ? 2 : 3) : 0);
+  const initForm = 72 + Math.floor(Math.random() * 16);
+  const marketValue = calcMarketValue(ovr, age, finalPot, {
+    form: initForm,
+    contractYears,
+    teamId,
+  });
 
   // Assign a fitting trait
   let trait = overrides.trait;
@@ -152,10 +256,11 @@ function mkPlayer(name, role, nat, age, rawBaseOvr, rawPot, style, sigChamps, te
     mastery,
     teamId,
     salary,
-    contractYears: overrides.contractYears ?? (Math.random() < 0.45 ? 1 : Math.random() < 0.75 ? 2 : 3),
+    contractYears,
     marketValue,
+    prevMarketValue: marketValue,
     morale: 78 + Math.floor(Math.random() * 14),
-    form: 72 + Math.floor(Math.random() * 16),
+    form: initForm,
     fatigue: 8 + Math.floor(Math.random() * 10),
     isStarter: teamId !== null,
     stats: { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, mvps: 0 },

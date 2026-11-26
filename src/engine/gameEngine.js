@@ -3,9 +3,11 @@ import { PATCHES, CHAMPION_MAP } from '../data/champions.js';
 import {
   ROLES, REGIONS, REGION_LANG, getRivalryName,
   createInitialDatabase, calcOVR, calcMarketValue, calcWeeklySalary,
+  getAgeFatigueProfile,
   generateRegenPlayer, generateChallengerProspects
 } from '../data/teamsAndPlayers.js';
-import { quickSimulateGame, applyMatchOutcomeToPlayers } from './matchEngine.js';
+import { quickSimulateGame, applyMatchOutcomeToPlayers, computeTeamChemistry } from './matchEngine.js';
+export { computeTeamChemistry, getAgeFatigueProfile };
 
 export const SAVE_KEY = 'lol_esports_manager_save_v2';
 export const SLOTS_KEY = 'lol_esports_manager_slots_v2';
@@ -129,19 +131,35 @@ export function talkToPlayer1on1(state, playerId, action) {
     return { ok: false, reason: `${p.name} ile bu hafta zaten birebir görüştün.` };
   }
   p.lastTalkWeek = key;
+  const ageProf = getAgeFatigueProfile(p.age);
   if (action === 'praise') {
-    p.morale = Math.min(100, p.morale + 6);
-    return { ok: true, reason: `${p.name} övgünden çok memnun oldu (Moral +6).` };
+    const gain = (p.trait === 'Ego' || p.trait === 'Leader') ? 7 : 6;
+    p.morale = Math.min(100, p.morale + gain);
+    return { ok: true, reason: `${p.name} övgünden çok memnun oldu (Moral +${gain}).` };
   }
-  if (action === 'push') {
-    p.form = Math.min(99, p.form + 4);
-    p.morale = Math.max(30, p.morale - (p.trait === 'Grinder' ? 0 : 3));
-    return { ok: true, reason: `${p.name} antrenman temposunu artırdı (Form +4${p.trait === 'Grinder' ? ', Grinder olduğu için moral kaybetmedi' : ', Moral -3'}).` };
+  if (action === 'motivate') {
+    const formGain = (p.trait === 'Clutch' || p.trait === 'Leader') ? 4 : 3;
+    p.form = Math.min(99, p.form + formGain);
+    p.morale = Math.min(100, p.morale + 3);
+    recalculatePlayerMarketValue(state, p, true);
+    return { ok: true, reason: `${p.name} konuşmadan büyük motivasyon aldı (Form +${formGain}, Moral +3).` };
+  }
+  if (action === 'criticize' || action === 'push') {
+    const formGain = p.trait === 'Grinder' ? 5 : 4;
+    const moraleDrop = p.trait === 'Grinder' ? 0 : (p.trait === 'Ego' || p.trait === 'Tilt') ? 6 : 3;
+    p.form = Math.min(99, p.form + formGain);
+    p.morale = Math.max(30, p.morale - moraleDrop);
+    recalculatePlayerMarketValue(state, p, true);
+    return {
+      ok: true,
+      reason: `${p.name} uyarın sonrası antrenman temposunu artırdı (Form +${formGain}${moraleDrop === 0 ? ', Çalışkan karakteri sayesinde moral kaybetmedi' : `, Moral -${moraleDrop}`}).`,
+    };
   }
   // rest/calm
-  p.fatigue = Math.max(0, p.fatigue - 8);
+  const restDrop = Math.max(5, Math.round(9 * ageProf.recMult));
+  p.fatigue = Math.max(0, p.fatigue - restDrop);
   p.morale = Math.min(100, p.morale + 3);
-  return { ok: true, reason: `${p.name} üzerindeki baskı azaldı (Yorgunluk -8, Moral +3).` };
+  return { ok: true, reason: `${p.name} dinlenme izninden faydalandı (Yorgunluk -${restDrop}, Moral +3).` };
 }
 
 export function getDuoPairKey(idA, idB) {
@@ -177,6 +195,202 @@ export function formatMoney(n) {
   return `$${n}`;
 }
 
+function getPlayerLeaguePrestige(state, player) {
+  if (!player?.teamId || !state?.teams) return 80;
+  const team = state.teams.find(t => t.id === player.teamId);
+  if (!team) return 80;
+  const reg = REGIONS.find(r => r.id === team.region);
+  return reg?.prestige ?? team.prestige ?? 80;
+}
+
+export function recalculatePlayerMarketValue(state, player, preservePrev = true) {
+  if (!player) return 25000;
+  const leaguePrestige = getPlayerLeaguePrestige(state, player);
+  const nextVal = calcMarketValue(player.ovr, player.age, player.pot, {
+    form: player.form ?? 75,
+    contractYears: player.contractYears ?? (player.teamId ? 2 : 0),
+    teamId: player.teamId,
+    leaguePrestige,
+    stats: player.stats,
+  });
+  if (preservePrev) {
+    if (player.prevMarketValue === undefined) {
+      player.prevMarketValue = player.marketValue || nextVal;
+    } else if (player.marketValue && Math.abs(nextVal - player.marketValue) >= 5000) {
+      player.prevMarketValue = player.marketValue;
+    }
+  } else {
+    player.prevMarketValue = nextVal;
+  }
+  player.marketValue = nextVal;
+  return nextVal;
+}
+
+export function syncAllMarketValues(state, preservePrev = true) {
+  if (!state?.players) return;
+  for (const p of state.players) {
+    recalculatePlayerMarketValue(state, p, preservePrev);
+  }
+}
+
+export function getPlayerValuationDetails(state, player, buyerTeam = null) {
+  const safeOvr = Math.max(48, Number(player?.ovr) || 70);
+  const safeAge = Math.max(16, Number(player?.age) || 22);
+  const safePot = Math.max(safeOvr, Number(player?.pot) || safeOvr);
+  const form = player?.form ?? 75;
+  const hasTeam = Boolean(player?.teamId);
+  const contractYears = player?.contractYears ?? (hasTeam ? 2 : 0);
+  const leaguePrestige = getPlayerLeaguePrestige(state, player);
+  const sellingTeam = hasTeam ? state?.teams?.find(t => t.id === player.teamId) : null;
+  const regObj = sellingTeam ? REGIONS.find(r => r.id === sellingTeam.region) : null;
+
+  const marketValue = recalculatePlayerMarketValue(state, player, true);
+  const prevMarketValue = player.prevMarketValue ?? marketValue;
+  const deltaPct = prevMarketValue > 0 ? Math.round(((marketValue - prevMarketValue) / prevMarketValue) * 100) : 0;
+  const trend = deltaPct >= 2 ? 'UP' : deltaPct <= -2 ? 'DOWN' : 'STABLE';
+
+  // Mirror exact multipliers from calcMarketValue for 100% transparent UI breakdown
+  const ageMult =
+    safeAge <= 19 ? 1.34 :
+    safeAge <= 21 ? 1.24 :
+    safeAge <= 24 ? 1.12 :
+    safeAge <= 26 ? 1.00 :
+    safeAge <= 28 ? 0.81 :
+    safeAge <= 30 ? 0.63 : 0.45;
+  const agePct = Math.round((ageMult - 1) * 100);
+  const ageNote =
+    safeAge <= 21 ? `${safeAge} yaş · Genç Yıldız Primi` :
+    safeAge <= 24 ? `${safeAge} yaş · Yükseliş Dönemi` :
+    safeAge <= 26 ? `${safeAge} yaş · Zirve Dönemi` :
+    safeAge <= 28 ? `${safeAge} yaş · Olgunlaşma Düşüşü` : `${safeAge} yaş · Veteran Değer Kaybı`;
+
+  const headroom = Math.max(0, safePot - safeOvr);
+  const potSlope = safeAge <= 20 ? 0.044 : safeAge <= 23 ? 0.028 : safeAge <= 26 ? 0.014 : 0.004;
+  const eliteCeilingBonus = safePot >= 91 && safeAge <= 22 ? 0.11 : safePot >= 87 && safeAge <= 21 ? 0.06 : 0;
+  const potMult = 1 + Math.min(0.56, headroom * potSlope) + eliteCeilingBonus;
+  const potPct = Math.round((potMult - 1) * 100);
+  const potNote = headroom > 0 ? `POT ${safePot} (+${headroom} gelişim alanı)` : `POT ${safePot} (Tavana ulaştı)`;
+
+  let formMult = form >= 75
+    ? 1 + Math.min(0.28, (form - 75) * 0.0115)
+    : 1 - Math.min(0.26, (75 - form) * 0.009);
+  let kdaStr = '';
+  if (player?.stats && player.stats.games >= 3) {
+    const kda = (player.stats.kills + player.stats.assists) / Math.max(1, player.stats.deaths);
+    const mvpRate = (player.stats.mvps || 0) / player.stats.games;
+    const perfBoost = Math.max(-0.07, Math.min(0.10, (kda - 3.2) * 0.018 + mvpRate * 0.12));
+    formMult += perfBoost;
+    kdaStr = ` · ${kda.toFixed(1)} KDA`;
+  }
+  const formPct = Math.round((formMult - 1) * 100);
+  const formNote = `Form %${Math.round(form)}${kdaStr}`;
+
+  let contractMult = 1.0;
+  let contractNote = '2 Sezon (Standart Koruma)';
+  if (!hasTeam || contractYears <= 0) {
+    contractMult = 0.78;
+    contractNote = 'Serbest Oyuncu (Bonservissiz)';
+  } else if (contractYears === 1) {
+    contractMult = 0.68;
+    contractNote = 'Son Yıl (Kulüp Kaldıracı Zayıf)';
+  } else if (contractYears >= 3) {
+    contractMult = 1.22;
+    contractNote = `${contractYears} Sezon (Uzun Kontrat Primi)`;
+  }
+  const contractPct = Math.round((contractMult - 1) * 100);
+
+  const repMult = 0.84 + Math.max(0, Math.min(1, (leaguePrestige - 70) / 28)) * 0.26;
+  const repPct = Math.round((repMult - 1) * 100);
+  const repNote = regObj ? `${regObj.id} Ligi (Prestij ${leaguePrestige})` : `Serbest Havuz (${leaguePrestige})`;
+
+  const factors = [
+    { key: 'age', label: 'Yaş Eğrisi', detail: ageNote, pct: agePct },
+    { key: 'pot', label: 'Potansiyel Tavanı', detail: potNote, pct: potPct },
+    { key: 'form', label: 'Form & Performans', detail: formNote, pct: formPct },
+    { key: 'contract', label: 'Sözleşme Süresi', detail: contractNote, pct: contractPct },
+    { key: 'rep', label: 'Lig İtibarı', detail: repNote, pct: repPct },
+  ];
+
+  // Buyout / Signing Fee Architecture
+  const round5k = (v) => Math.max(20000, Math.round(v / 5000) * 5000);
+  const signingBonus = getFreeAgentSigningBonus(player);
+
+  if (!hasTeam || !sellingTeam) {
+    return {
+      marketValue,
+      prevMarketValue,
+      deltaPct,
+      trend,
+      factors,
+      clubStance: 'FREE_AGENT',
+      clubStanceLabel: 'Serbest · İmza Primi',
+      signingBonus,
+      minAcceptableBuyout: signingBonus,
+      estimatedFeeMin: signingBonus,
+      estimatedFeeMax: signingBonus,
+      fairSaleValue: round5k(marketValue * 0.8),
+      sameRegionRival: false,
+    };
+  }
+
+  const sameRegionRival = Boolean(buyerTeam && sellingTeam.id !== buyerTeam.id && sellingTeam.region === buyerTeam.region && sellingTeam.prestige >= 82);
+  const rivalTax = sameRegionRival ? 1.22 : 1.0;
+  const contractFeeMod = contractYears <= 1 ? 0.88 : contractYears === 2 ? 1.04 : 1.20;
+
+  let clubStance = 'OPEN';
+  let clubStanceLabel = 'Pazarlığa Açık';
+  let minMult = 1.08 * contractFeeMod;
+  let maxMult = 1.35 * contractFeeMod;
+
+  if (sellingTeam.prestige >= 88 && safeOvr >= 90 && player.isStarter && contractYears >= 2) {
+    clubStance = 'UNTOUCHABLE';
+    clubStanceLabel = 'Dokunulmaz Franchise';
+    minMult = 2.15;
+    maxMult = 2.55;
+  } else if (contractYears <= 1) {
+    clubStance = 'EXPIRING';
+    clubStanceLabel = 'Son Yıl Fırsatı';
+    minMult = player.isStarter ? 0.88 : 0.72;
+    maxMult = player.isStarter ? 1.12 : 0.90;
+  } else if (!player.isStarter || (player.morale ?? 80) < 64) {
+    clubStance = 'OPEN';
+    clubStanceLabel = !player.isStarter ? 'Yedek · Satılabilir' : 'Mutsuz · Ayrılabilir';
+    minMult = 0.78;
+    maxMult = 1.02;
+  } else if (safeOvr >= 88) {
+    clubStance = 'RELUCTANT';
+    clubStanceLabel = 'Kilit Yıldız · Zorlu';
+    minMult = 1.42 * contractFeeMod;
+    maxMult = 1.74 * contractFeeMod;
+  } else {
+    clubStance = 'OPEN';
+    clubStanceLabel = 'İlk 5 · Pazarlığa Açık';
+    minMult = 1.08 * contractFeeMod;
+    maxMult = 1.34 * contractFeeMod;
+  }
+
+  const minAcceptableBuyout = round5k(marketValue * minMult * rivalTax);
+  const estimatedFeeMin = round5k(minAcceptableBuyout * 0.95);
+  const estimatedFeeMax = Math.max(minAcceptableBuyout + 10000, round5k(marketValue * maxMult * rivalTax));
+  const fairSaleValue = round5k(marketValue * (player.isStarter ? 0.96 : 0.82));
+
+  return {
+    marketValue,
+    prevMarketValue,
+    deltaPct,
+    trend,
+    factors,
+    clubStance,
+    clubStanceLabel,
+    signingBonus,
+    minAcceptableBuyout,
+    estimatedFeeMin,
+    estimatedFeeMax,
+    fairSaleValue,
+    sameRegionRival,
+  };
+}
+
 export function getTeamRoster(state, teamId) {
   const all = state.players.filter(p => p.teamId === teamId);
   const starters = [];
@@ -199,10 +413,10 @@ export function getTeamOVR(state, teamId) {
 }
 
 export function getTeamWageCap(team) {
-  if (!team) return 220000;
+  if (!team) return 200000;
   const p = team.prestige || 75;
-  const trophyBonus = Math.min(40000, (team.trophies?.length || 0) * 10000);
-  const base = p >= 93 ? 355000 : p >= 88 ? 305000 : p >= 82 ? 250000 : p >= 76 ? 200000 : 160000;
+  const trophyBonus = Math.min(35000, (team.trophies?.length || 0) * 9000);
+  const base = p >= 93 ? 320000 : p >= 88 ? 275000 : p >= 82 ? 230000 : p >= 76 ? 190000 : 155000;
   return base + trophyBonus;
 }
 
@@ -359,6 +573,11 @@ export function ensureCalendarState(state) {
       }
     }
   }
+  // One-time multi-factor market valuation sync for existing saves
+  if (!state.marketValuationV3 && Array.isArray(state.players)) {
+    state.marketValuationV3 = true;
+    syncAllMarketValues(state, false);
+  }
 }
 
 function parseISO(iso) {
@@ -452,10 +671,12 @@ export function advanceOneDay(state) {
   state.currentDate = addDaysISO(state.currentDate, 1);
   const newDow = parseISO(state.currentDate).getUTCDay();
 
-  // Daily light recovery for user roster
+  // Daily age-linked recovery for user roster (younger players bounce back faster, veterans recover slower)
   for (const p of state.players) {
     if (p.teamId === state.userTeamId) {
-      p.fatigue = Math.max(0, p.fatigue - (newDow === 0 ? 4 : 1));
+      const ageProf = getAgeFatigueProfile(p.age);
+      const baseRec = newDow === 0 ? 4.5 : 1.4;
+      p.fatigue = Math.max(0, +(p.fatigue - baseRec * ageProf.recMult).toFixed(1));
     }
   }
 
@@ -518,7 +739,20 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   const { schedules, standings } = createRegionalSchedules(teams);
   const userTeam = teams.find(t => t.id === userTeamId);
   userTeam.sponsor = SPONSORS[0];
-  teams.forEach(t => ensureTeamExtras(t));
+  teams.forEach(t => {
+    ensureTeamExtras(t);
+    const tPlayers = players.filter(p => p.teamId === t.id);
+    // Established real-world cores start with earned continuity & duo bonds
+    tPlayers.forEach(p => {
+      if (p.teamGames === undefined) p.teamGames = p.isStarter ? Math.round(16 + Math.random() * 12) : 6;
+    });
+    const jgl = tPlayers.find(p => p.role === 'JGL' && p.isStarter);
+    const mid = tPlayers.find(p => p.role === 'MID' && p.isStarter);
+    const bot = tPlayers.find(p => p.role === 'BOT' && p.isStarter);
+    const sup = tPlayers.find(p => p.role === 'SUP' && p.isStarter);
+    if (jgl && mid) t.duoSynergy[getDuoPairKey(jgl.id, mid.id)] = Math.round(9 + Math.random() * 6);
+    if (bot && sup) t.duoSynergy[getDuoPairKey(bot.id, sup.id)] = Math.round(9 + Math.random() * 6);
+  });
 
   const state = {
     season: 2026,
@@ -550,10 +784,13 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
     scrimDoneThisWeek: false,
     academyPromotedThisSplit: false,
     economyRebalancedV2: true,
+    marketValuationV3: true,
     history: [],
     awards: [],
     inbox: [],
   };
+
+  syncAllMarketValues(state, false);
 
   addInboxMessage(state, {
     title: `Hoş Geldin ${cleanName} — ${userTeam.name} Görev Başlangıcı`,
@@ -666,6 +903,13 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
       if (bRow.losses >= 3) bRow.status = 'ELIMINATED';
       if (rRow.wins >= 3) rRow.status = 'QUALIFIED';
       if (rRow.losses >= 3) rRow.status = 'ELIMINATED';
+    }
+  }
+
+  // Refresh market valuations for players who competed in this series (form & KDA/MVP impact)
+  for (const p of state.players) {
+    if (p.teamId === match.blueId || p.teamId === match.redId) {
+      recalculatePlayerMarketValue(state, p, true);
     }
   }
 }
@@ -1131,10 +1375,12 @@ function runWeeklyClubTick(state) {
     const intensityFatigue = intensity === 'intense' ? 7 : intensity === 'light' ? -6 : 0;
 
     for (const p of roster) {
-      // Injury / Burnout recovery
+      const ageProf = getAgeFatigueProfile(p.age);
+
+      // Injury / Burnout recovery (age-linked recovery rate)
       if ((p.injuredWeeks || 0) > 0) {
         p.injuredWeeks = Math.max(0, p.injuredWeeks - 1);
-        p.fatigue = Math.max(0, p.fatigue - 16);
+        p.fatigue = Math.max(0, Math.round(p.fatigue - 16 * ageProf.recMult));
       }
 
       // Language adaptation decay
@@ -1166,11 +1412,15 @@ function runWeeklyClubTick(state) {
       const psychBonus = (team.facilities.psychologist - 1) * 1.5;
 
       if (focus === 'rest') {
-        p.fatigue = Math.max(0, p.fatigue - 22 - team.facilities.gamingHouse * 3 - (perfLvl - 1) * 3);
+        const restAmount = Math.round((22 + team.facilities.gamingHouse * 3 + (perfLvl - 1) * 3) * ageProf.recMult);
+        p.fatigue = Math.max(0, p.fatigue - restAmount);
         p.morale = Math.min(100, p.morale + 6 + psychBonus);
       } else {
-        const netFatigue = -(6 + team.facilities.gamingHouse * 2 + (perfLvl - 1) * 2) + (focus === 'mechanics' ? 8 : 4) + intensityFatigue;
-        p.fatigue = Math.max(0, Math.min(100, p.fatigue + netFatigue));
+        const baseRecovery = (6 + team.facilities.gamingHouse * 2 + (perfLvl - 1) * 2) * ageProf.recMult;
+        const focusLoad = (focus === 'mechanics' ? 8 : 4) * ageProf.gainMult;
+        const intLoad = intensityFatigue >= 0 ? intensityFatigue * ageProf.gainMult : intensityFatigue * ageProf.recMult;
+        const netFatigue = Math.round(focusLoad + intLoad - baseRecovery);
+        p.fatigue = Math.max(0, Math.min(100, Math.round(p.fatigue + netFatigue)));
 
         // Individual Champion Learning Progress (User roster)
         if (p.learningChampId && !p.sigChamps.includes(p.learningChampId)) {
@@ -1198,7 +1448,7 @@ function runWeeklyClubTick(state) {
           if (p.indFocus && p.attrs[p.indFocus] !== undefined) {
             p.attrs[p.indFocus] = Math.min(99, p.attrs[p.indFocus] + 1);
           } else if (focus === 'mechanics') { p.attrs.mechanics = Math.min(99, p.attrs.mechanics + 1); p.attrs.laning = Math.min(99, p.attrs.laning + 1); }
-          else if (focus === 'macro') { p.attrs.macro = Math.min(99, p.attrs.macro + 1); p.attrs.teamfight = Math.min(99, p.attrs.teamfight + 1); team.synergy = Math.min(100, team.synergy + 1); }
+          else if (focus === 'macro') { p.attrs.macro = Math.min(99, p.attrs.macro + 1); p.attrs.teamfight = Math.min(99, p.attrs.teamfight + 1); team.synergy = Math.min(100, +(team.synergy + (team.synergy >= 82 ? 0.25 : 0.5)).toFixed(1)); }
           else if (focus === 'pool') { p.attrs.pool = Math.min(99, p.attrs.pool + 1); }
           else {
             const keys = Object.keys(p.attrs);
@@ -1206,22 +1456,25 @@ function runWeeklyClubTick(state) {
             p.attrs[k] = Math.min(99, p.attrs[k] + 1);
           }
           p.ovr = calcOVR(p.attrs);
-          p.marketValue = calcMarketValue(p.ovr, p.age, p.pot);
         }
       }
 
-      // Burnout / Wrist Strain injury risk when over-fatigued
-      if (p.fatigue >= 82 && !(p.injuredWeeks > 0)) {
-        const injChance = Math.max(0.03, (p.fatigue - 78) * 0.012 - (perfLvl - 1) * 0.035);
+      // Weekly multi-factor market value refresh (captures form, OVR & performance shifts)
+      recalculatePlayerMarketValue(state, p, true);
+
+      // Age-linked Burnout / Wrist Strain injury risk (veterans break down earlier than 18-20 rookies)
+      if (p.fatigue >= ageProf.injuryThreshold && !(p.injuredWeeks > 0)) {
+        const ageRiskSlope = p.age >= 28 ? 0.015 : 0.012;
+        const injChance = Math.max(0.03, (p.fatigue - (ageProf.injuryThreshold - 4)) * ageRiskSlope - (perfLvl - 1) * 0.035);
         if (Math.random() < injChance) {
-          p.injuredWeeks = Math.random() < 0.6 ? 1 : 2;
+          p.injuredWeeks = Math.random() < (p.age >= 28 ? 0.45 : 0.65) ? 1 : 2;
           p.morale = Math.max(30, p.morale - 6);
           if (team.id === state.userTeamId) {
             addInboxMessage(state, {
               title: `SAĞLIK RAPORU: ${p.name} Bilek Zorlanması / Burnout`,
               sender: 'Performans & Sağlık Ekibi',
               category: 'BOARD',
-              body: `${p.name} aşırı yorgunluk (%${p.fatigue}) nedeniyle ${p.injuredWeeks} hafta süreyle hafif bilek zorlanması / tükenmişlik yaşayacak. Yedek oyuncu oynatabilir veya antrenman yoğunluğunu düşürebilirsin.`,
+              body: `${p.name} (${p.age} yaş · ${ageProf.label}) aşırı yorgunluk (%${Math.round(p.fatigue)} / eşik %${ageProf.injuryThreshold}) nedeniyle ${p.injuredWeeks} hafta süreyle bilek zorlanması yaşayacak. Antrenman yoğunluğunu azaltabilir veya dinlendirme verebilirsin.`,
             });
           }
         }
@@ -2025,7 +2278,6 @@ function runOffSeasonProgression(state) {
       for (const k of Object.keys(p.attrs)) p.attrs[k] = Math.max(55, p.attrs[k] - (Math.random() < 0.55 ? 2 : 1));
     }
     p.ovr = calcOVR(p.attrs);
-    p.marketValue = calcMarketValue(p.ovr, p.age, p.pot);
     p.salary = calcWeeklySalary(p.ovr);
 
     if (p.teamId) {
@@ -2037,6 +2289,7 @@ function runOffSeasonProgression(state) {
         expiringUserNames.push(`${p.name} (${p.role}, ${p.ovr})`);
       }
     }
+    recalculatePlayerMarketValue(state, p, true);
     remainingPlayers.push(p);
   }
   state.players = remainingPlayers;
@@ -2188,8 +2441,10 @@ export function signChallengerProspect(state, prospectId) {
   p.teamId = team.id;
   p.contractYears = 3;
   p.isStarter = false;
+  p.teamGames = 0;
   p.scouted = true;
-  if (p.lang !== REGION_LANG[team.region]) p.importWeeksLeft = 5;
+  if (p.lang !== REGION_LANG[team.region]) p.importWeeksLeft = 8;
+  team.synergy = Math.max(20, +(team.synergy - 4).toFixed(1));
   state.players.push(p);
 
   addInboxMessage(state, {
@@ -2284,38 +2539,64 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     };
   }
 
+  // Enforce Riot 2-Import Rule (max 2 foreign-language imports per club)
+  const teamLang = REGION_LANG[userTeam.region];
+  const isImportSigning = Boolean(player.lang && teamLang && player.lang !== teamLang);
+  if (isImportSigning) {
+    const currentImports = state.players.filter(p => p.teamId === userTeam.id && p.lang && p.lang !== teamLang).length;
+    if (currentImports >= 2) {
+      return {
+        ok: false,
+        reason: `Riot Bölge Kuralı (Maks. 2 Yabancı Oyuncu): Kadroda zaten ${currentImports} yabancı dil konuşan oyuncu bulunuyor. Yeni yabancı transferi için önce bir yabancı oyuncuyu göndermelisin.`,
+      };
+    }
+  }
+
   // Check realistic player willingness first!
   const interest = evaluateTransferInterest(state, player, userTeam);
   if (!interest.willing) {
     return { ok: false, reason: interest.reason };
   }
 
+  // Superteam Spotlight / Resource Pushback: stacking 3+ 88+ OVR stars makes the next star demand a massive premium
+  const existingStars = getTeamRoster(state, userTeam.id).filter(p => p.ovr >= 88).length;
+  const starTax = (player.ovr >= 88 && existingStars >= 3) ? 1.35 : 1.0;
+
   const applyImportCheck = () => {
-    if (player.lang && player.lang !== REGION_LANG[userTeam.region]) {
-      player.importWeeksLeft = 5;
+    if (isImportSigning) {
+      player.importWeeksLeft = 8;
     } else {
       player.importWeeksLeft = 0;
     }
+    player.teamGames = 0;
   };
+
+  const valuation = getPlayerValuationDetails(state, player, userTeam);
 
   if (player.teamId && player.teamId !== userTeam.id) {
     const sellingTeam = state.teams.find(t => t.id === player.teamId);
-    const sameRegionRival = sellingTeam.region === userTeam.region && sellingTeam.prestige >= 82;
-    const rivalTax = sameRegionRival ? 1.2 : 1.0;
+    const minBuyout = valuation.minAcceptableBuyout;
 
-    // Elite clubs refuse to sell untouchable franchise superstars with 2+ years left
-    if (sellingTeam.prestige >= 88 && player.ovr >= 91 && player.isStarter && player.contractYears >= 2 && offeredBuyout < player.marketValue * 2.15 * rivalTax) {
+    if (offeredBuyout < minBuyout) {
+      if (valuation.clubStance === 'UNTOUCHABLE') {
+        return {
+          ok: false,
+          reason: `${sellingTeam.name}, franchise yıldızı ${player.name}'ı bırakmak istemiyor (En az ~${formatMoney(minBuyout)} serbest kalma bedeli gerekli).`,
+        };
+      }
       return {
         ok: false,
-        reason: `${sellingTeam.name}, franchise yıldızı ${player.name}'ı bırakmak istemiyor (En az ~${formatMoney(Math.round(player.marketValue * 2.15 * rivalTax / 5000) * 5000)} serbest kalma bedeli gerekli).`,
+        reason: `${sellingTeam.name}, bonservis teklifini düşük buldu (${valuation.clubStanceLabel}${valuation.sameRegionRival ? ' · lig rakibi primi dahil' : ''}) — en az ~${formatMoney(minBuyout)} istiyorlar.`,
       };
     }
 
-    const starterMult = !player.isStarter ? 0.85 : player.ovr >= 88 ? 1.55 : 1.25;
-    const minBuyout = Math.round((player.marketValue * starterMult * rivalTax) / 5000) * 5000;
-    if (offeredBuyout < minBuyout) return { ok: false, reason: `${sellingTeam.name}, teklifi düşük buldu${sameRegionRival ? ' (lig rakibi primi dahil)' : ''} — en az ~${formatMoney(minBuyout)} istiyorlar.` };
-    const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
-    if (offeredSalary < minSalary) return { ok: false, reason: `${player.name}, ${userTeam.name} teklifini kabul etmek için haftalık en az ${formatMoney(minSalary)} maaş talep ediyor.` };
+    const minSalary = Math.round((player.salary * interest.salaryMult * starTax) / 500) * 500;
+    if (offeredSalary < minSalary) {
+      return {
+        ok: false,
+        reason: `${player.name}, ${userTeam.name} teklifini kabul etmek için haftalık en az ${formatMoney(minSalary)} maaş talep ediyor${starTax > 1 ? ' (kadroda çok fazla yıldız olduğu için ekstra güvence primi istiyor)' : ''}.`,
+      };
+    }
 
     const oldTeamId = player.teamId;
     userTeam.budget -= offeredBuyout;
@@ -2324,54 +2605,76 @@ export function attemptSignOrTransfer(state, playerId, offeredBuyout, offeredSal
     player.salary = offeredSalary;
     player.contractYears = contractYears;
     player.isStarter = false;
-    player.morale = 88;
+    player.morale = 84;
     applyImportCheck();
-    userTeam.synergy = Math.max(45, userTeam.synergy - 4);
+    recalculatePlayerMarketValue(state, player, true);
+
+    // Realistic Roster Churn Shock: bringing in a new star disrupts team chemistry!
+    const synDrop = (isImportSigning ? 13 : 9) + (player.ovr >= 87 && existingStars >= 2 ? 6 : 0);
+    userTeam.synergy = Math.max(20, +(userTeam.synergy - synDrop).toFixed(1));
 
     const sellingHasRole = state.players.some(p => p.teamId === oldTeamId && p.role === player.role);
     if (!sellingHasRole) {
       const replacement = state.players.filter(p => p.teamId === null && p.role === player.role).sort((a, b) => b.ovr - a.ovr)[0]
         || generateRegenPlayer(player.role, sellingTeam.region, sellingTeam.facilities.youthAcademy, oldTeamId);
       if (!state.players.includes(replacement)) state.players.push(replacement);
-      replacement.teamId = oldTeamId; replacement.isStarter = true; replacement.contractYears = 2;
+      replacement.teamId = oldTeamId; replacement.isStarter = true; replacement.contractYears = 2; replacement.teamGames = 0;
+      recalculatePlayerMarketValue(state, replacement, false);
     }
 
     addInboxMessage(state, {
       title: `Transfer Tamamlandı: ${player.name}!`,
       sender: 'Sportif Direktör',
       category: 'TRANSFER',
-      body: `${player.name}, ${sellingTeam.name} kulübünden ${formatMoney(offeredBuyout)} bonservisle katıldı!${player.importWeeksLeft > 0 ? ' (Dil/iletişim uyumu için 5 hafta adaptasyon süreci olacak.)' : ''}`,
+      body: `${player.name}, ${sellingTeam.name} kulübünden ${formatMoney(offeredBuyout)} bonservisle katıldı! Takım sinerjisi yeni kadro adaptasyonu nedeniyle -${synDrop} etkilendi.${player.importWeeksLeft > 0 ? ' (Dil/iletişim uyumu için 8 hafta adaptasyon süreci olacak.)' : ''}`,
     });
-    return { ok: true, reason: `${player.name} takıma katıldı!` };
+    return { ok: true, reason: `${player.name} takıma katıldı! (Sinerji -${synDrop} — birlikte oynayarak yeniden inşa edilmeli)` };
   }
 
-  const signingBonus = getFreeAgentSigningBonus(player);
-  if (userTeam.budget < signingBonus) {
-    return { ok: false, reason: `${player.name} imza parası (${formatMoney(signingBonus)}) için yeterli bütçen yok.` };
+  const signingBonus = valuation.signingBonus;
+  if (offeredBuyout < signingBonus) {
+    return { ok: false, reason: `${player.name}, imza primi olarak en az ${formatMoney(signingBonus)} talep ediyor.` };
   }
-  const minSalary = Math.round((player.salary * interest.salaryMult) / 500) * 500;
+  const actualBonus = Math.max(signingBonus, offeredBuyout);
+  if (userTeam.budget < actualBonus) {
+    return { ok: false, reason: `${player.name} imza parası (${formatMoney(actualBonus)}) için yeterli bütçen yok.` };
+  }
+  const minSalary = Math.round((player.salary * interest.salaryMult * starTax) / 500) * 500;
   if (offeredSalary < minSalary) return { ok: false, reason: `${player.name} haftalık en az ${formatMoney(minSalary)} maaş istiyor.` };
-  userTeam.budget -= signingBonus;
+  userTeam.budget -= actualBonus;
   player.teamId = userTeam.id;
   player.salary = offeredSalary;
   player.contractYears = contractYears;
   player.isStarter = false;
-  player.morale = 86;
+  player.morale = 83;
   applyImportCheck();
+  recalculatePlayerMarketValue(state, player, true);
+  const faSynDrop = isImportSigning ? 10 : 7;
+  userTeam.synergy = Math.max(20, +(userTeam.synergy - faSynDrop).toFixed(1));
   addInboxMessage(state, {
     title: `Serbest Transfer: ${player.name}`,
     sender: 'Sportif Direktör',
     category: 'TRANSFER',
-    body: `Serbest oyuncu ${player.name} ile ${formatMoney(signingBonus)} imza parası ve ${contractYears} yıllık sözleşme imzalandı.`,
+    body: `Serbest oyuncu ${player.name} ile ${formatMoney(actualBonus)} imza parası ve ${contractYears} yıllık sözleşme imzalandı. (Takım uyumu -${faSynDrop})`,
   });
-  return { ok: true, reason: `${player.name}, ${formatMoney(signingBonus)} imza parasıyla kadroya katıldı!` };
+  return { ok: true, reason: `${player.name}, ${formatMoney(actualBonus)} imza parasıyla kadroya katıldı! (Sinerji -${faSynDrop})` };
 }
 
 export function setStarter(state, playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p || p.teamId !== state.userTeamId) return;
+  const wasStarter = p.isStarter;
   for (const mate of state.players) {
     if (mate.teamId === state.userTeamId && mate.role === p.role) mate.isStarter = (mate.id === p.id);
+  }
+  // Changing the starting 5 with an ungelled player causes realistic cohesion disruption
+  if (!wasStarter) {
+    const team = state.teams.find(t => t.id === state.userTeamId);
+    if (team) {
+      const gamesTogether = p.teamGames ?? 0;
+      const drop = gamesTogether < 5 ? 6 : gamesTogether < 12 ? 3 : 1;
+      team.synergy = Math.max(20, +(team.synergy - drop).toFixed(1));
+    }
   }
 }
 
@@ -2413,12 +2716,13 @@ export function negotiateContractRenewal(state, playerId, offeredSalary, years =
   p.contractYears = Number(years) || 2;
   p.rolePromise = rolePromise;
   p.morale = Math.min(100, p.morale + 8);
+  recalculatePlayerMarketValue(state, p, true);
   return { ok: true, reason: `${p.name} ile ${p.contractYears} yıllık yeni sözleşme imzalandı (${formatMoney(offeredSalary)}/hf, Rol: ${rolePromise === 'STAR' ? 'İlk 5 Yıldız' : 'Rotasyon'}).` };
 }
 
 export function renewAllExpiringContracts(state) {
-  const expiring = state.players.filter(p => p.teamId === state.userTeamId && p.contractYears <= 0);
-  if (expiring.length === 0) return { ok: false, reason: 'Sözleşmesi biten oyuncu yok.' };
+  const expiring = state.players.filter(p => p.teamId === state.userTeamId && p.contractYears <= 1);
+  if (expiring.length === 0) return { ok: false, reason: 'Sözleşmesi biten veya son yılına giren oyuncu yok.' };
   let count = 0;
   for (const p of expiring) {
     const demand = getRenewalDemand(state, p.id);
@@ -2427,9 +2731,10 @@ export function renewAllExpiringContracts(state) {
     p.contractYears = 2;
     p.rolePromise = demand.wantsStar ? 'STAR' : 'ROTATION';
     p.morale = Math.min(100, p.morale + 6);
+    recalculatePlayerMarketValue(state, p, true);
     count++;
   }
-  return { ok: true, reason: `${count} oyuncunun sözleşmesi 2 yıl daha uzatıldı!` };
+  return { ok: true, reason: `${count} oyuncunun sözleşmesi 2 yıl olarak yenilendi!` };
 }
 
 // ==================== FM OFFER PLAYER TO CLUBS & SALE NEGOTIATION ====================
@@ -2441,12 +2746,10 @@ export function offerPlayerToClubs(state, playerId, askingPrice) {
   const userTeam = state.teams.find(t => t.id === state.userTeamId);
   if (!p || !userTeam) return { ok: false, reason: 'Oyuncu kadroda bulunamadı.', offers: [] };
 
-  const ask = Math.max(20000, Number(askingPrice) || p.marketValue);
-  // Real FM valuation: shopping a player signals you want to sell; bench/veteran players have lower resale value
-  const benchMod = p.isStarter ? 1.0 : 0.82;
-  const ageMod = p.age >= 29 ? 0.72 : p.age >= 27 ? 0.85 : 1.0;
-  const formMod = p.form < 68 ? 0.88 : p.form >= 86 ? 1.06 : 1.0;
-  const fairValue = Math.max(20000, Math.round((p.marketValue * benchMod * ageMod * formMod) / 5000) * 5000);
+  const valInfo = getPlayerValuationDetails(state, p);
+  const ask = Math.max(20000, Number(askingPrice) || valInfo.fairSaleValue);
+  // Real FM valuation: age, form & contract leverage are already baked into marketValue; shopping signals willingness to sell
+  const fairValue = valInfo.fairSaleValue;
 
   if (ask > fairValue * 1.32) {
     return {
@@ -2829,11 +3132,17 @@ export function getTransferRoomOpportunities(state) {
   return state.players
     .filter(p => p.teamId && p.teamId !== state.userTeamId && (p.contractYears <= 1 || p.morale < 75) && evaluateTransferInterest(state, p, userTeam).willing)
     .sort((a, b) => b.ovr - a.ovr)
-    .slice(0, 6)
+    .slice(0, 8)
     .map(p => {
       const club = state.teams.find(t => t.id === p.teamId);
-      const discountPrice = Math.round((p.marketValue * 0.78) / 5000) * 5000;
-      return { player: p, club, discountPrice, reason: p.contractYears <= 1 ? 'Kontrat Son Yılı' : 'Düşük Moral' };
+      const val = getPlayerValuationDetails(state, p, userTeam);
+      const discountPrice = val.minAcceptableBuyout;
+      return {
+        player: p,
+        club,
+        discountPrice,
+        reason: p.contractYears <= 1 ? 'Kontrat Son Yılı (İndirimli Bonservis)' : 'Kulüpte Mutsuz (Pazarlığa Açık)',
+      };
     });
 }
 
@@ -2857,6 +3166,7 @@ export function releasePlayer(state, playerId) {
   const sameRoleCount = state.players.filter(x => x.teamId === state.userTeamId && x.role === p.role).length;
   if (sameRoleCount <= 1) return { ok: false, reason: `Bu rolde (${p.role}) başka oyuncun yok! Önce yedek al.` };
   p.teamId = null; p.isStarter = false; p.contractYears = 0;
+  recalculatePlayerMarketValue(state, p, true);
   const sub = state.players.find(x => x.teamId === state.userTeamId && x.role === p.role);
   if (sub) sub.isStarter = true;
   return { ok: true, reason: `${p.name} serbest bırakıldı.` };
@@ -2888,26 +3198,31 @@ export function playWeeklyScrim(state, opponentTeamId) {
   state.scrimDoneThisWeek = true;
 
   const won = m.winner === 'blue';
-  userTeam.synergy = Math.min(100, userTeam.synergy + (won ? 4 : 2));
+  const scrimSynGain = userTeam.synergy >= 80 ? (won ? 0.9 : 0.4) : (won ? 1.8 : 0.9);
+  userTeam.synergy = Math.min(100, +(userTeam.synergy + scrimSynGain).toFixed(1));
   ensureTeamExtras(userTeam);
-  // Scrim builds Duo Synergy & Champion Learning progress too!
+  // Scrim builds Duo Synergy, team cohesion & Champion Learning progress gradually!
   const jgl = userRoster.find(p => p.role === 'JGL');
   const mid = userRoster.find(p => p.role === 'MID');
   const bot = userRoster.find(p => p.role === 'BOT');
   const sup = userRoster.find(p => p.role === 'SUP');
   if (jgl && mid) {
     const k = getDuoPairKey(jgl.id, mid.id);
-    userTeam.duoSynergy[k] = Math.min(30, (userTeam.duoSynergy[k] || 0) + 1.5);
+    userTeam.duoSynergy[k] = Math.min(30, +( (userTeam.duoSynergy[k] || 0) + 0.85 ).toFixed(2));
   }
   if (bot && sup) {
     const k = getDuoPairKey(bot.id, sup.id);
-    userTeam.duoSynergy[k] = Math.min(30, (userTeam.duoSynergy[k] || 0) + 1.5);
+    userTeam.duoSynergy[k] = Math.min(30, +( (userTeam.duoSynergy[k] || 0) + 0.85 ).toFixed(2));
   }
 
   for (const p of userRoster) {
-    p.form = Math.min(99, Math.max(45, p.form + (won ? 3 : 1)));
-    p.fatigue = Math.min(100, p.fatigue + Math.max(3, 7 - ((userTeam.staff?.perfCoach || 1) - 1) * 1.5));
+    const ageProf = getAgeFatigueProfile(p.age);
+    p.teamGames = (p.teamGames ?? 10) + 0.5;
+    p.form = Math.min(99, Math.max(45, p.form + (won ? 2 : 1)));
+    const baseScrimFatigue = Math.max(3, 7 - ((userTeam.staff?.perfCoach || 1) - 1) * 1.5);
+    p.fatigue = Math.min(100, Math.round(p.fatigue + baseScrimFatigue * ageProf.gainMult));
     if (p.learningChampId) p.learningProgress = Math.min(99, (p.learningProgress || 0) + 12);
+    recalculatePlayerMarketValue(state, p, true);
   }
 
   // Unlock Scrim Intel against this opponent!
@@ -2926,7 +3241,7 @@ export function playWeeklyScrim(state, opponentTeamId) {
   return {
     ok: true,
     won,
-    text: `Scrim Sonucu: ${userTeam.tag} ${m.blueKills} - ${m.redKills} ${oppTeam.tag} (${m.minute} dk) — ${won ? 'GALİBİYET! (+4 Sinerji, +3 Form)' : 'MAĞLUBİYET (+2 Sinerji, +1 Form)'} • ${oppTeam.tag} Taktik İstihbaratı Açıldı!`,
+    text: `Scrim Sonucu: ${userTeam.tag} ${m.blueKills} - ${m.redKills} ${oppTeam.tag} (${m.minute} dk) — ${won ? `GALİBİYET (+${scrimSynGain} Sinerji, +2 Form)` : `MAĞLUBİYET (+${scrimSynGain} Sinerji, +1 Form)`} · ${oppTeam.tag} Taktik İstihbaratı Açıldı!`,
   };
 }
 

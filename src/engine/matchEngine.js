@@ -4,7 +4,7 @@
 // Calibrated FM Ratings, and Automatic Post-Match Coaching Analysis.
 
 import { CHAMPION_MAP, getChampionMetaTier, getTierBonus, getMatchupAdvantage } from '../data/champions.js';
-import { ROLES } from '../data/teamsAndPlayers.js';
+import { ROLES, getAgeFatigueProfile } from '../data/teamsAndPlayers.js';
 import { createDraftState, autoCompleteDraft, analyzeDraftSide } from './draftEngine.js';
 
 function rand(min, max) { return min + Math.random() * (max - min); }
@@ -36,11 +36,13 @@ export function getEffectivePlayerRating(player, champId, oppChampId, patch, tea
   const counterBonus = oppChampId ? getMatchupAdvantage(champId, oppChampId) * 0.8 : 0;
   const formMod = (player.form - 75) * 0.12;
   const moraleMod = (player.morale - 75) * 0.08;
-  const fatiguePen = Math.max(0, player.fatigue - 55) * 0.16;
-  const synMod = (team.synergy - 70) * 0.10;
-  const facilityMod = (team.facilities.analystDesk - 1) * 0.5 + ((team.staff?.draftAnalyst || 1) - 1) * 0.5;
-  const importPen = (player.importWeeksLeft || 0) > 0 ? -2.4 : 0;
+  const ageProfile = getAgeFatigueProfile(player.age);
+  const fatiguePen = Math.max(0, player.fatigue - ageProfile.perfThreshold) * (player.age >= 28 ? 0.19 : 0.15);
+  const facilityMod = (team.facilities.analystDesk - 1) * 0.45 + ((team.staff?.draftAnalyst || 1) - 1) * 0.45;
+  const importPen = (player.importWeeksLeft || 0) > 0 ? -3.0 : 0;
   const injuryPen = (player.injuredWeeks || 0) > 0 ? -4.5 : 0;
+  const gamesWithTeam = player.teamGames ?? 20;
+  const newcomerPen = gamesWithTeam < 10 ? -(10 - gamesWithTeam) * 0.28 : 0;
 
   let traitMod = 0;
   if (player.trait === 'Clutch' && ctx.highStakes) traitMod += 2.6;
@@ -70,7 +72,90 @@ export function getEffectivePlayerRating(player, champId, oppChampId, patch, tea
   const intelMod = ctx.hasScrimIntel ? 1.2 : 0;
   const reqMod = ctx.requestGranted ? 2.0 : 0;
 
-  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + synMod + facilityMod + importPen + injuryPen + traitMod + talkMod + duoMod + intelMod + reqMod;
+  return player.ovr + tierBonus + sigBonus + masteryBonus + counterBonus + formMod + moraleMod - fatiguePen + facilityMod + importPen + injuryPen + newcomerPen + traitMod + talkMod + duoMod + intelMod + reqMod;
+}
+
+// Football Manager-grade Team Cohesion, Role Balance & Anti-Superteam Chemistry Evaluator
+export function computeTeamChemistry(team, rosterOrMatchPlayers) {
+  const list = (rosterOrMatchPlayers || []).map(x => x.playerRef || x).filter(Boolean).slice(0, 5);
+  const syn = clamp(team?.synergy ?? 68, 15, 100);
+
+  // 1. Core Synergy Curve: low cohesion severely punishes teamplay; high cohesion rewards long-term cores
+  const synImpact = syn < 66 ? (syn - 66) * 0.26 : (syn - 66) * 0.18;
+
+  // 2. Resource Starvation / "Superteam Trap": 4-5 carry-hungry stars fight over gold & jungle attention
+  const resourceHungry = list.filter(
+    p => p.ovr >= 85 && (p.style === 'Aggressive' || p.style === 'Playmaker' || p.trait === 'Ego')
+  );
+  const weaksideGlue = list.filter(p => p.style === 'Weakside' || p.style === 'Consistent' || p.trait === 'Leader');
+  let resourceClash = 0;
+  if (resourceHungry.length >= 5) resourceClash = -4.6;
+  else if (resourceHungry.length === 4) resourceClash = -2.8;
+  else if (resourceHungry.length === 3 && weaksideGlue.length === 0) resourceClash = -1.4;
+
+  // Role balance reward when roster has selfless weakside/consistent glue players alongside carries
+  const roleBalanceBonus = weaksideGlue.length >= 2 ? 1.4 : weaksideGlue.length === 1 ? 0.6 : 0;
+
+  // 3. Ego Clash vs Leadership
+  const egoCount = list.filter(p => p.trait === 'Ego').length;
+  const hasLeader = list.some(p => p.trait === 'Leader');
+  let egoImpact = 0;
+  if (egoCount >= 3) egoImpact = hasLeader ? -2.6 : -4.2;
+  else if (egoCount === 2) egoImpact = hasLeader ? -0.8 : -1.9;
+  else if (hasLeader) egoImpact = 0.8;
+
+  // 4. Language & Voice-Comms Cohesion
+  const langs = new Set(list.map(p => p.lang).filter(Boolean));
+  let commImpact = 0;
+  if (langs.size <= 1) commImpact = 1.1;
+  else if (langs.size === 2) commImpact = -0.9;
+  else if (langs.size >= 3) commImpact = -2.7;
+
+  // 5. Roster Continuity (Average games played together in this club)
+  const avgTeamGames = list.length
+    ? list.reduce((s, p) => s + Math.min(35, p.teamGames ?? 20), 0) / list.length
+    : 15;
+  const continuityImpact = avgTeamGames < 8
+    ? -(8 - avgTeamGames) * 0.32
+    : avgTeamGames >= 22
+    ? Math.min(2.2, (avgTeamGames - 20) * 0.14)
+    : 0;
+
+  const totalImpact = +(synImpact + resourceClash + roleBalanceBonus + egoImpact + commImpact + continuityImpact).toFixed(1);
+
+  const issues = [];
+  const strengths = [];
+  if (syn < 58) issues.push(`Düşük takım uyumu (${Math.round(syn)}/100) — harita ve takım savaşı koordinasyonu kopuk.`);
+  else if (syn >= 84) strengths.push(`Elit takım oyunu (${Math.round(syn)}/100) — refleksif rotasyon ve objektif uyumu.`);
+  if (resourceClash <= -2.5) issues.push(`Süper Takım Kaynak Çatışması (${resourceHungry.length} taşıyıcı yıldız) — herkes altın ve orman desteği istiyor.`);
+  else if (roleBalanceBonus >= 1.2) strengths.push('Dengeli rol paylaşımı — özverili weakside/denge oyuncuları taşıyıcılara alan açıyor.');
+  if (egoImpact <= -1.5) issues.push(`Soyunma odasında ego sürtüşmesi (${egoCount} Ego karakter${hasLeader ? ', Lider kısmen dengeliyor' : ', Lider eksik'}).`);
+  else if (hasLeader) strengths.push('Güçlü takım içi liderlik — zor anlarda iletişim ve disiplin korunuyor.');
+  if (langs.size >= 3) issues.push(`Çok dilli iletişim bariyeri (${langs.size} farklı dil) — hızlı çağrılarda gecikme.`);
+  else if (langs.size === 2) issues.push('İki dilli kadro — tam iletişim akıcılığı için zaman gerekiyor.');
+  else strengths.push('Tek dilde akıcı sesli iletişim (+İletişim uyumu).');
+  if (avgTeamGames < 8) issues.push(`Yeni kurulmuş ilk 5 (ort. ${avgTeamGames.toFixed(0)} maç birlikte) — birlikte oynama alışkanlığı zayıf.`);
+  else if (avgTeamGames >= 22) strengths.push(`Oturmuş çekirdek kadro (ort. ${avgTeamGames.toFixed(0)}+ maç birlikte).`);
+
+  // Visual 0-100 Chemistry Index for UI clarity
+  const chemIndex = clamp(Math.round(62 + totalImpact * 3.8), 18, 99);
+
+  return {
+    chemIndex,
+    totalImpact,
+    synImpact: +synImpact.toFixed(1),
+    resourceClash: +resourceClash.toFixed(1),
+    roleBalanceBonus: +roleBalanceBonus.toFixed(1),
+    egoImpact: +egoImpact.toFixed(1),
+    commImpact: +commImpact.toFixed(1),
+    continuityImpact: +continuityImpact.toFixed(1),
+    resourceHungryCount: resourceHungry.length,
+    egoCount,
+    langCount: langs.size,
+    avgTeamGames: Math.round(avgTeamGames),
+    issues,
+    strengths,
+  };
 }
 
 export function createLiveMatchState(blueTeam, redTeam, blueRoster, redRoster, bluePicks, redPicks, patch, userSide = null, highStakes = false, options = {}) {
@@ -205,8 +290,8 @@ function getMatchStrengthPair(state) {
     let avg = 0;
     for (const pl of players) {
       let duoBonus = 0;
-      if (pl.role === 'JGL' || pl.role === 'MID') duoBonus = Math.min(2.2, jmVal * 0.09);
-      if (pl.role === 'BOT' || pl.role === 'SUP') duoBonus = Math.min(2.2, bsVal * 0.09);
+      if (pl.role === 'JGL' || pl.role === 'MID') duoBonus = jmVal < 5 ? -1.1 : Math.min(2.6, (jmVal - 4) * 0.11);
+      if (pl.role === 'BOT' || pl.role === 'SUP') duoBonus = bsVal < 5 ? -1.1 : Math.min(2.6, (bsVal - 4) * 0.11);
       avg += getEffectivePlayerRating(pl.playerRef, pl.champId, pl.oppChampId, state.patch, team, {
         highStakes: state.highStakes,
         goldDiff: myGoldDiff,
@@ -217,55 +302,141 @@ function getMatchStrengthPair(state) {
       });
     }
     avg /= 5;
+    // Compress raw individual OVR slightly so teamplay + tactics can genuinely upset ungelled superteams
+    const ovrCompressed = 75 + (avg - 75) * 0.84;
+    const chem = computeTeamChemistry(team, players);
+    // Teamplay / chemistry matters even more in mid-to-late game 5v5 macro (15+ min)!
+    const chemPhaseMult = m < 14 ? 0.85 : m < 24 ? 1.15 : 1.3;
+    const chemMod = chem.totalImpact * chemPhaseMult;
 
     let phaseScore = 0;
     if (m < 15) phaseScore = analysis.early * state.patch.earlyWeight;
     else if (m < 25) phaseScore = analysis.mid * state.patch.midWeight;
     else phaseScore = analysis.late * state.patch.lateWeight;
 
+    // 1. Base Gameplan Phase Impact (Amplified for real FM-grade tactical agency)
     let tacticMod = 0;
-    if (tactics.gameplan === 'aggressive') tacticMod += m < 16 ? 2.2 : -1.0;
-    if (tactics.gameplan === 'scaling') tacticMod += m < 15 ? -1.6 : m > 25 ? 2.5 : 0.4;
-    if (tactics.gameplan === 'split') tacticMod += m > 18 ? 1.4 : 0;
-    if (tactics.supStyle === 'roam') tacticMod += m < 18 ? 0.8 : -0.2;
-    if (tactics.supStyle === 'peel') tacticMod += m >= 20 ? 1.1 : -0.2;
-    if (tactics.adcStyle === 'safe') tacticMod += m >= 22 ? 1.0 : -0.2;
+    if (tactics.gameplan === 'aggressive') tacticMod += m < 17 ? 3.8 : -1.4;
+    if (tactics.gameplan === 'scaling') tacticMod += m < 15 ? -2.4 : m >= 24 ? 4.2 : 0.8;
+    if (tactics.gameplan === 'split') tacticMod += m >= 17 ? 3.2 : -0.6;
+    if (tactics.gameplan === 'balanced') tacticMod += 1.0;
 
-    // FM26 Dual-Phase Tactics: Ahead Plan (> +1500g) vs Behind Plan (< -1500g)
-    if (myGoldDiff > 1500) {
-      if (tactics.aheadPlan === 'choke') tacticMod += m >= 18 ? 1.4 : 0.6;
-      else if (tactics.aheadPlan === 'split131') tacticMod += m >= 20 ? 1.5 : 0.4;
-      else if (tactics.aheadPlan === 'dive') tacticMod += m < 22 ? 1.6 : 0.2;
-    } else if (myGoldDiff < -1500) {
-      if (tactics.behindPlan === 'scale') tacticMod += m >= 24 ? 1.8 : 0.3;
-      else if (tactics.behindPlan === 'pick') tacticMod += 1.2;
-      else if (tactics.behindPlan === 'crossmap') tacticMod += 1.0;
+    // 2. Rock-Paper-Scissors Counter-Tactics Matrix vs Opponent's Gameplan!
+    const oppTactics = side === 'blue' ? state.redTactics : state.blueTactics;
+    let counterMod = 0;
+    if (tactics.gameplan === 'aggressive' && oppTactics.gameplan === 'scaling') counterMod = m < 21 ? 3.4 : -0.6;
+    else if (tactics.gameplan === 'scaling' && oppTactics.gameplan === 'balanced') counterMod = m >= 20 ? 3.0 : -0.4;
+    else if (tactics.gameplan === 'balanced' && oppTactics.gameplan === 'aggressive') counterMod = 2.6;
+    else if (tactics.gameplan === 'split' && oppTactics.gameplan === 'scaling') counterMod = m >= 16 ? 3.3 : 0.4;
+    else if (tactics.gameplan === 'aggressive' && oppTactics.gameplan === 'split') counterMod = m < 20 ? 2.5 : 0;
+
+    // 3. Lane Focus Matchup Exploitation (Targeting opponent's weak link!)
+    const oppPlayers = side === 'blue' ? state.redPlayers : state.bluePlayers;
+    const focusRole = tactics.laneFocus || 'MID';
+    const myFocusP = players.find(x => x.role === focusRole);
+    const oppFocusP = oppPlayers.find(x => x.role === focusRole);
+    let laneFocusMod = 0;
+    if (myFocusP && oppFocusP) {
+      const ovrEdge = (myFocusP.playerRef.ovr - oppFocusP.playerRef.ovr) * 0.24;
+      const counterEdge = getMatchupAdvantage(myFocusP.champId, oppFocusP.champId) * 0.5;
+      laneFocusMod = clamp(ovrEdge + counterEdge + 0.6, -2.2, 3.6);
     }
+
+    // 4. Individual Role Directives & Player-Style Fluency + Contradiction Penalty
+    let fitMod = 0;
+    const topP = players.find(x => x.role === 'TOP');
+    if (tactics.supStyle === 'roam') fitMod += m < 19 ? 1.5 : -0.3;
+    if (tactics.supStyle === 'peel') fitMod += m >= 19 ? 1.8 : -0.3;
+    if (tactics.adcStyle === 'safe') fitMod += m >= 21 ? 1.6 : -0.4;
+    if (tactics.adcStyle === 'aggressive') fitMod += m < 18 ? 1.6 : -0.3;
+    if (tactics.topStyle === 'carry') fitMod += topP?.playerRef?.style === 'Aggressive' || topP?.playerRef?.style === 'Playmaker' ? 1.6 : 0.7;
+    if (tactics.topStyle === 'weakside') fitMod += topP?.playerRef?.style === 'Weakside' ? 1.5 : 0.5;
+
+    // Structural Synergy / Contradiction check (FM Tactical Coherence directly impacts match!)
+    if (tactics.laneFocus === 'TOP' && tactics.topStyle === 'weakside') fitMod -= 2.4;
+    if (tactics.laneFocus === 'TOP' && tactics.topStyle === 'carry') fitMod += 1.6;
+    if (tactics.laneFocus === 'BOT' && tactics.adcStyle === 'aggressive') fitMod += 1.5;
+    if (tactics.laneFocus === 'MID' && tactics.supStyle === 'roam') fitMod += 1.5;
+    if (tactics.gameplan === 'split' && tactics.topStyle === 'weakside') fitMod -= 1.8;
+
+    // 5. Draft-to-Tactic Alignment Bonus!
+    let draftFitMod = 0;
+    if (tactics.gameplan === 'aggressive' && analysis.early >= 7.4) draftFitMod += 2.2;
+    else if (tactics.gameplan === 'scaling' && analysis.late >= 7.6) draftFitMod += 2.4;
+    else if (tactics.gameplan === 'balanced' && analysis.mid >= 7.5) draftFitMod += 1.8;
+    else if (tactics.gameplan === 'split' && analysis.early + analysis.late >= 14.8) draftFitMod += 1.8;
+
+    // 6. FM26 Dual-Phase Tactics: Ahead Plan (> +1200g) vs Behind Plan (< -1200g)
+    let statePlanMod = 0;
+    if (myGoldDiff > 1200) {
+      if (tactics.aheadPlan === 'choke') statePlanMod += m >= 17 ? 2.4 : 1.0;
+      else if (tactics.aheadPlan === 'split131') statePlanMod += m >= 19 ? 2.6 : 0.8;
+      else if (tactics.aheadPlan === 'dive') statePlanMod += m < 23 ? 2.6 : 0.5;
+    } else if (myGoldDiff < -1200) {
+      if (tactics.behindPlan === 'scale') statePlanMod += m >= 22 ? 2.8 : 0.6;
+      else if (tactics.behindPlan === 'pick') statePlanMod += 2.2;
+      else if (tactics.behindPlan === 'crossmap') statePlanMod += 2.0;
+    }
+
+    // 7. Live Touchline Shout Surge (4-minute active coaching boost!)
+    const shoutObj = side === 'blue' ? state.blueShoutBoost : state.redShoutBoost;
+    const shoutMod = shoutObj && m <= shoutObj.until ? shoutObj.power : 0;
+
+    const totalTacticImpact = tacticMod + counterMod + laneFocusMod + fitMod + draftFitMod + statePlanMod + shoutMod;
 
     const baronMod = state.baronBuffSide === side && m <= state.baronBuffUntil ? 4.2 : 0;
     const elderMod = state.elderBuffSide === side && m <= state.elderBuffUntil ? 6.5 : 0;
     const soulMod = state.soulSide === side ? 3.2 : 0;
 
-    // Weekly Match Preparation Focus bonus!
+    // Weekly Match Preparation Focus bonus (amplified!)
     let prepMod = 0;
     const prep = team.matchPrep || 'none';
-    if (prep === 'laning' && m < 15) prepMod = 1.4;
-    else if (prep === 'objectives' && (m === 6 || m === 11 || m === 15 || m >= state.dragonTimer - 1 || m >= state.baronTimer - 1)) prepMod = 1.4;
-    else if (prep === 'teamfight' && m >= 15) prepMod = 1.4;
-    else if (prep === 'comeback' && myGoldDiff < -1500) prepMod = 1.8;
+    if (prep === 'laning' && m < 16) prepMod = 2.4;
+    else if (prep === 'objectives' && (m === 6 || m === 11 || m === 15 || m >= state.dragonTimer - 1 || m >= state.baronTimer - 1)) prepMod = 2.6;
+    else if (prep === 'teamfight' && m >= 15) prepMod = 2.4;
+    else if (prep === 'comeback' && myGoldDiff < -1200) prepMod = 3.0;
 
-    return avg + phaseScore * 0.95 + tacticMod + baronMod + elderMod + soulMod + prepMod;
+    return {
+      total: ovrCompressed + chemMod + phaseScore * 0.95 + totalTacticImpact + baronMod + elderMod + soulMod + prepMod,
+      tacticOnly: +(totalTacticImpact + prepMod).toFixed(1),
+      chemOnly: +chemMod.toFixed(1),
+      chemIndex: chem.chemIndex,
+      counterMod: +counterMod.toFixed(1),
+      laneFocusMod: +laneFocusMod.toFixed(1),
+      draftFitMod: +draftFitMod.toFixed(1),
+      shoutMod: +shoutMod.toFixed(1),
+    };
   };
 
-  const bBase = sideBase('blue');
-  const rBase = sideBase('red');
-  // Realistic pro LoL gold-to-strength curve (diminishes slightly post-35m as both teams approach 6 items)
-  const lateDiminish = m >= 36 ? 0.72 : m >= 30 ? 0.86 : 1.0;
-  const goldMod = clamp((goldDiff / 950) * lateDiminish, -22, 22);
+  const bRes = sideBase('blue');
+  const rRes = sideBase('red');
+  const bBase = bRes.total;
+  const rBase = rRes.total;
+
+  // Expose real-time Tactical & Teamplay Telemetry for the Broadcast HUD!
+  state.tacticalEdge = {
+    blueTactic: bRes.tacticOnly,
+    redTactic: rRes.tacticOnly,
+    diff: +(bRes.tacticOnly - rRes.tacticOnly).toFixed(1),
+    blueChem: bRes.chemOnly,
+    redChem: rRes.chemOnly,
+    blueChemIndex: bRes.chemIndex,
+    redChemIndex: rRes.chemIndex,
+    blueCounter: bRes.counterMod,
+    redCounter: rRes.counterMod,
+    blueLaneFocus: bRes.laneFocusMod,
+    redLaneFocus: rRes.laneFocusMod,
+    blueShout: bRes.shoutMod,
+    redShout: rRes.shoutMod,
+  };
+
+  // Realistic pro LoL gold-to-strength curve (diminishes post-30m as carries hit item caps)
+  const lateDiminish = m >= 36 ? 0.68 : m >= 30 ? 0.84 : 1.0;
+  const goldMod = clamp((goldDiff / 1450) * lateDiminish, -18, 18);
   const netDiff = (bBase - rBase) + goldMod;
-  // Realistic logistic curve: close games stay 50/50, +10k gold = ~90%, +20k gold = ~97%
-  const blueWinProb = clamp(1 / (1 + Math.exp(-netDiff / 8.5)), 0.03, 0.97);
-  return { blueStr: bBase + goldMod * 0.5, redStr: rBase - goldMod * 0.5, blueWinProb, netDiff };
+  // Realistic logistic curve: close games stay 50/50, +4k gold = ~68%, +10k gold = ~88%
+  const blueWinProb = clamp(1 / (1 + Math.exp(-netDiff / 9.2)), 0.05, 0.95);
+  return { blueStr: bBase + goldMod * 0.45, redStr: rBase - goldMod * 0.45, blueWinProb, netDiff };
 }
 
 function updatePlayerPositions(state, focusPoint = null) {
@@ -325,19 +496,25 @@ function awardKill(state, killerSide, killerRole, victimRole, assistRoles = []) 
   killer.kills++;
   killer.spree++;
   killer.gold += (isFB ? 400 : 300) + shutdownGold;
-  killer.dmg += Math.round(rand(850, 1450));
+  killer.dmg += Math.round(rand(780, 1320));
 
   victim.deaths++;
-  victim.dmg += Math.round(rand(280, 620));
+  victim.dmg += Math.round(rand(260, 580));
 
+  // Real League of Legends rule: 150g total assist pool split among unique assisters
+  const uniqueAssisters = [];
   for (const ar of assistRoles) {
     if (ar === killerRole) continue;
     const assister = kTeam.find(p => p.role === ar);
-    if (assister) {
-      assister.assists++;
-      assister.gold += 150;
-      assister.dmg += Math.round(rand(420, 860));
+    if (assister && !uniqueAssisters.includes(assister)) {
+      uniqueAssisters.push(assister);
     }
+  }
+  const assistShare = uniqueAssisters.length > 0 ? Math.round(150 / uniqueAssisters.length) : 0;
+  for (const assister of uniqueAssisters) {
+    assister.assists++;
+    assister.gold += assistShare;
+    assister.dmg += Math.round(rand(380, 760));
   }
 
   if (killerSide === 'blue') state.blueKills++;
@@ -421,27 +598,39 @@ export function stepMatchMinute(state) {
 
   const { blueStr, redStr, blueWinProb } = getMatchStrengthPair(state);
 
-  // 1. Passive CS, Gold, Damage & Vision — with True Role Micro-Tactics Resource Allocation!
+  // 1. Calibrated Pro LoL Passive CS, Gold, Damage & Vision (Minions spawn 1:05, collide 1:35)
   const updateFarm = (players, tactics, teamStr, oppStr) => {
-    const adv = clamp((teamStr - oppStr) * 0.035, -0.8, 0.8);
+    const earlyDampen = m <= 14 ? 0.55 : 0.82;
+    const adv = clamp((teamStr - oppStr) * 0.015 * earlyDampen, -0.35, 0.35);
+    const waveScale = m === 1 ? 0 : m === 2 ? 0.35 : m === 3 ? 0.8 : 1.0;
+
     for (const pl of players) {
-      let baseCS = pl.role === 'SUP' ? rand(0.9, 1.4) : pl.role === 'JGL' ? rand(5.3, 6.7) : rand(7.4, 9.6);
+      let baseCS =
+        pl.role === 'SUP'
+          ? rand(0.7, 1.2)
+          : pl.role === 'JGL'
+          ? rand(5.1, 6.2)
+          : rand(7.6, 8.9);
 
-      // Role Micro-Tactic resource shifts!
-      if (pl.role === 'TOP' && tactics.topStyle === 'carry') baseCS *= 1.13;
-      if (pl.role === 'TOP' && tactics.topStyle === 'weakside') baseCS *= 0.90;
-      if (pl.role === 'BOT' && tactics.topStyle === 'weakside') baseCS *= 1.07;
-      if (pl.role === 'BOT' && tactics.adcStyle === 'safe') baseCS *= 1.05;
+      // Role Micro-Tactic resource shifts (balanced zero-sum feel)
+      if (pl.role === 'TOP' && tactics.topStyle === 'carry') baseCS *= 1.06;
+      if (pl.role === 'TOP' && tactics.topStyle === 'weakside') baseCS *= 0.94;
+      if (pl.role === 'BOT' && tactics.topStyle === 'weakside') baseCS *= 1.04;
+      if (pl.role === 'BOT' && tactics.adcStyle === 'safe') baseCS *= 1.03;
 
-      const laningBonus = (pl.playerRef.attrs.laning - 80) * 0.055;
-      const gainedCS = Math.max(0, Math.round(baseCS + laningBonus + adv));
+      const laningBonus = (pl.playerRef.attrs.laning - 80) * 0.024 * earlyDampen;
+      const gainedCS = waveScale === 0 ? 0 : Math.max(0, Math.round((baseCS + laningBonus + adv) * waveScale));
       pl.cs += gainedCS;
-      pl.gold += Math.round(115 + gainedCS * 21 + (pl.role === 'SUP' ? 95 : 0));
 
-      let dmgMult = pl.role === 'BOT' || pl.role === 'MID' ? 1.35 : pl.role === 'TOP' ? 1.05 : pl.role === 'JGL' ? 0.9 : 0.48;
-      if (pl.role === 'BOT' && tactics.supStyle === 'peel' && m >= 18) dmgMult *= 1.12;
-      if (pl.role === 'TOP' && tactics.topStyle === 'carry') dmgMult *= 1.12;
-      pl.dmg += Math.round(rand(220, 460) * dmgMult * (1 + m * 0.024));
+      // Ambient gold (~122g/min after 1:50) + CS gold (~20g avg) + Support item gold
+      const ambientGold = m === 1 ? 30 : 122;
+      const supItemGold = pl.role === 'SUP' && m >= 2 && m <= 22 ? 85 : pl.role === 'SUP' ? 40 : 0;
+      pl.gold += Math.round(ambientGold + gainedCS * 20 + supItemGold);
+
+      let dmgMult = pl.role === 'BOT' || pl.role === 'MID' ? 1.32 : pl.role === 'TOP' ? 1.05 : pl.role === 'JGL' ? 0.88 : 0.45;
+      if (pl.role === 'BOT' && tactics.supStyle === 'peel' && m >= 18) dmgMult *= 1.1;
+      if (pl.role === 'TOP' && tactics.topStyle === 'carry') dmgMult *= 1.1;
+      pl.dmg += m === 1 ? Math.round(rand(40, 120)) : Math.round(rand(210, 420) * dmgMult * (1 + m * 0.022));
 
       let visMult = pl.role === 'SUP' ? 2.4 : pl.role === 'JGL' ? 1.4 : 0.85;
       if (pl.role === 'SUP' && tactics.supStyle === 'roam') visMult *= 1.15;
@@ -451,12 +640,30 @@ export function stepMatchMinute(state) {
   updateFarm(state.bluePlayers, state.blueTactics, blueStr, redStr);
   updateFarm(state.redPlayers, state.redTactics, redStr, blueStr);
 
+  // Subtle Turret Plating income (minutes 7-13, realistic ~125g-250g max per event)
+  if (m >= 7 && m <= 13 && Math.random() < 0.26) {
+    const plateSide = Math.random() < blueWinProb ? 'blue' : 'red';
+    const plateTeam = plateSide === 'blue' ? state.bluePlayers : state.redPlayers;
+    const plateLane = pick(['TOP', 'MID', 'BOT']);
+    const laneCarry = plateTeam.find(p => p.role === plateLane);
+    if (laneCarry) {
+      if (plateLane === 'BOT') {
+        laneCarry.gold += 80;
+        const sup = plateTeam.find(p => p.role === 'SUP');
+        if (sup) sup.gold += 80;
+      } else {
+        laneCarry.gold += 140;
+      }
+    }
+  }
+
   let focusPoint = null;
 
-  // 2. Attribute-Driven Lane Skirmishes, Ganks & 1v1 Solo Kills
-  const aggroMod = (state.blueTactics.gameplan === 'aggressive' ? 0.06 : 0) + (state.redTactics.gameplan === 'aggressive' ? 0.06 : 0);
-  if (m >= 3 && Math.random() < 0.28 + aggroMod) {
-    const isGank = Math.random() < 0.62;
+  // 2. Attribute-Driven Lane Skirmishes, Ganks & 1v1 Solo Kills (Authentic LCK/Pro pacing)
+  const aggroMod = (state.blueTactics.gameplan === 'aggressive' ? 0.045 : 0) + (state.redTactics.gameplan === 'aggressive' ? 0.045 : 0);
+  const earlyTempo = m <= 12 ? 0.17 : 0.24;
+  if (m >= 4 && Math.random() < earlyTempo + aggroMod) {
+    const isGank = Math.random() < 0.64;
     if (isGank) {
       // Pick attacking side using calibrated probability
       const killerSide = Math.random() < blueWinProb ? 'blue' : 'red';
@@ -520,30 +727,30 @@ export function stepMatchMinute(state) {
     }
   }
 
-  // 3. Voidgrubs / Rift Herald
+  // 3. Voidgrubs / Rift Herald (Objective tactic heavily steers control!)
   if (m === 6 || m === 11 || m === 15) {
-    let grubsProb = blueWinProb + (state.blueTactics.objective === 'baron' ? 0.06 : 0) - (state.redTactics.objective === 'baron' ? 0.06 : 0);
-    const side = Math.random() < clamp(grubsProb, 0.06, 0.94) ? 'blue' : 'red';
+    let grubsProb = blueWinProb + (state.blueTactics.objective === 'baron' ? 0.14 : 0) - (state.redTactics.objective === 'baron' ? 0.14 : 0);
+    const side = Math.random() < clamp(grubsProb, 0.08, 0.92) ? 'blue' : 'red';
     const objName = m === 15 ? 'Vadi Alameti' : 'Hiçlik Kurtçukları';
-    if (side === 'blue') { state.blueGrubs++; state.bluePlayers.forEach(p => { p.gold += 120; }); }
-    else { state.redGrubs++; state.redPlayers.forEach(p => { p.gold += 120; }); }
+    if (side === 'blue') { state.blueGrubs++; state.bluePlayers.forEach(p => { p.gold += 45; }); }
+    else { state.redGrubs++; state.redPlayers.forEach(p => { p.gold += 45; }); }
     const tag = side === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
     state.events.push({ min: m, type: 'OBJECTIVE', tag: 'OBJEKTİF', side, text: `${tag}, ${objName} objektifini kontrol altına aldı.` });
     focusPoint = LANE_COORDS.BARON;
     state.lastEventPos = { ...focusPoint, color: '#a855f7' };
   }
 
-  // 4. Dragon & Smite Steals
+  // 4. Dragon & Smite Steals (Dragon objective priority strongly boosts contest winrate!)
   if (m >= state.dragonTimer && !state.soulSide) {
-    let dragProb = blueWinProb + (state.blueTactics.objective === 'dragon' ? 0.06 : 0) - (state.redTactics.objective === 'dragon' ? 0.06 : 0);
-    let winner = Math.random() < clamp(dragProb, 0.05, 0.95) ? 'blue' : 'red';
-    const contested = Math.random() < 0.68;
+    let dragProb = blueWinProb + (state.blueTactics.objective === 'dragon' ? 0.14 : 0) - (state.redTactics.objective === 'dragon' ? 0.14 : 0);
+    let winner = Math.random() < clamp(dragProb, 0.08, 0.92) ? 'blue' : 'red';
+    const contested = m >= 10 ? Math.random() < 0.62 : Math.random() < 0.35;
     let stolen = false;
 
     if (contested) {
       const loser = winner === 'blue' ? 'red' : 'blue';
-      const wKills = 1 + Math.floor(Math.random() * 2);
-      const lKills = Math.random() < 0.7 ? 1 : 0;
+      const wKills = 1 + (Math.random() < 0.45 ? 1 : 0);
+      const lKills = Math.random() < 0.65 ? 1 : 0;
       for (let i = 0; i < wKills; i++) awardKill(state, winner, pick(['MID', 'BOT', 'JGL']), pick(['SUP', 'JGL', 'BOT', 'TOP']), ['SUP', 'JGL', 'MID']);
       for (let i = 0; i < lKills; i++) awardKill(state, loser, pick(['MID', 'BOT', 'TOP']), pick(['SUP', 'TOP', 'JGL']), ['SUP', 'JGL']);
 
@@ -557,8 +764,11 @@ export function stepMatchMinute(state) {
       }
     }
 
-    if (winner === 'blue') { state.blueDragons++; state.bluePlayers.forEach(p => { p.gold += 150; }); }
-    else { state.redDragons++; state.redPlayers.forEach(p => { p.gold += 150; }); }
+    const curGD = state.blueGold - state.redGold;
+    const isUnderdog = (winner === 'blue' && curGD <= -2500) || (winner === 'red' && curGD >= 2500);
+    const dragPerPlayer = isUnderdog ? 85 : 40;
+    if (winner === 'blue') { state.blueDragons++; state.bluePlayers.forEach(p => { p.gold += dragPerPlayer; }); }
+    else { state.redDragons++; state.redPlayers.forEach(p => { p.gold += dragPerPlayer; }); }
 
     const dCount = winner === 'blue' ? state.blueDragons : state.redDragons;
     const tag = winner === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
@@ -610,22 +820,33 @@ export function stepMatchMinute(state) {
     state.lastEventPos = { ...focusPoint, color: '#f59e0b' };
   }
 
-  // 5. Tower Takes
-  if (m >= 10 && Math.random() < 0.28 + (state.baronBuffSide ? 0.22 : 0)) {
+  // 5. Tower Takes (First turret starts ~13m+, Tower/Split tactics strongly accelerate siege!)
+  const baseTowerChance = m < 16 ? 0.16 : 0.24;
+  if (m >= 13 && Math.random() < baseTowerChance + (state.baronBuffSide ? 0.24 : 0)) {
     const baronTowerBoost = state.baronBuffSide === 'blue' ? 0.16 : state.baronBuffSide === 'red' ? -0.16 : 0;
-    let towerProb = blueWinProb + baronTowerBoost + (state.blueTactics.objective === 'towers' || state.blueTactics.gameplan === 'split' ? 0.06 : 0) - (state.redTactics.objective === 'towers' || state.redTactics.gameplan === 'split' ? 0.06 : 0);
-    const side = Math.random() < clamp(towerProb, 0.04, 0.96) ? 'blue' : 'red';
+    let towerProb = blueWinProb + baronTowerBoost + (state.blueTactics.objective === 'towers' || state.blueTactics.gameplan === 'split' ? 0.14 : 0) - (state.redTactics.objective === 'towers' || state.redTactics.gameplan === 'split' ? 0.14 : 0);
+    const side = Math.random() < clamp(towerProb, 0.08, 0.92) ? 'blue' : 'red';
     const oppLanes = side === 'blue' ? state.redLaneTowers : state.blueLaneTowers;
     const availableLanes = ['TOP', 'MID', 'BOT'].filter(l => oppLanes[l] > 0);
 
     if (availableLanes.length > 0) {
       const lane = pick(availableLanes);
       oppLanes[lane]--;
-      if (side === 'blue') { state.blueTowers++; state.bluePlayers.forEach(p => { p.gold += 220; }); }
-      else { state.redTowers++; state.redPlayers.forEach(p => { p.gold += 220; }); }
+      const curGD = state.blueGold - state.redGold;
+      const isUnderdog = (side === 'blue' && curGD <= -2800) || (side === 'red' && curGD >= 2800);
+      const isFirstTower = state.blueTowers + state.redTowers === 0;
+      const perPlayerGold = 125 + (isFirstTower ? 30 : 0) + (isUnderdog ? 60 : 0);
+      if (side === 'blue') { state.blueTowers++; state.bluePlayers.forEach(p => { p.gold += perPlayerGold; }); }
+      else { state.redTowers++; state.redPlayers.forEach(p => { p.gold += perPlayerGold; }); }
       const tag = side === 'blue' ? state.blueTeam.tag : state.redTeam.tag;
       const tierText = oppLanes[lane] === 2 ? 'dış kulesini' : oppLanes[lane] === 1 ? 'iç kulesini' : 'inhibitör kulesini ve inhibitörü';
-      state.events.push({ min: m, type: 'TOWER', tag: 'KULE', side, text: `${tag}, ${lane} koridorundaki ${tierText} yıktı.` });
+      state.events.push({
+        min: m,
+        type: 'TOWER',
+        tag: isUnderdog ? 'ÖDÜL KULE' : 'KULE',
+        side,
+        text: `${tag}, ${lane} koridorundaki ${tierText} yıktı${isUnderdog ? ' (Geri Dönüş Ödülü!)' : '.'}`,
+      });
       focusPoint = LANE_COORDS[lane];
       state.lastEventPos = { ...focusPoint, color: side === 'blue' ? '#38bdf8' : '#f43f5e' };
     }
@@ -633,7 +854,7 @@ export function stepMatchMinute(state) {
 
   // 6. Baron Nashor & Smite Steals
   if (m >= state.baronTimer && Math.random() < 0.32) {
-    let baronProb = blueWinProb + (state.blueTactics.objective === 'baron' ? 0.06 : 0) - (state.redTactics.objective === 'baron' ? 0.06 : 0);
+    let baronProb = blueWinProb + (state.blueTactics.objective === 'baron' ? 0.14 : 0) - (state.redTactics.objective === 'baron' ? 0.14 : 0);
     let winner = Math.random() < clamp(baronProb, 0.16, 0.84) ? 'blue' : 'red';
     const loser = winner === 'blue' ? 'red' : 'blue';
 
@@ -653,8 +874,8 @@ export function stepMatchMinute(state) {
       state.stealsCount++;
     }
 
-    if (winner === 'blue') { state.blueBarons++; state.bluePlayers.forEach(p => { p.gold += 350; }); }
-    else { state.redBarons++; state.redPlayers.forEach(p => { p.gold += 350; }); }
+    if (winner === 'blue') { state.blueBarons++; state.bluePlayers.forEach(p => { p.gold += 300; }); }
+    else { state.redBarons++; state.redPlayers.forEach(p => { p.gold += 300; }); }
     state.baronBuffSide = winner;
     state.baronBuffUntil = m + 3;
     state.baronTimer = m + 7;
@@ -775,9 +996,13 @@ export function quickSimulateGame(blueTeam, redTeam, blueRoster, redRoster, patc
 export function applyMatchOutcomeToPlayers(matchState) {
   const applySide = (players, won, team) => {
     const hasLeader = players.some(mp => mp.playerRef.trait === 'Leader');
+    const egoCount = players.filter(mp => mp.playerRef.trait === 'Ego').length;
+    const chem = computeTeamChemistry(team, players);
+
     for (const mp of players) {
       const p = mp.playerRef;
       p.stats.games++;
+      p.teamGames = (p.teamGames ?? 20) + 1;
       if (won) p.stats.wins++;
       p.stats.kills += mp.kills;
       p.stats.deaths += mp.deaths;
@@ -787,27 +1012,43 @@ export function applyMatchOutcomeToPlayers(matchState) {
       if (!p.mastery) p.mastery = {};
       p.mastery[mp.champId] = Math.min(5, (p.mastery[mp.champId] || 0) + (won ? 1 : 0.5));
 
-      let moraleDelta = won ? 4 : (hasLeader ? -2 : -4);
+      // Superteams with Ego/Resource clashes lose morale much faster on defeats!
+      let moraleDelta = won ? 3 : (hasLeader ? -2 : -4);
+      if (!won && (egoCount >= 2 || chem.resourceClash <= -2.5)) moraleDelta -= 2;
       if ((matchState.grantedRequestIds || []).includes(p.id)) moraleDelta += 3;
       if ((matchState.ignoredEgoIds || []).includes(p.id)) moraleDelta -= 2;
-      p.morale = clamp(p.morale + moraleDelta, 30, 100);
+      p.morale = clamp(p.morale + moraleDelta, 25, 100);
       p.form = clamp(p.form + (mp.rating >= 7.8 ? 3 : mp.rating <= 5.6 ? -3 : 0), 45, 99);
-      const perfReduction = ((team.staff?.perfCoach || 1) - 1) * 1.6;
+      const perfReduction = ((team.staff?.perfCoach || 1) - 1) * 1.5;
       const calmReduction = (matchState.teamTalk === 'calm' && matchState.userSide === (team.id === matchState.blueTeam.id ? 'blue' : 'red')) ? 2 : 0;
-      const restReduction = (team.facilities.gamingHouse - 1) * 1.5 + perfReduction + calmReduction;
-      p.fatigue = Math.min(100, Math.round(p.fatigue + Math.max(3, 9 - restReduction)));
+      const restReduction = (team.facilities.gamingHouse - 1) * 1.4 + perfReduction + calmReduction;
+      const ageProf = getAgeFatigueProfile(p.age);
+      const durationMult = (matchState.minute || 28) >= 35 ? 1.24 : (matchState.minute || 28) >= 28 ? 1.05 : 0.90;
+      const rawGain = Math.max(2.5, (9.5 - restReduction) * ageProf.gainMult * durationMult);
+      p.fatigue = Math.min(100, Math.round(p.fatigue + rawGain));
     }
-    team.synergy = clamp(team.synergy + (won ? 1.5 : (hasLeader ? 0 : -0.5)), 40, 100);
-    // Grow JGL+MID and BOT+SUP Duo Synergy!
+
+    // Harder, diminishing-returns synergy progression!
+    let synDelta;
+    if (won) {
+      synDelta = team.synergy < 65 ? 0.9 : team.synergy < 82 ? 0.55 : 0.25;
+      if (chem.resourceClash <= -2.5) synDelta *= 0.6;
+    } else {
+      synDelta = hasLeader ? -0.6 : -1.3;
+      if (egoCount >= 2 || chem.resourceClash <= -2.5) synDelta -= 0.9;
+    }
+    team.synergy = clamp(+(team.synergy + synDelta).toFixed(1), 20, 100);
+
+    // Slower, earned JGL+MID and BOT+SUP Duo Synergy!
     if (!team.duoSynergy) team.duoSynergy = {};
     const pk = (a, b) => [a, b].sort().join('|');
     const jgl = players.find(x => x.role === 'JGL');
     const mid = players.find(x => x.role === 'MID');
     const bot = players.find(x => x.role === 'BOT');
     const sup = players.find(x => x.role === 'SUP');
-    const delta = won ? 1.5 : 0.8;
-    if (jgl && mid) { const k = pk(jgl.playerId, mid.playerId); team.duoSynergy[k] = Math.min(30, (team.duoSynergy[k] || 0) + delta); }
-    if (bot && sup) { const k = pk(bot.playerId, sup.playerId); team.duoSynergy[k] = Math.min(30, (team.duoSynergy[k] || 0) + delta); }
+    const duoDelta = won ? 0.85 : 0.35;
+    if (jgl && mid) { const k = pk(jgl.playerId, mid.playerId); team.duoSynergy[k] = Math.min(30, +( (team.duoSynergy[k] || 0) + duoDelta ).toFixed(2)); }
+    if (bot && sup) { const k = pk(bot.playerId, sup.playerId); team.duoSynergy[k] = Math.min(30, +( (team.duoSynergy[k] || 0) + duoDelta ).toFixed(2)); }
   };
 
   applySide(matchState.bluePlayers, matchState.winner === 'blue', matchState.blueTeam);
