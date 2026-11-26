@@ -5,40 +5,53 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const rootDir = import.meta.dirname;
   return {
     base: './',
+    build: {
+      rollupOptions: {
+        input: path.resolve(rootDir, 'app.html'),
+      },
+    },
     plugins: [
       react(),
       tailwindcss(),
-      // Copies src/assets into dist/ so root-relative URLs like
-      // "/src/assets/images/..." (e.g. generate_image output) still resolve
-      // in production builds. Do not remove.
       {
-        name: 'copy-unbundled-src-assets',
+        name: 'sync-github-pages-static-root',
         apply: 'build',
         closeBundle(error?: Error): void {
-          if (error) {
-            return;
-          }
-          const distDir = path.resolve(__dirname, 'dist');
-          const srcAssets = path.resolve(__dirname, 'src/assets');
-          const distAssets = path.resolve(distDir, 'src/assets');
+          if (error) return;
+          const distDir = path.resolve(rootDir, 'dist');
+          const srcAssets = path.resolve(rootDir, 'src/assets');
+          const distSrcAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
-            fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
+            fs.cpSync(srcAssets, distSrcAssets, {recursive: true, force: true});
+          }
+          // Publish compiled static entry + bundle to repo root so GitHub Pages on main works out of the box
+          const builtHtml = path.resolve(distDir, 'app.html');
+          const rootIndex = path.resolve(rootDir, 'index.html');
+          const distBundleAssets = path.resolve(distDir, 'assets');
+          const rootBundleAssets = path.resolve(rootDir, 'assets');
+          if (fs.existsSync(builtHtml)) {
+            fs.copyFileSync(builtHtml, rootIndex);
+          }
+          if (fs.existsSync(distBundleAssets)) {
+            if (fs.existsSync(rootBundleAssets)) {
+              fs.rmSync(rootBundleAssets, {recursive: true, force: true});
+            }
+            fs.cpSync(distBundleAssets, rootBundleAssets, {recursive: true, force: true});
           }
         },
       },
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': rootDir,
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      open: '/app.html',
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };

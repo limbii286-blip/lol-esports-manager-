@@ -391,8 +391,81 @@ export function getPlayerValuationDetails(state, player, buyerTeam = null) {
   };
 }
 
+export const SUB_LEAGUES = {
+  LCK: { name: 'LCK CL (Challengers)', clubs: ['T1 Esports Academy', 'Gen.G Global Academy', 'KT Rolster Challengers', 'DK Challengers', 'HLE Challengers'] },
+  LPL: { name: 'LDL (Gelişim Ligi)', clubs: ['BLG Junior', 'JDG Joy Dream', 'TES Challenger', 'EDG Youth', 'WBG Youth'] },
+  LEC: { name: 'EMEA Masters', clubs: ['Karmine Corp Blue', 'Los Heretics', 'BDS Academy', 'Vitality.Bee', 'SK Gaming Prime'] },
+  LCS: { name: 'NACL (Akademi Ligi)', clubs: ['FlyQuest NACL', 'TL Challengers', 'Disguised', 'Fear x Starforge', 'Maryville Esports'] },
+  TCL: { name: 'TCL Akademi Ligi', clubs: ['SuperMassive Academy', 'BJK Akademi', 'Dark Passage Youth', 'FUT Academy', 'Galakticos Youth'] },
+  CBLOL: { name: 'CBLOL Academy', clubs: ['LOUD Academy', 'paiN Academy', 'RED Academy', 'KaBuM! Academy', 'FURIA Academy'] },
+  LCO: { name: 'LCO Challengers', clubs: ['Chiefs Academy', 'Dire Wolves Youth', 'Ground Zero', 'Kanga Esports', 'Mammoth Youth'] },
+};
+
+export function addSocialPost(state, post) {
+  if (!state.socialFeed) state.socialFeed = [];
+  state.socialFeed.unshift({
+    id: `soc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    season: state.season,
+    week: state.week,
+    platform: post.platform || 'X',
+    handle: post.handle || '@EsportsPulse',
+    author: post.author || 'Esports Pulse',
+    badge: post.badge || 'ANALİZ',
+    body: post.body || '',
+    likes: post.likes ?? Math.round(180 + Math.random() * 2400),
+    replies: post.replies ?? Math.round(18 + Math.random() * 320),
+  });
+  if (state.socialFeed.length > 35) state.socialFeed.pop();
+}
+
+export function loanPlayerOut(state, playerId) {
+  const p = state.players.find(x => x.id === playerId && x.teamId === state.userTeamId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return { ok: false, reason: 'Oyuncu kadroda bulunamadı.' };
+  if (p.loanedTo) return { ok: false, reason: `${p.name} zaten ${p.loanedTo.clubName} (${p.loanedTo.leagueName}) takımında kiralık.` };
+  const availableInRole = state.players.filter(x => x.teamId === state.userTeamId && x.role === p.role && !x.loanedTo);
+  if (availableInRole.length <= 1) {
+    return { ok: false, reason: `${p.role} mevkiinde başka aktif oyuncun yok! Önce yedek bulmadan kiralayamazsın.` };
+  }
+  const sub = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
+  const partnerClub = sub.clubs[Math.floor(Math.random() * sub.clubs.length)];
+  p.isStarter = false;
+  p.benchWeeks = 0;
+  p.loanedTo = {
+    leagueName: sub.name,
+    clubName: partnerClub,
+    gamesPlayed: 0,
+    growthGained: 0,
+    seasonStart: state.season,
+  };
+  p.morale = Math.min(100, (p.morale || 75) + 6);
+  getTeamRoster(state, team.id);
+  addSocialPost(state, {
+    platform: 'X',
+    handle: '@SheepEsports',
+    author: 'Sheep Esports (Tier 1)',
+    badge: 'KİRALAMA',
+    body: `[RESMİ] ${team.name}, genç ${p.role} oyuncusu ${p.name} (${p.age}y, OVR ${p.ovr}) için ${sub.name} ekibi ${partnerClub} ile sezonluk kiralama anlaşmasına vardı.`,
+  });
+  return { ok: true, reason: `${p.name}, ${partnerClub} (${sub.name}) takımına kiralandı! Haftalık maç oynayarak hızla gelişecek.` };
+}
+
+export function recallLoanedPlayer(state, playerId) {
+  const p = state.players.find(x => x.id === playerId && x.teamId === state.userTeamId);
+  if (!p || !p.loanedTo) return { ok: false, reason: 'Oyuncu şu anda kiralık değil.' };
+  const prevClub = p.loanedTo.clubName;
+  const prevGames = p.loanedTo.gamesPlayed || 0;
+  const prevGrowth = p.loanedTo.growthGained || 0;
+  p.loanedTo = null;
+  p.morale = Math.min(100, (p.morale || 75) + 3);
+  return {
+    ok: true,
+    reason: `${p.name}, ${prevClub} kiralık döneminden geri çağrıldı (${prevGames} alt lig maçı, +${prevGrowth} özellik gelişimi).`,
+  };
+}
+
 export function getTeamRoster(state, teamId) {
-  const all = state.players.filter(p => p.teamId === teamId);
+  const all = state.players.filter(p => p.teamId === teamId && !p.loanedTo);
   const starters = [];
   for (const role of ROLES) {
     const rolePlayers = all.filter(p => p.role === role);
@@ -536,7 +609,32 @@ export function ensureCalendarState(state) {
   if (!state.recentEventIds) state.recentEventIds = [];
   if (!state.recentNewsIds) state.recentNewsIds = [];
   if (!state.financeLog) state.financeLog = [];
+  if (!state.socialFeed) state.socialFeed = [];
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
+  if (Array.isArray(state.players)) {
+    for (const p of state.players) {
+      if (!Array.isArray(p.careerHistory)) p.careerHistory = [];
+    }
+  }
+  if (state.socialFeed.length === 0 && Array.isArray(state.teams)) {
+    const ut = state.teams.find(t => t.id === state.userTeamId);
+    if (ut) {
+      addSocialPost(state, {
+        platform: 'X',
+        handle: '@LEC_Wooloo',
+        author: 'LEC Wooloo (Tier 1)',
+        badge: 'SIZINTI',
+        body: `Kaynaklarımıza göre ${ut.name} yeni başantrenörü ${state.managerName || 'Koç'} yönetiminde iddialı bir ${ut.region} splitine hazırlanıyor. Scrim sonuçları şimdiden konuşuluyor.`,
+      });
+      addSocialPost(state, {
+        platform: 'REDDIT',
+        handle: 'r/leagueoflegends',
+        author: 'u/RiftAnalyst26',
+        badge: 'TARTIŞMA',
+        body: `[Sezon ${state.season || 2026} Tahminleri] ${ut.tag} bu kadroyla Playoff ve uluslararası sahnede ne yapar? Yeni Fearless Draft metası şampiyon havuzu geniş takımları öne çıkaracak.`,
+      });
+    }
+  }
   if (Array.isArray(state.teams)) {
     state.teams.forEach(t => {
       ensureTeamExtras(t);
@@ -791,6 +889,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
   };
 
   syncAllMarketValues(state, false);
+  ensureCalendarState(state);
 
   addInboxMessage(state, {
     title: `Hoş Geldin ${cleanName} — ${userTeam.name} Görev Başlangıcı`,
@@ -910,6 +1009,31 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
   for (const p of state.players) {
     if (p.teamId === match.blueId || p.teamId === match.redId) {
       recalculatePlayerMarketValue(state, p, true);
+    }
+  }
+
+  // Generate Post-Match X / Reddit Fan & Analyst Reactions for user matches
+  if (match.blueId === state.userTeamId || match.redId === state.userTeamId) {
+    const bTeam = state.teams.find(t => t.id === match.blueId);
+    const rTeam = state.teams.find(t => t.id === match.redId);
+    const userWon = match.winnerId === state.userTeamId;
+    const winTeam = userWon ? (match.blueId === state.userTeamId ? bTeam : rTeam) : (match.blueId === state.userTeamId ? rTeam : bTeam);
+    const loseTeam = match.winnerId === match.blueId ? rTeam : bTeam;
+    const riv = getRivalryName(match.blueId, match.redId);
+    if (bTeam && rTeam && winTeam && loseTeam) {
+      addSocialPost(state, {
+        platform: 'REDDIT',
+        handle: 'r/leagueoflegends',
+        author: 'Post-Match Thread',
+        badge: riv ? 'DERBİ' : 'MAÇ SONU',
+        body: `[Post-Match] ${bTeam.tag} ${blueScore} - ${redScore} ${rTeam.tag}: ${
+          userWon
+            ? `${winTeam.name} taraftarları ayakta! "${winTeam.tag} makrosu ve draft disiplini bugün ${loseTeam.tag}'a nefes aldırmadı."`
+            : `${loseTeam.name} taraftarları sosyal medyada tepkili: "Draft ve objektif kontrolünde ciddi değişiklik gerekiyor."`
+        }`,
+        likes: Math.round(900 + Math.random() * 4800),
+        replies: Math.round(140 + Math.random() * 820),
+      });
     }
   }
 }
@@ -1376,6 +1500,24 @@ function runWeeklyClubTick(state) {
 
     for (const p of roster) {
       const ageProf = getAgeFatigueProfile(p.age);
+
+      // Sub-League Loan Progression (LCK CL / EMEA Masters / Academy): boosted youth growth & zero bench unhappiness!
+      if (p.loanedTo) {
+        p.loanedTo.gamesPlayed = (p.loanedTo.gamesPlayed || 0) + 2;
+        p.fatigue = Math.max(10, Math.min(55, (p.fatigue || 20) + 2));
+        p.morale = Math.min(98, (p.morale || 78) + 1);
+        p.form = Math.min(95, Math.max(68, (p.form || 75) + (Math.random() < 0.6 ? 2 : -1)));
+        const loanGrowthChance = (p.ovr < p.pot ? (p.age <= 21 ? 0.56 : p.age <= 24 ? 0.36 : 0.14) : 0.04) * (p.trait === 'Grinder' ? 1.3 : 1.0);
+        if (Math.random() < loanGrowthChance) {
+          const keys = Object.keys(p.attrs);
+          const k = (p.indFocus && p.attrs[p.indFocus] !== undefined) ? p.indFocus : keys[Math.floor(Math.random() * keys.length)];
+          p.attrs[k] = Math.min(99, p.attrs[k] + 1);
+          p.ovr = calcOVR(p.attrs);
+          p.loanedTo.growthGained = (p.loanedTo.growthGained || 0) + 1;
+        }
+        recalculatePlayerMarketValue(state, p, true);
+        continue;
+      }
 
       // Injury / Burnout recovery (age-linked recovery rate)
       if ((p.injuredWeeks || 0) > 0) {
@@ -2225,6 +2367,17 @@ function runLivingAITransfers(state, maxMoves = 8) {
         fee,
       });
       if (state.transferFeed.length > 35) state.transferFeed.pop();
+      if (target.ovr >= 82 || fee >= 400000) {
+        addSocialPost(state, {
+          platform: 'X',
+          handle: '@LEC_Wooloo',
+          author: 'LEC Wooloo (Tier 1)',
+          badge: 'TRANSFER',
+          body: `[SON DAKİKA] ${buyer.name} (${buyer.region}), ${oldClub ? oldClub.tag : 'serbest pazardan'} ${target.name} (${target.role} · OVR ${target.ovr}) transferini ${fee > 0 ? formatMoney(fee) + ' bonservisle' : 'imza primiyle'} tamamladı!`,
+          likes: Math.round(1200 + Math.random() * 5500),
+          replies: Math.round(180 + Math.random() * 650),
+        });
+      }
     }
   }
   return aiMoves;
@@ -2252,6 +2405,41 @@ function runOffSeasonProgression(state) {
   }
 
   for (const p of state.players) {
+    // Archive full FM Career History row for this season before resetting stats!
+    if (!Array.isArray(p.careerHistory)) p.careerHistory = [];
+    const curClub = p.teamId ? state.teams.find(t => t.id === p.teamId) : null;
+    if ((p.stats?.games || 0) > 0 || p.loanedTo) {
+      const seasonTrophies = curClub ? (curClub.trophies || []).filter(tr => tr.includes(String(state.season))) : [];
+      p.careerHistory.unshift({
+        season: state.season,
+        teamTag: p.loanedTo ? `${curClub?.tag || 'CLB'}→${p.loanedTo.leagueName.split(' ')[0]}` : (curClub?.tag || 'FA'),
+        teamName: p.loanedTo ? `${p.loanedTo.clubName} (Kiralık)` : (curClub?.name || 'Serbest'),
+        region: curClub?.region || 'FA',
+        games: p.loanedTo ? (p.loanedTo.gamesPlayed || 0) : (p.stats?.games || 0),
+        wins: p.loanedTo ? Math.round((p.loanedTo.gamesPlayed || 0) * 0.55) : (p.stats?.wins || 0),
+        kills: p.stats?.kills || 0,
+        deaths: p.stats?.deaths || 0,
+        assists: p.stats?.assists || 0,
+        mvps: p.stats?.mvps || 0,
+        ovr: p.ovr,
+        trophies: seasonTrophies.length,
+      });
+      if (p.careerHistory.length > 20) p.careerHistory.pop();
+    }
+
+    // Auto-return loaned players at season end with development summary
+    if (p.loanedTo) {
+      if (p.teamId === state.userTeamId) {
+        addInboxMessage(state, {
+          title: `Kiralık Dönüşü: ${p.name} (${p.loanedTo.leagueName})`,
+          sender: 'Akademi & Kiralama Koordinatörü',
+          category: 'TRANSFER',
+          body: `${p.name}, ${p.loanedTo.clubName} (${p.loanedTo.leagueName}) kiralık sezonunu ${p.loanedTo.gamesPlayed} maç ve +${p.loanedTo.growthGained} özellik gelişimiyle tamamlayıp A Takım'a döndü (Güncel OVR: ${p.ovr}).`,
+        });
+      }
+      p.loanedTo = null;
+    }
+
     p.age++;
     p.fatigue = 5;
     p.injuredWeeks = 0;

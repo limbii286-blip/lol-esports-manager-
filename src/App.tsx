@@ -28,6 +28,7 @@ import {
   skipToNextKeyDay,
   advanceWeekOrRound,
   formatTurkishDate,
+  formatMoney,
   saveGame,
   loadFromSlot,
 } from './engine/gameEngine.js';
@@ -73,6 +74,13 @@ export default function App() {
   const [muted, setMuted] = useState(() => soundFx.isMuted());
   const [toast, setToast] = useState<string | null>(null);
   const [globalQuery, setGlobalQuery] = useState('');
+
+  useEffect(() => {
+    if (careerState?.pendingCelebration) {
+      if (careerState.pendingCelebration.isChampion) soundFx.trophyFanfare();
+      else soundFx.objectiveSecured();
+    }
+  }, [careerState?.pendingCelebration]);
 
   const showToast = (msg?: string) => {
     if (!msg) return;
@@ -535,6 +543,59 @@ export default function App() {
       )}
 
       {mayhemOpen && <WorldsMayhemModal onClose={() => setMayhemOpen(false)} />}
+
+      {/* Trophy & Prize Celebration Modal */}
+      {careerState.pendingCelebration && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#121722] border border-[#C89B3C]/60 rounded-lg p-7 text-center space-y-5 shadow-2xl">
+            <Trophy
+              className={`w-14 h-14 mx-auto ${
+                careerState.pendingCelebration.isChampion ? 'text-[#E4BD67]' : 'text-slate-300'
+              }`}
+            />
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-[#E4BD67]">
+                {careerState.pendingCelebration.tournament}
+              </div>
+              <h2 className="font-display text-3xl font-extrabold text-white tracking-wide">
+                {careerState.pendingCelebration.placement}
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed pt-1">
+                {careerState.pendingCelebration.subtitle}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 bg-[#0B0E14] border border-white/[0.08] rounded-md p-3.5 font-mono-num text-xs">
+              <div>
+                <div className="text-slate-500">Turnuva Ödülü</div>
+                <div className="text-base font-bold text-emerald-400">
+                  +{formatMoney(careerState.pendingCelebration.prizeMoney || 0)}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-500">Turnuva MVP</div>
+                <div className="text-sm font-bold text-[#E4BD67] truncate">
+                  {careerState.pendingCelebration.mvp || '—'}
+                </div>
+              </div>
+            </div>
+            {(careerState.pendingCelebration.sponsorBonus || 0) > 0 && (
+              <div className="text-xs font-mono-num text-emerald-400">
+                Sponsor Hedef Primi: +{formatMoney(careerState.pendingCelebration.sponsorBonus)}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                soundFx.click();
+                careerState.pendingCelebration = null;
+                commitState(careerState);
+              }}
+              className="w-full py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer"
+            >
+              Ödülü Topla ve Devam Et
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Clean Toast Feedback */}
       {toast && (

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, MessageSquare, FileText, DollarSign, Dumbbell, Shield, Activity, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, MessageSquare, FileText, DollarSign, Dumbbell, Shield, Activity, TrendingUp, TrendingDown, History, Send } from 'lucide-react';
 import { CHAMPIONS, CHAMPION_MAP } from '../data/champions.js';
 import { TRAITS } from '../data/teamsAndPlayers.js';
 import {
@@ -13,10 +13,12 @@ import {
   completePlayerSale,
   setStarter,
   releasePlayer,
+  loanPlayerOut,
+  recallLoanedPlayer,
   getPlayerValuationDetails,
   getAgeFatigueProfile,
 } from '../engine/gameEngine.js';
-import { RadarChart, OvrValue } from './shared/Visuals';
+import { RadarChart, OvrValue, PlayerAvatar } from './shared/Visuals';
 import { soundFx } from '../engine/soundFx';
 
 interface PlayerProfileModalProps {
@@ -34,7 +36,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 }) => {
   const player = state.players.find((p: any) => p.id === playerId);
   const userTeam = state.teams.find((t: any) => t.id === state.userTeamId);
-  const [subTab, setSubTab] = useState<'overview' | 'training' | 'contract' | 'sell'>('overview');
+  const [subTab, setSubTab] = useState<'overview' | 'history' | 'training' | 'contract' | 'sell'>('overview');
 
   const demand = useMemo(() => (player ? getRenewalDemand(state, player.id) : null), [state, player]);
   const valuation = useMemo(
@@ -123,21 +125,24 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-12 h-12 rounded-md bg-[#171E2C] border border-white/[0.12] flex flex-col items-center justify-center shrink-0">
-              <span className="font-mono-num text-[10px] text-slate-400">{player.role}</span>
-              <OvrValue ovr={player.ovr} size="md" />
-            </div>
+            <PlayerAvatar name={player.name} role={player.role} color={team?.color || '#C89B3C'} size={50} />
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-display text-2xl font-extrabold text-white tracking-wide truncate">
                   {player.name}
                 </h3>
+                <OvrValue ovr={player.ovr} size="md" />
                 <span className="text-xs text-slate-400 font-mono-num">
                   {player.nat} · {player.age} yaş · POT {player.pot}
                 </span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5 truncate">
-                {team ? team.name : 'Serbest Oyuncu'} · Stil: {player.style} · Karakter: {traitInfo.label} · Değer:{' '}
+                {player.loanedTo
+                  ? `${player.loanedTo.clubName} (${player.loanedTo.leagueName} — Kiralık)`
+                  : team
+                  ? team.name
+                  : 'Serbest Oyuncu'}{' '}
+                · Stil: {player.style} · Karakter: {traitInfo.label} · Değer:{' '}
                 <span className="font-mono-num text-[#E4BD67]">{formatMoney(valuation.marketValue)}</span>
               </div>
             </div>
@@ -149,9 +154,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
         {/* Sub-Navigation */}
         <div className="px-6 py-2.5 border-b border-white/[0.08] bg-[#0B0E14]/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             {[
               { id: 'overview', label: 'Genel & Değerleme', icon: Shield },
+              { id: 'history', label: 'Kariyer Geçmişi', icon: History },
               ...(isOwned
                 ? [
                     { id: 'training', label: 'Bireysel Antrenman', icon: Dumbbell },
@@ -173,8 +179,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             ))}
           </div>
           {isOwned && (
-            <div className="flex items-center gap-2">
-              {!player.isStarter && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {!player.isStarter && !player.loanedTo && (
                 <button
                   onClick={() => {
                     setStarter(state, player.id);
@@ -183,6 +189,29 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   className="px-3 py-1.5 rounded-md border border-[#C89B3C]/60 text-[#E4BD67] hover:bg-[#C89B3C]/15 text-xs font-semibold cursor-pointer"
                 >
                   İlk 5'e Al
+                </button>
+              )}
+              {player.loanedTo ? (
+                <button
+                  onClick={() => {
+                    soundFx.click();
+                    const res = recallLoanedPlayer(state, player.id);
+                    onUpdate(res.reason);
+                  }}
+                  className="px-3 py-1.5 rounded-md border border-sky-400/50 text-sky-300 hover:bg-sky-500/15 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-3 h-3" /> Kiradan Çağır
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    soundFx.click();
+                    const res = loanPlayerOut(state, player.id);
+                    onUpdate(res.reason);
+                  }}
+                  className="px-3 py-1.5 rounded-md border border-sky-400/40 text-sky-300 hover:bg-sky-500/15 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-3 h-3" /> Alt Lige Kirala
                 </button>
               )}
               <button
@@ -400,6 +429,85 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     {talkFeedback && <div className="text-xs text-[#E4BD67]">{talkFeedback}</div>}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {subTab === 'history' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <div>
+                  <h4 className="text-sm font-bold text-white">Profesyonel Kariyer Tarihçesi (FM Geçmiş)</h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Oyuncunun sezonluk kulüp yolculuğu, alt lig kiralık dönemleri, KDA ve kupa kayıtları.
+                  </p>
+                </div>
+                {player.loanedTo && (
+                  <span className="text-xs font-mono-num text-sky-400 font-semibold">
+                    Kiralık: {player.loanedTo.clubName} ({player.loanedTo.leagueName})
+                  </span>
+                )}
+              </div>
+
+              <div className="bg-[#0B0E14] border border-white/[0.08] rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-[11px] text-slate-400">
+                        <th className="py-2.5 px-4">Sezon</th>
+                        <th className="py-2.5 px-3">Kulüp / Alt Lig</th>
+                        <th className="py-2.5 px-3 text-right">OVR</th>
+                        <th className="py-2.5 px-3 text-right">Maç (G)</th>
+                        <th className="py-2.5 px-3 text-right">KDA</th>
+                        <th className="py-2.5 px-3 text-right">MVP</th>
+                        <th className="py-2.5 px-4 text-right">Kupa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.06] font-mono-num">
+                      {/* Active Current Season Row */}
+                      <tr className="bg-[#C89B3C]/10">
+                        <td className="py-2.5 px-4 font-bold text-[#E4BD67]">{state.season} (Aktif)</td>
+                        <td className="py-2.5 px-3 font-sans font-semibold text-white">
+                          {player.loanedTo
+                            ? `${player.loanedTo.clubName} (${player.loanedTo.leagueName})`
+                            : team
+                            ? `${team.name} (${team.region})`
+                            : 'Serbest Oyuncu'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-bold text-white">{player.ovr}</td>
+                        <td className="py-2.5 px-3 text-right text-slate-200">
+                          {player.loanedTo
+                            ? `${player.loanedTo.gamesPlayed} (+${player.loanedTo.growthGained} glş.)`
+                            : `${player.stats?.games || 0} (${player.stats?.wins || 0}G)`}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[#E4BD67]">{kda}</td>
+                        <td className="py-2.5 px-3 text-right text-emerald-400">{player.stats?.mvps || 0}</td>
+                        <td className="py-2.5 px-4 text-right text-slate-400">—</td>
+                      </tr>
+                      {(player.careerHistory || []).map((row: any, idx: number) => {
+                        const rowKda =
+                          row.games > 0
+                            ? ((row.kills + row.assists) / Math.max(1, row.deaths)).toFixed(2)
+                            : '—';
+                        return (
+                          <tr key={idx} className="hover:bg-white/[0.02]">
+                            <td className="py-2.5 px-4 text-slate-300">{row.season}</td>
+                            <td className="py-2.5 px-3 font-sans text-slate-200">
+                              {row.teamName} <span className="text-slate-500">({row.region})</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-slate-200">{row.ovr}</td>
+                            <td className="py-2.5 px-3 text-right text-slate-300">
+                              {row.games} ({row.wins}G)
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-[#E4BD67]">{rowKda}</td>
+                            <td className="py-2.5 px-3 text-right text-emerald-400">{row.mvps || 0}</td>
+                            <td className="py-2.5 px-4 text-right text-[#E4BD67]">{row.trophies || 0}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

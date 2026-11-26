@@ -135,13 +135,19 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         {p.role}
                       </span>
                       <span className="block text-[10px] text-slate-500">
-                        {p.isStarter ? 'İlk 5' : 'Yedek'}
+                        {p.loanedTo ? 'Kiralık' : p.isStarter ? 'İlk 5' : 'Yedek'}
                       </span>
                     </td>
                     <td className="py-3 px-3">
                       <div className="font-bold text-white">{p.name}</div>
                       <div className="text-[11px] text-slate-500 font-mono-num">
                         {p.nat} · {teamGames} maç uyum
+                        {p.loanedTo && (
+                          <span className="text-sky-400">
+                            {' '}
+                            · {p.loanedTo.leagueName} ({p.loanedTo.gamesPlayed} maç · +{p.loanedTo.growthGained} glş.)
+                          </span>
+                        )}
                         {(p.importWeeksLeft || 0) > 0 && (
                           <span className="text-amber-400"> · Dil adaptasyonu ({p.importWeeksLeft}h)</span>
                         )}

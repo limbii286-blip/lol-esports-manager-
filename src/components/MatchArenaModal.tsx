@@ -38,7 +38,7 @@ import {
 import { TOUCHLINE_SHOUTS, applyTouchlineShout } from '../engine/fmExtensions';
 import { soundFx } from '../engine/soundFx';
 import { LiveRiftCanvas } from './LiveRiftCanvas';
-import { GoldDiffChart, TeamCrest } from './shared/Visuals';
+import { GoldDiffChart, TeamCrest, ChampionEmblem } from './shared/Visuals';
 import { ActiveSeriesContext } from '../types/game';
 
 interface MatchArenaModalProps {
@@ -110,6 +110,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setPhase('DRAFT');
   };
 
+  // Draft Tension Music Loop (auto-starts in DRAFT, stops on exit)
+  useEffect(() => {
+    if (phase === 'DRAFT' && draft && !draft.finished) {
+      soundFx.startDraftMusic();
+    } else {
+      soundFx.stopDraftMusic();
+    }
+    return () => {
+      soundFx.stopDraftMusic();
+    };
+  }, [phase, draft?.finished]);
+
   // Auto-advance AI Draft turns
   useEffect(() => {
     if (phase !== 'DRAFT' || !draft || draft.finished) return;
@@ -165,14 +177,22 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     const intervalMs = speed === 1 ? 820 : speed === 2 ? 440 : speed === 4 ? 220 : 100;
     timerRef.current = window.setInterval(() => {
       const prevKills = liveState.blueKills + liveState.redKills;
-      const prevObj =
-        liveState.blueDragons + liveState.redDragons + liveState.blueBarons + liveState.redBarons;
+      const prevDragons = liveState.blueDragons + liveState.redDragons;
+      const prevBarons = liveState.blueBarons + liveState.redBarons;
+      const prevTowers = liveState.blueTowers + liveState.redTowers;
+      const prevSoul = Boolean(liveState.soulSide);
       stepMatchMinute(liveState);
       const nextKills = liveState.blueKills + liveState.redKills;
-      const nextObj =
-        liveState.blueDragons + liveState.redDragons + liveState.blueBarons + liveState.redBarons;
+      const nextDragons = liveState.blueDragons + liveState.redDragons;
+      const nextBarons = liveState.blueBarons + liveState.redBarons;
+      const nextTowers = liveState.blueTowers + liveState.redTowers;
+      const nextSoul = Boolean(liveState.soulSide);
 
-      if (nextObj > prevObj) soundFx.objectiveSecured();
+      if (nextBarons > prevBarons) soundFx.baronSteal();
+      else if (nextSoul && !prevSoul) soundFx.dragonSoul();
+      else if (nextDragons > prevDragons) soundFx.objectiveSecured();
+      else if (nextTowers > prevTowers) soundFx.turretFall();
+      else if (prevKills === 0 && nextKills > 0) soundFx.firstBlood();
       else if (nextKills > prevKills) soundFx.killAlert();
 
       setLiveTick((t) => t + 1);
@@ -628,22 +648,27 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                               : 'bg-[#171E2C]/40 border-white/[0.06] cursor-default'
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-bold text-white truncate">{c.name}</span>
-                            <span
-                              className={`font-mono-num text-[11px] font-bold ${
-                                tier === 'S'
-                                  ? 'text-[#E4BD67]'
-                                  : tier === 'A'
-                                  ? 'text-emerald-400'
-                                  : 'text-slate-400'
-                              }`}
-                            >
-                              {tier}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                            {c.roles.join('/')} · {c.dmg}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ChampionEmblem name={c.name} dmg={c.dmg} classTag={c.classTag} size="xs" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-xs font-bold text-white truncate">{c.name}</span>
+                                <span
+                                  className={`font-mono-num text-[11px] font-bold ${
+                                    tier === 'S'
+                                      ? 'text-[#E4BD67]'
+                                      : tier === 'A'
+                                      ? 'text-emerald-400'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {tier}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {c.roles.join('/')} · {c.dmg}
+                              </div>
+                            </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px] mt-1">
                             <span className="text-slate-500 truncate">{c.classTag}</span>
@@ -752,8 +777,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       <TeamCrest tag={blueTeam.tag} color={blueTeam.color} color2={blueTeam.color2} size="sm" />
                       <div>
                         <div className="font-display text-xl font-bold text-sky-400">{blueTeam.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono-num">
-                          Kule {liveState.blueTowers} · Ejder {liveState.blueDragons} · Baron {liveState.blueBarons} · Kurtçuk {liveState.blueGrubs}
+                        <div className="text-[11px] text-slate-400 font-mono-num flex items-center gap-2 flex-wrap">
+                          <span>Kule {liveState.blueTowers} · Baron {liveState.blueBarons} · Kurtçuk {liveState.blueGrubs}</span>
+                          <span className="inline-flex items-center gap-0.5" title="Ejder Ruhu İlerlemesi">
+                            {[0, 1, 2, 3].map((d) => (
+                              <span
+                                key={d}
+                                className={`w-2 h-2 rounded-full ${
+                                  d < (liveState.blueDragons || 0) ? 'bg-amber-400' : 'bg-white/15'
+                                }`}
+                              />
+                            ))}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -810,8 +845,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                     <div className="flex items-center gap-2.5 text-right">
                       <div>
                         <div className="font-display text-xl font-bold text-rose-400">{redTeam.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono-num">
-                          Kule {liveState.redTowers} · Ejder {liveState.redDragons} · Baron {liveState.redBarons} · Kurtçuk {liveState.redGrubs}
+                        <div className="text-[11px] text-slate-400 font-mono-num flex items-center justify-end gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-0.5" title="Ejder Ruhu İlerlemesi">
+                            {[0, 1, 2, 3].map((d) => (
+                              <span
+                                key={d}
+                                className={`w-2 h-2 rounded-full ${
+                                  d < (liveState.redDragons || 0) ? 'bg-amber-400' : 'bg-white/15'
+                                }`}
+                              />
+                            ))}
+                          </span>
+                          <span>Kule {liveState.redTowers} · Baron {liveState.redBarons} · Kurtçuk {liveState.redGrubs}</span>
                         </div>
                       </div>
                       <TeamCrest tag={redTeam.tag} color={redTeam.color} color2={redTeam.color2} size="sm" />

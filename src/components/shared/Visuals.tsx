@@ -1,31 +1,197 @@
 import React, { useState } from 'react';
 import { Shield } from 'lucide-react';
 
+function hashString(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
+// Custom Heraldic Esports SVG Shield Crest (deterministic unique silhouette & pattern for all 56 clubs)
 export const TeamCrest: React.FC<{
   tag: string;
   color: string;
   color2?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg';
 }> = ({ tag, color, color2 = '#ffffff', size = 'md' }) => {
-  const dims =
-    size === 'xs'
-      ? 'w-6 h-6 text-[10px]'
-      : size === 'sm'
-      ? 'w-8 h-8 text-xs'
-      : size === 'lg'
-      ? 'w-12 h-12 text-base'
-      : 'w-9 h-9 text-xs';
+  const px = size === 'xs' ? 24 : size === 'sm' ? 32 : size === 'lg' ? 48 : 36;
+  const h = hashString(tag || 'CLB');
+  const shapeIdx = h % 6;
+  const patternIdx = (h >> 3) % 4;
+  const gradId = `crest_${tag.replace(/[^a-zA-Z0-9]/g, '')}_${px}_${shapeIdx}`;
+
+  // 6 Distinct Pro Esports Crest Silhouettes (40x40 viewBox)
+  const shieldPaths = [
+    'M20 2 L35 7 L34 22 C33 30 27 35 20 38 C13 35 7 30 6 22 L5 7 Z', // Classic Heater Shield
+    'M20 2 L36 10 L36 28 L20 38 L4 28 L4 10 Z', // Pro Hexagon
+    'M20 2 L36 6 L31 18 L34 25 L20 38 L6 25 L9 18 L4 6 Z', // Winged Crest
+    'M20 2 L35 12 L29 36 L11 36 L5 12 Z', // Crown Pentagon
+    'M6 4 L34 4 L36 20 L20 38 L4 20 Z', // Split Banner
+    'M20 2 L37 18 L20 38 L3 18 Z', // Diamond Emblem
+  ];
+
+  const label = (tag || 'CLB').slice(0, 4).toUpperCase();
+  const fontSize = label.length >= 4 ? 9.5 : label.length === 3 ? 11.5 : 13;
+
+  return (
+    <svg
+      width={px}
+      height={px}
+      viewBox="0 0 40 40"
+      className="shrink-0 select-none drop-shadow-sm"
+      role="img"
+      aria-label={tag}
+    >
+      <defs>
+        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={color || '#334155'} />
+          <stop offset="100%" stopColor="#0B0E14" />
+        </linearGradient>
+        <clipPath id={`${gradId}_clip`}>
+          <path d={shieldPaths[shapeIdx]} />
+        </clipPath>
+      </defs>
+
+      {/* Base Shield */}
+      <path d={shieldPaths[shapeIdx]} fill={`url(#${gradId})`} />
+
+      {/* Geometric Heraldic Accent */}
+      <g clipPath={`url(#${gradId}_clip)`} opacity="0.26">
+        {patternIdx === 0 && <polygon points="0,0 24,0 10,40 0,40" fill={color2} />}
+        {patternIdx === 1 && <polygon points="20,4 38,20 20,26 2,20" fill={color2} />}
+        {patternIdx === 2 && <rect x="16" y="0" width="8" height="40" fill={color2} />}
+        {patternIdx === 3 && (
+          <>
+            <polygon points="0,28 40,10 40,18 0,36" fill={color2} />
+            <polygon points="0,0 40,0 40,8 0,8" fill={color2} />
+          </>
+        )}
+      </g>
+
+      {/* Outer Metallic Bevel */}
+      <path
+        d={shieldPaths[shapeIdx]}
+        fill="none"
+        stroke="rgba(255,255,255,0.28)"
+        strokeWidth="1.6"
+      />
+      <path
+        d={shieldPaths[shapeIdx]}
+        fill="none"
+        stroke={color2}
+        strokeOpacity="0.45"
+        strokeWidth="0.7"
+      />
+
+      {/* Team Monogram */}
+      <text
+        x="20"
+        y="24"
+        textAnchor="middle"
+        fill={color2 || '#FFFFFF'}
+        fontFamily="Barlow Condensed, sans-serif"
+        fontWeight="800"
+        fontSize={fontSize}
+        letterSpacing="0.4"
+      >
+        {label}
+      </text>
+    </svg>
+  );
+};
+
+// Stylized Pro Esports Player Portrait Avatar
+export const PlayerAvatar: React.FC<{
+  name: string;
+  role: string;
+  color?: string;
+  size?: number;
+}> = ({ name, role, color = '#C89B3C', size = 48 }) => {
+  const h = hashString(name || 'PRO');
+  const skinTones = ['#F1C27D', '#E0AC69', '#C68642', '#F5D0A9', '#D9A066'];
+  const hairColors = ['#0F172A', '#1E293B', '#3B2F2F', '#4A3728', '#27272A'];
+  const skin = skinTones[h % skinTones.length];
+  const hair = hairColors[(h >> 2) % hairColors.length];
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      className="shrink-0 rounded-md border border-white/[0.14] bg-[#0B0E14] select-none"
+      role="img"
+      aria-label={name}
+    >
+      <defs>
+        <linearGradient id={`av_${h}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+          <stop offset="100%" stopColor="#0B0E14" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" fill={`url(#av_${h})`} />
+      {/* Pro Jersey Shoulders */}
+      <path d="M7 48 C9 36 16 33 24 33 C32 33 39 36 41 48 Z" fill={color} />
+      <path d="M17 34 L24 41 L31 34" fill="none" stroke="#FFFFFF" strokeOpacity="0.6" strokeWidth="1.5" />
+      {/* Neck & Head */}
+      <rect x="20.5" y="27" width="7" height="7" rx="2" fill={skin} />
+      <circle cx="24" cy="20" r="8.5" fill={skin} />
+      {/* Hair Silhouette */}
+      <path d="M15.5 19 C15.5 12 20 10 24 10 C29 10 32.5 13 32.5 19 C30 15 18 15 15.5 19 Z" fill={hair} />
+      {/* Pro Stage Headset */}
+      <path d="M14.5 20 C14.5 12 33.5 12 33.5 20" fill="none" stroke="#94A3B8" strokeWidth="2.2" />
+      <rect x="12.5" y="18" width="3.2" height="6.5" rx="1.5" fill="#1E293B" stroke="#E4BD67" strokeWidth="0.9" />
+      <rect x="32.3" y="18" width="3.2" height="6.5" rx="1.5" fill="#1E293B" stroke="#E4BD67" strokeWidth="0.9" />
+      {/* Role Micro-Tag */}
+      <rect x="2" y="2" width="16" height="9.5" rx="2" fill="rgba(11,14,20,0.85)" />
+      <text
+        x="10"
+        y="9"
+        textAnchor="middle"
+        fill="#E4BD67"
+        fontSize="6.5"
+        fontFamily="JetBrains Mono, monospace"
+        fontWeight="700"
+      >
+        {role.slice(0, 3)}
+      </text>
+    </svg>
+  );
+};
+
+// Stylized Champion Emblem Badge for Draft & Broadcast Scoreboard
+export const ChampionEmblem: React.FC<{
+  name: string;
+  dmg?: string;
+  classTag?: string;
+  size?: 'xs' | 'sm';
+}> = ({ name, dmg = 'AD', classTag = '', size = 'sm' }) => {
+  const h = hashString(name || 'CH');
+  const accent =
+    dmg === 'AP' ? '#38BDF8' : dmg === 'AD' ? '#F59E0B' : dmg === 'MIX' ? '#A855F7' : '#10B981';
+  const dim = size === 'xs' ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]';
+  const initials = (name || 'CH')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div
-      className={`${dims} shrink-0 rounded-md font-display font-bold tracking-wider flex items-center justify-center border border-white/15 select-none`}
+      className={`${dim} shrink-0 rounded-md font-display font-extrabold flex items-center justify-center border select-none`}
       style={{
-        background: `linear-gradient(145deg, ${color} 0%, ${color}cc 100%)`,
-        color: color2,
+        background: `linear-gradient(135deg, ${accent}33 0%, #0B0E14 100%)`,
+        borderColor: `${accent}66`,
+        color: '#F8FAFC',
+        boxShadow: h % 2 === 0 ? `inset 0 0 0 1px ${accent}22` : undefined,
       }}
-      title={tag}
+      title={`${name}${classTag ? ` · ${classTag}` : ''}`}
     >
-      {tag.slice(0, 4)}
+      {initials || name.slice(0, 2).toUpperCase()}
     </div>
   );
 };
