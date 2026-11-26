@@ -271,7 +271,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={onAdvanceWeek}
                 className="px-4 py-1.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer whitespace-nowrap"
               >
-                Sonraki Hafta / Tur
+                {state.phase === 'OFFSEASON' ? `Yeni Sezonu Başlat (${state.season + 1})` : 'Sonraki Hafta / Tur'}
               </button>
             )}
           </div>
@@ -438,13 +438,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             ) : (
               <div className="py-6 text-center space-y-3">
                 <p className="text-sm text-slate-300">
-                  Bu haftaki tüm resmi maçların tamamlandı. Antrenman, scrim veya transfer işlemlerini bitirdiysen yeni haftaya geçebilirsin.
+                  {state.phase === 'OFFSEASON'
+                    ? `Sezon ${state.season} tamamlandı! Transferlerini ve sözleşme yenilemelerini bitirdiysen Sezon ${state.season + 1} fikstürünü başlatabilirsin.`
+                    : 'Bu haftaki tüm resmi maçların tamamlandı. Antrenman, scrim veya transfer işlemlerini bitirdiysen yeni haftaya geçebilirsin.'}
                 </p>
                 <button
                   onClick={onAdvanceWeek}
                   className="px-5 py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer"
                 >
-                  Haftayı / Turu İlerlet
+                  {state.phase === 'OFFSEASON' ? `Sezon ${state.season + 1} Başlat` : 'Haftayı / Turu İlerlet'}
                 </button>
               </div>
             )}

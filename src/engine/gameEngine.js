@@ -1917,7 +1917,21 @@ function createWorldsKnockoutBracket(state, qualifiedTeamIds) {
 }
 
 // ==================== ADVANCE CALENDAR ====================
+function advanceCalendarToNextMonday(state) {
+  ensureCalendarState(state);
+  const dt = parseISO(state.currentDate);
+  const dow = dt.getUTCDay();
+  const addDays = dow === 1 ? 7 : dow === 0 ? 1 : 8 - dow;
+  state.currentDate = addDaysISO(state.currentDate, addDays);
+}
+
 export function advanceWeekOrRound(state) {
+  // 0. Off-Season -> Start New Season!
+  if (state.phase === 'OFFSEASON') {
+    startNewSeason(state);
+    return `Sezon ${state.season} başladı! Bahar Mevsimi fikstürü hazır.`;
+  }
+
   // 1. Splits
   if (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT') {
     for (const reg of REGIONS) {
@@ -1946,7 +1960,9 @@ export function advanceWeekOrRound(state) {
 
     if (state.week < 7) {
       state.week++;
-      return;
+      const curDow = parseISO(state.currentDate || `${state.season}-01-11`).getUTCDay();
+      if (curDow !== 1) advanceCalendarToNextMonday(state);
+      return `${getPhaseLabel(state.phase)} · Hafta ${state.week} başladı.`;
     }
 
     if (state.phase === 'SPRING_SPLIT') {

@@ -96,10 +96,30 @@ export default function App() {
   const commitState = (st: any, msg?: string) => {
     if (!st) return;
     ensureCalendarState(st);
-    const ut = st.teams.find((t: any) => t.id === st.userTeamId);
-    if (ut) ensureTeamExtras(ut);
-    saveGame(st);
-    setCareerState(st);
+    const uIdx = Array.isArray(st.teams) ? st.teams.findIndex((t: any) => t.id === st.userTeamId) : -1;
+    const nextTeams = Array.isArray(st.teams) ? [...st.teams] : [];
+    if (uIdx >= 0) {
+      const ut = nextTeams[uIdx];
+      ensureTeamExtras(ut);
+      // Fresh userTeam reference so all useMemo hooks depending on userTeam or userTeam.tactics recompute immediately
+      nextTeams[uIdx] = {
+        ...ut,
+        tactics: { ...(ut.tactics || {}) },
+        facilities: { ...(ut.facilities || {}) },
+        staff: { ...(ut.staff || {}) },
+      };
+    }
+    const nextState = {
+      ...st,
+      teams: nextTeams,
+      players: Array.isArray(st.players) ? [...st.players] : [],
+      inbox: Array.isArray(st.inbox) ? [...st.inbox] : [],
+      socialFeed: Array.isArray(st.socialFeed) ? [...st.socialFeed] : [],
+      incomingOffers: Array.isArray(st.incomingOffers) ? [...st.incomingOffers] : [],
+      challengerPool: Array.isArray(st.challengerPool) ? [...st.challengerPool] : [],
+    };
+    saveGame(nextState);
+    setCareerState(nextState);
     setRevision((r) => r + 1);
     if (msg) showToast(msg);
   };
