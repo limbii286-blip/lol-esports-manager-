@@ -1202,7 +1202,7 @@ export function createPlayerCareer({
     pool: Math.min(82, (startInAcademy ? 67 : 72) + sigChamps.length * 3),
   };
   const ovr = calcOVR(baseAttrs);
-  const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 2);
+  const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 1);
   const subLeague = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
 
   const userPlayer = {
@@ -1211,7 +1211,7 @@ export function createPlayerCareer({
     nat: 'TR',
     lang: REGION_LANG[team.region] || 'EN',
     role,
-    age: startInAcademy ? 17 : 18,
+    age: 16,
     ovr,
     pot: 96,
     attrs: baseAttrs,

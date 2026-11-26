@@ -49,7 +49,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const [playerName, setPlayerName] = useState<string>('Legend');
   const [playerRole, setPlayerRole] = useState<string>('MID');
   const [playerArchetype, setPlayerArchetype] = useState<string>('Aggressive');
-  const [sigChamps, setSigChamps] = useState<string[]>(['ahri', 'syndra']);
+  const [sigChamps, setSigChamps] = useState<string[]>(['ahri']);
   const [startInAcademy, setStartInAcademy] = useState<boolean>(true);
   const [onlyUnderdogs, setOnlyUnderdogs] = useState<boolean>(true);
 
@@ -106,17 +106,13 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const handleRoleChange = (r: string) => {
     soundFx.click();
     setPlayerRole(r);
-    const matching = CHAMPIONS.filter((c: any) => c.roles.includes(r)).slice(0, 2).map((c: any) => c.id);
-    setSigChamps(matching);
+    const first = CHAMPIONS.find((c: any) => c.roles.includes(r));
+    setSigChamps(first ? [String(first.id)] : []);
   };
 
   const toggleSigChamp = (cid: string) => {
     soundFx.click();
-    setSigChamps((prev) => {
-      if (prev.includes(cid)) return prev.length > 1 ? prev.filter((x) => x !== cid) : prev;
-      if (prev.length >= 2) return [prev[1], cid];
-      return [...prev, cid];
-    });
+    setSigChamps([cid]);
   };
 
   const handleLaunch = () => {
@@ -356,7 +352,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   EFSANE OL
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-lg">
-                  17 yaşında Akademi liginden başla veya doğrudan ilk 5'e çık. Koçtan imza şampiyonunu iste, maç içi kritik kararlarla parlayıp dev kulüplere transfer ol.
+                  16 yaşında bir wonderkid olarak Akademi liginden başla veya doğrudan ilk 5'e çık. Koçtan imza şampiyonunu iste, maç içi kritik kararlarla parlayıp dev kulüplere transfer ol.
                 </p>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[11px] font-mono-num text-slate-300">
                   <span className="text-sky-400">Akademi → Worlds Yolu</span>
@@ -419,8 +415,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <div className="bg-[#121722] border border-[#C89B3C]/40 rounded-lg p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
               <div>
-                <div className="text-xs text-[#E4BD67] font-semibold">Efsane Ol — Pro Oyuncu Oluşturucu</div>
-                <h2 className="font-display text-2xl font-bold text-white">Rolünü, Oyun Tarzını ve İmza Şampiyonlarını Seç</h2>
+                <div className="text-xs text-[#E4BD67] font-semibold">Efsane Ol — Pro Oyuncu Oluşturucu (16 Yaş)</div>
+                <h2 className="font-display text-2xl font-bold text-white">Koridorunu, Oyun Tarzını ve İmza Şampiyonunu Seç</h2>
               </div>
               <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                 <input
@@ -504,7 +500,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               <div className="lg:col-span-8">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[11px] text-slate-400">
-                    İmza Şampiyonların (1 veya 2 şampiyon seç — şu an {sigChamps.length}/2)
+                    İmza Şampiyonun (1 şampiyon seç)
                   </span>
                   <span className="text-[11px] font-mono-num text-[#E4BD67]">
                     {sigChamps.map((id) => CHAMPIONS.find((c: any) => c.id === id)?.name || id).join(' · ')}
