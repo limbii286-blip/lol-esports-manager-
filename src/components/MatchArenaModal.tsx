@@ -110,7 +110,6 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     champId: string;
     champName: string;
   } | null>(null);
-  const [timeoutUsed, setTimeoutUsed] = useState(false);
   const [broadcastBanner, setBroadcastBanner] = useState<{ text: string; color: string } | null>(null);
 
   const timerRef = useRef<number | null>(null);
@@ -245,7 +244,6 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLiveTick(0);
     setLastShoutMin(-10);
     setShoutNotice('');
-    setTimeoutUsed(false);
     setBroadcastBanner(null);
     setIsPlaying(true);
     setPhase('LIVE');
@@ -416,27 +414,6 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLastShoutMin(liveState.minute);
     setShoutNotice(msg);
     setLiveTick((t) => t + 1);
-  };
-
-  const handleTacticalTimeout = () => {
-    if (timeoutUsed || !liveState || liveState.finished) return;
-    setTimeoutUsed(true);
-    setIsPlaying(false);
-    const key = userSide === 'blue' ? 'blueShoutBoost' : 'redShoutBoost';
-    liveState[key] = { power: 2.2, until: liveState.minute + 3 };
-    liveState.events.push({
-      min: liveState.minute,
-      type: 'TACTIC',
-      tag: 'TAKTİK MOLA',
-      text: `${userClub.tag} koçu oyunu durdurdu! Takım odağı yenilendi (+2.2 Tempo, 3 dk).`,
-    });
-    soundFx.shout();
-    setShoutNotice('Taktik Mola alındı! Takım zihni tazelendi (+2.2 Tempo).');
-    triggerBanner('TAKTİK MOLA · ODAK YENİLENDİ', '#E4BD67', 2200);
-    setLiveTick((t) => t + 1);
-    window.setTimeout(() => {
-      setIsPlaying(true);
-    }, 1800);
   };
 
   const handleLiveTacticChange = (
@@ -1203,7 +1180,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 items-center">
+                      <div className="flex flex-wrap gap-2">
                         {TOUCHLINE_SHOUTS.map((sh) => (
                           <button
                             key={sh.id}
@@ -1219,18 +1196,6 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                             {sh.label}
                           </button>
                         ))}
-                        <button
-                          disabled={timeoutUsed}
-                          onClick={handleTacticalTimeout}
-                          title="Maç başına 1 kez oyunu durdurup takım odağını yeniler (+2.2 Tempo, 3 dk)"
-                          className={`px-3 py-1.5 rounded-md border text-xs font-bold transition-colors whitespace-nowrap ${
-                            timeoutUsed
-                              ? 'border-white/[0.05] bg-[#0B0E14]/50 text-slate-600 cursor-not-allowed'
-                              : 'border-sky-400/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 cursor-pointer'
-                          }`}
-                        >
-                          {timeoutUsed ? 'Taktik Mola (0/1)' : 'Taktik Mola (1/1)'}
-                        </button>
                       </div>
 
                       {/* Real-Time Tactical & Teamplay Impact Telemetry Strip */}
