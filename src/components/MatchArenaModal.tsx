@@ -103,12 +103,45 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const [shoutNotice, setShoutNotice] = useState<string>('');
   const [postTalkDone, setPostTalkDone] = useState(false);
   const [statsTab, setStatsTab] = useState<'scoreboard' | 'damage'>('scoreboard');
+  const [champRequest, setChampRequest] = useState<{
+    playerId: string;
+    playerName: string;
+    role: string;
+    champId: string;
+    champName: string;
+  } | null>(null);
+  const [timeoutUsed, setTimeoutUsed] = useState(false);
+  const [broadcastBanner, setBroadcastBanner] = useState<{ text: string; color: string } | null>(null);
 
   const timerRef = useRef<number | null>(null);
+  const bannerTimerRef = useRef<number | null>(null);
+
+  const triggerBanner = (text: string, color: string, durationMs = 2500) => {
+    if (bannerTimerRef.current) window.clearTimeout(bannerTimerRef.current);
+    setBroadcastBanner({ text, color });
+    bannerTimerRef.current = window.setTimeout(() => {
+      setBroadcastBanner(null);
+    }, durationMs);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) window.clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
+
+  const userRosterLive = userSide === 'blue' ? blueRoster : redRoster;
+
+  const isRequestGranted = useMemo(() => {
+    if (!champRequest || !draft) return false;
+    const picks = userSide === 'blue' ? draft.bluePicks : draft.redPicks;
+    return picks?.[champRequest.role] === champRequest.champId;
+  }, [champRequest, draft, draftVersion, userSide]);
 
   const startDraftForGame = (talkId: string) => {
     soundFx.draftLock();
     setSelectedTalk(talkId);
+    const lockedSet = careerState.fearlessEnabled ? fearlessLocked : new Set<string>();
     const d = createDraftState(
       blueTeam,
       redTeam,
@@ -116,8 +149,29 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       redRoster,
       patch,
       userSide,
-      careerState.fearlessEnabled ? fearlessLocked : new Set()
+      lockedSet
     );
+
+    // Pro Player Draft Request (55% chance a star asks for a signature champ for +2.0 bonus)
+    let req: typeof champRequest = null;
+    if (Math.random() < 0.55) {
+      const sortedStars = [...userRosterLive].filter(Boolean).sort((a: any, b: any) => (b.ovr || 0) - (a.ovr || 0));
+      for (const star of sortedStars) {
+        const availSigs = (star.sigChamps || []).filter((cid: string) => !lockedSet.has(cid) && CHAMPION_MAP[cid]);
+        if (availSigs.length > 0) {
+          const pickedId = availSigs[Math.floor(Math.random() * availSigs.length)];
+          req = {
+            playerId: star.id,
+            playerName: star.name,
+            role: star.role,
+            champId: pickedId,
+            champName: CHAMPION_MAP[pickedId]?.name || pickedId,
+          };
+          break;
+        }
+      }
+    }
+    setChampRequest(req);
     setDraft(d);
     setDraftVersion((v) => v + 1);
     setPhase('DRAFT');
@@ -160,6 +214,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     if (!draft) return;
     const oppId = userSide === 'blue' ? redTeam.id : blueTeam.id;
     const hasScrimIntel = Boolean(careerState.scrimIntel?.[oppId]);
+    const grantedIds = isRequestGranted && champRequest ? [champRequest.playerId] : [];
     const ms = createLiveMatchState(
       blueTeam,
       redTeam,
@@ -175,12 +230,23 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
         hasScrimIntel,
         junglePath,
         laneSwap,
+        grantedRequestIds: grantedIds,
       }
     );
+    if (isRequestGranted && champRequest) {
+      ms.events.push({
+        min: 0,
+        type: 'TACTIC',
+        tag: 'İSTEK',
+        text: `${champRequest.playerName}, imza şampiyonu ${champRequest.champName} isteği karşılandığı için sahneye ekstra motivasyonla (+2.0) çıkıyor!`,
+      });
+    }
     setLiveState(ms);
     setLiveTick(0);
     setLastShoutMin(-10);
     setShoutNotice('');
+    setTimeoutUsed(false);
+    setBroadcastBanner(null);
     setIsPlaying(true);
     setPhase('LIVE');
     soundFx.objectiveSecured();
@@ -191,24 +257,42 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     if (phase !== 'LIVE' || !liveState || liveState.finished || !isPlaying) return;
     const intervalMs = speed === 1 ? 820 : speed === 2 ? 440 : speed === 4 ? 220 : 100;
     timerRef.current = window.setInterval(() => {
-      const prevKills = liveState.blueKills + liveState.redKills;
+      const prevBlueKills = liveState.blueKills;
+      const prevRedKills = liveState.redKills;
+      const prevKills = prevBlueKills + prevRedKills;
       const prevDragons = liveState.blueDragons + liveState.redDragons;
       const prevBarons = liveState.blueBarons + liveState.redBarons;
       const prevTowers = liveState.blueTowers + liveState.redTowers;
       const prevSoul = Boolean(liveState.soulSide);
+      const prevEventsLen = liveState.events?.length || 0;
       stepMatchMinute(liveState);
       const nextKills = liveState.blueKills + liveState.redKills;
       const nextDragons = liveState.blueDragons + liveState.redDragons;
       const nextBarons = liveState.blueBarons + liveState.redBarons;
       const nextTowers = liveState.blueTowers + liveState.redTowers;
       const nextSoul = Boolean(liveState.soulSide);
+      const newEvents = (liveState.events || []).slice(prevEventsLen);
 
-      if (nextBarons > prevBarons) soundFx.baronSteal();
-      else if (nextSoul && !prevSoul) soundFx.dragonSoul();
-      else if (nextDragons > prevDragons) soundFx.objectiveSecured();
-      else if (nextTowers > prevTowers) soundFx.turretFall();
-      else if (prevKills === 0 && nextKills > 0) soundFx.firstBlood();
-      else if (nextKills > prevKills) soundFx.killAlert();
+      if (nextBarons > prevBarons) {
+        soundFx.baronSteal();
+        const stolen = newEvents.some((ev: any) => ev.tag === 'BARON ÇALDI');
+        triggerBanner(stolen ? 'BARON ÇALINDI!' : 'BARON GÜCÜ ALINDI!', '#A855F7');
+      } else if (nextSoul && !prevSoul) {
+        soundFx.dragonSoul();
+        triggerBanner(`${(liveState.riftElement?.soulName || 'EJDER RUHU').toUpperCase()}!`, liveState.riftElement?.color || '#E4BD67');
+      } else if (nextDragons > prevDragons) {
+        soundFx.objectiveSecured();
+      } else if (nextTowers > prevTowers) {
+        soundFx.turretFall();
+      } else if (prevKills === 0 && nextKills > 0) {
+        soundFx.firstBlood();
+        triggerBanner('İLK KAN!', '#F43F5E');
+      } else if (liveState.blueKills - prevBlueKills >= 4 || liveState.redKills - prevRedKills >= 4) {
+        soundFx.killAlert();
+        triggerBanner('TAKIM SAVAŞI ZAFERİ!', '#E4BD67');
+      } else if (nextKills > prevKills) {
+        soundFx.killAlert();
+      }
 
       setLiveTick((t) => t + 1);
 
@@ -332,6 +416,27 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLastShoutMin(liveState.minute);
     setShoutNotice(msg);
     setLiveTick((t) => t + 1);
+  };
+
+  const handleTacticalTimeout = () => {
+    if (timeoutUsed || !liveState || liveState.finished) return;
+    setTimeoutUsed(true);
+    setIsPlaying(false);
+    const key = userSide === 'blue' ? 'blueShoutBoost' : 'redShoutBoost';
+    liveState[key] = { power: 2.2, until: liveState.minute + 3 };
+    liveState.events.push({
+      min: liveState.minute,
+      type: 'TACTIC',
+      tag: 'TAKTİK MOLA',
+      text: `${userClub.tag} koçu oyunu durdurdu! Takım odağı yenilendi (+2.2 Tempo, 3 dk).`,
+    });
+    soundFx.shout();
+    setShoutNotice('Taktik Mola alındı! Takım zihni tazelendi (+2.2 Tempo).');
+    triggerBanner('TAKTİK MOLA · ODAK YENİLENDİ', '#E4BD67', 2200);
+    setLiveTick((t) => t + 1);
+    window.setTimeout(() => {
+      setIsPlaying(true);
+    }, 1800);
   };
 
   const handleLiveTacticChange = (
@@ -620,6 +725,31 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       .map((id) => CHAMPION_MAP[id]?.name || id)
                       .join(' · ')}
                   </span>
+                </div>
+              )}
+
+              {/* Player Draft Champion Request Banner */}
+              {champRequest && (
+                <div
+                  className={`rounded-md px-4 py-2.5 border flex flex-wrap items-center justify-between gap-2 text-xs ${
+                    isRequestGranted
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                      : 'bg-[#171E2C] border-[#C89B3C]/50 text-[#E4BD67]'
+                  }`}
+                >
+                  <div>
+                    <span className="font-bold text-white">{champRequest.playerName}</span>{' '}
+                    <span className="font-mono-num text-[11px] text-slate-400">({champRequest.role})</span>:{' '}
+                    <span>"Bu maçta {champRequest.champName} oynamak istiyorum!"</span>{' '}
+                    <span className="text-[11px] text-slate-400">(Doğru rolde seçilirse +2.0 canlı performans)</span>
+                  </div>
+                  {isRequestGranted ? (
+                    <span className="font-bold text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Karşılandı
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-mono-num text-amber-400">İstek Bekleniyor</span>
+                  )}
                 </div>
               )}
 
@@ -1032,7 +1162,21 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
                 {/* Left 5 cols: Live 2D Summoner's Rift + Gold Chart */}
                 <div className="lg:col-span-5 space-y-4">
-                  <LiveRiftCanvas matchState={liveState} />
+                  <div className="relative">
+                    <LiveRiftCanvas matchState={liveState} />
+                    {broadcastBanner && (
+                      <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-1.5 rounded-md bg-[#0B0E14]/92 border shadow-xl transition-opacity duration-300 whitespace-nowrap"
+                        style={{ borderColor: broadcastBanner.color }}
+                      >
+                        <span
+                          className="font-display text-sm font-extrabold tracking-widest uppercase"
+                          style={{ color: broadcastBanner.color }}
+                        >
+                          {broadcastBanner.text}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="bg-[#121722] border border-white/[0.08] rounded-lg p-4">
                     <GoldDiffChart
                       history={liveState.goldHistory}
@@ -1059,7 +1203,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-2 items-center">
                         {TOUCHLINE_SHOUTS.map((sh) => (
                           <button
                             key={sh.id}
@@ -1075,6 +1219,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                             {sh.label}
                           </button>
                         ))}
+                        <button
+                          disabled={timeoutUsed}
+                          onClick={handleTacticalTimeout}
+                          title="Maç başına 1 kez oyunu durdurup takım odağını yeniler (+2.2 Tempo, 3 dk)"
+                          className={`px-3 py-1.5 rounded-md border text-xs font-bold transition-colors whitespace-nowrap ${
+                            timeoutUsed
+                              ? 'border-white/[0.05] bg-[#0B0E14]/50 text-slate-600 cursor-not-allowed'
+                              : 'border-sky-400/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 cursor-pointer'
+                          }`}
+                        >
+                          {timeoutUsed ? 'Taktik Mola (0/1)' : 'Taktik Mola (1/1)'}
+                        </button>
                       </div>
 
                       {/* Real-Time Tactical & Teamplay Impact Telemetry Strip */}

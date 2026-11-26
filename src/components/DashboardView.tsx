@@ -11,6 +11,7 @@ import {
   Target,
   Mail,
   Crosshair,
+  Award,
 } from 'lucide-react';
 import { getRivalryName } from '../data/teamsAndPlayers.js';
 import { CHAMPION_MAP } from '../data/champions.js';
@@ -31,6 +32,7 @@ import {
   resolveDramaEvent,
   acceptJobOffer,
   dismissManagerJobOffer,
+  getManagerProfile,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -73,6 +75,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const userOvr = useMemo(() => getTeamOVR(state, userTeam.id), [state, userTeam.id]);
   const userRoster = useMemo(() => getTeamRoster(state, userTeam.id), [state, userTeam.id]);
   const teamChem = useMemo(() => computeTeamChemistry(userTeam, userRoster), [userTeam, userRoster]);
+  const managerProfile = useMemo(() => getManagerProfile(state), [state]);
+  const urgentNotifsCount = useMemo(
+    () => (state.notifications || []).filter((n: any) => !n.read && n.priority === 'URGENT').length,
+    [state]
+  );
 
   const blueTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.blueId) : null;
   const redTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.redId) : null;
@@ -180,6 +187,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Manager Career Profile Strip */}
+      <div className="bg-[#121722] border border-white/[0.08] rounded-lg px-5 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+        <div className="flex flex-wrap items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2">
+            <Award className="w-4 h-4 text-[#E4BD67] shrink-0" />
+            <span className="font-bold text-white">{managerProfile.rankTitle}</span>
+          </div>
+          <div className="flex items-center gap-2 font-mono-num">
+            <span className="text-slate-400">İtibar {managerProfile.reputation}/100</span>
+            <div className="w-20 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+              <div
+                className="h-full bg-[#C89B3C]"
+                style={{ width: `${Math.min(100, Math.max(0, managerProfile.reputation))}%` }}
+              />
+            </div>
+          </div>
+          <span className="text-slate-500 hidden sm:inline">·</span>
+          <div className="flex flex-wrap items-center gap-3 font-mono-num text-slate-300">
+            <span>Taktik {managerProfile.tacticalRep}</span>
+            <span className="text-slate-600">·</span>
+            <span>Gençlik {managerProfile.youthRep}</span>
+            <span className="text-slate-600">·</span>
+            <span>Medya {managerProfile.mediaRep}</span>
+          </div>
+          <span className="text-slate-500 hidden md:inline">·</span>
+          <div className="font-mono-num text-slate-300">
+            Kariyer <span className="text-white font-bold">{managerProfile.wins}G-{managerProfile.losses}M</span>{' '}
+            <span className="text-[#E4BD67]">(%{managerProfile.winRate})</span>
+            <span className="text-slate-600 mx-1.5">·</span>
+            Kupa <span className="text-[#E4BD67] font-bold">{managerProfile.trophiesWon}</span>
+          </div>
+        </div>
+
+        {urgentNotifsCount > 0 && (
+          <button
+            onClick={() => onNavigate('inbox')}
+            className="text-xs font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+          >
+            {urgentNotifsCount} acil bildirim →
+          </button>
+        )}
       </div>
 
       {/* Pending Drama Event Alert (Interactive FM Locker Room Event) */}

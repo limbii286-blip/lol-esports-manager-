@@ -458,6 +458,7 @@ export function recallLoanedPlayer(state, playerId) {
   const prevGrowth = p.loanedTo.growthGained || 0;
   p.loanedTo = null;
   p.morale = Math.min(100, (p.morale || 75) + 3);
+  if (prevGrowth > 0) bumpManagerRep(state, 0.5, 'youthRep', 1);
   return {
     ok: true,
     reason: `${p.name}, ${prevClub} kiralık döneminden geri çağrıldı (${prevGames} alt lig maçı, +${prevGrowth} özellik gelişimi).`,
@@ -631,13 +632,177 @@ export function getSortedStandings(state, regionId) {
   });
 }
 
-export function addInboxMessage(state, { title, sender, category, body }) {
+export function addInboxMessage(state, { title, sender, category, body, priority = 'NORMAL', actions = null, meta = null }) {
+  if (!Array.isArray(state.inbox)) state.inbox = [];
+  if (!Array.isArray(state.notifications)) state.notifications = [];
+  const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   state.inbox.unshift({
-    id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id,
     date: `Sezon ${state.season} — ${getPhaseLabel(state.phase)} H${state.week}`,
-    title, sender, category, body, read: false,
+    season: state.season,
+    week: state.week,
+    title,
+    sender,
+    category,
+    body,
+    priority,
+    actions: Array.isArray(actions) && actions.length > 0 ? actions : null,
+    actionTaken: null,
+    meta: meta || null,
+    read: false,
   });
   if (state.inbox.length > 70) state.inbox.pop();
+
+  state.notifications.unshift({
+    id: `notif_${id}`,
+    msgId: id,
+    title,
+    detail: (body || '').slice(0, 110),
+    category,
+    priority,
+    read: false,
+    season: state.season,
+    week: state.week,
+  });
+  if (state.notifications.length > 30) state.notifications.pop();
+}
+
+/**
+ * @param {any} state
+ * @param {number} delta
+ * @param {string | null} [subField]
+ * @param {number | null} [subDelta]
+ */
+export function bumpManagerRep(state, delta, subField = null, subDelta = null) {
+  ensureCalendarState(state);
+  const mp = state.managerProfile;
+  mp.reputation = Math.max(0, Math.min(100, +(mp.reputation + delta).toFixed(1)));
+  if (subField && typeof mp[subField] === 'number') {
+    const d = subDelta !== null ? subDelta : delta;
+    mp[subField] = Math.max(0, Math.min(100, +(mp[subField] + d).toFixed(1)));
+  }
+}
+
+export function markAllNotificationsRead(state) {
+  if (Array.isArray(state.notifications)) {
+    for (const n of state.notifications) n.read = true;
+  }
+  if (Array.isArray(state.inbox)) {
+    for (const m of state.inbox) m.read = true;
+  }
+}
+
+export function getManagerProfile(state) {
+  ensureCalendarState(state);
+  const mp = state.managerProfile;
+  const rep = Math.round(mp.reputation ?? 45);
+  let rankTitle = 'Efsane Taktisyen';
+  if (rep < 40) rankTitle = 'Çaylak Koç';
+  else if (rep < 55) rankTitle = 'Gelecek Vadeden Koç';
+  else if (rep < 68) rankTitle = 'Deneyimli Taktisyen';
+  else if (rep < 80) rankTitle = 'Bölge Şampiyonu';
+  else if (rep < 90) rankTitle = 'Uluslararası Elit';
+
+  const wins = state.records?.careerWins || 0;
+  const losses = state.records?.careerLosses || 0;
+  const total = wins + losses;
+  const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+  return {
+    reputation: rep,
+    tacticalRep: Math.round(mp.tacticalRep ?? 50),
+    youthRep: Math.round(mp.youthRep ?? 45),
+    mediaRep: Math.round(mp.mediaRep ?? 50),
+    trophiesWon: mp.trophiesWon || 0,
+    titleHistory: mp.titleHistory || [],
+    rankTitle,
+    winRate,
+    wins,
+    losses,
+  };
+}
+
+export function executeInboxAction(state, msgId, actionId) {
+  const msg = (state.inbox || []).find(m => m.id === msgId);
+  if (!msg) return { ok: false, msg: 'Mesaj bulunamadı.' };
+  const action = (msg.actions || []).find(a => a.id === actionId);
+  if (!action) return { ok: false, msg: 'Geçersiz aksiyon.' };
+
+  if (action.type === 'NAV') {
+    msg.read = true;
+    return { ok: true, nav: action.payload?.tab || 'dashboard' };
+  }
+  if (action.type === 'OPEN_PLAYER') {
+    msg.read = true;
+    return { ok: true, openPlayerId: action.payload?.playerId || null };
+  }
+
+  if (msg.actionTaken) {
+    return { ok: false, msg: 'Bu karar zaten verildi.' };
+  }
+
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  const roster = userTeam ? getTeamRoster(state, userTeam.id) : [];
+  let confirmMsg = `${action.label} uygulandı.`;
+
+  if (action.type === 'REST_PLAYER') {
+    const p = state.players.find(x => x.id === action.payload?.playerId);
+    if (p) {
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 14);
+      p.morale = Math.min(100, (p.morale || 75) + 3);
+      confirmMsg = `${p.name} özel izne çıkarıldı (Yorgunluk -14, Moral +3).`;
+    }
+  } else if (action.type === 'SET_LIGHT_TRAINING') {
+    if (userTeam) {
+      userTeam.trainingIntensity = 'light';
+      confirmMsg = 'Takım antrenman yoğunluğu Hafif seviyesine düşürüldü.';
+    }
+  } else if (action.type === 'ACCEPT_SPONSOR_SHOOT') {
+    if (userTeam) {
+      userTeam.budget += 95000;
+      userTeam.fanbase = Math.min(100, (userTeam.fanbase || 60) + 2);
+      roster.forEach(p => { p.fatigue = Math.min(100, (p.fatigue || 0) + 6); });
+      bumpManagerRep(state, 0.4, 'mediaRep', 1);
+      confirmMsg = 'Sponsor çekimi onaylandı (+$95K bütçe, +2 Taraftar, İlk 5 +6 Yorgunluk).';
+    }
+  } else if (action.type === 'DECLINE_SPONSOR_SHOOT') {
+    roster.forEach(p => {
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 4);
+      p.form = Math.min(99, (p.form || 75) + 2);
+    });
+    confirmMsg = 'Sponsor çekimi reddedildi — takım antrenmana odaklandı (Yorgunluk -4, Form +2).';
+  } else if (action.type === 'ACCEPT_APOLOGY') {
+    const p = state.players.find(x => x.id === action.payload?.playerId);
+    if (p) p.morale = Math.min(100, (p.morale || 75) + 4);
+    confirmMsg = 'Özür kabul edildi; takım içi huzur korundu (Moral +4).';
+  } else if (action.type === 'BLACKLIST_LEAKER') {
+    if (userTeam) {
+      userTeam.scrimRep = Math.max(20, (userTeam.scrimRep ?? 62) - 3);
+      userTeam.synergy = Math.min(100, (userTeam.synergy || 65) + 2);
+    }
+    confirmMsg = 'Sızıntı yapan partner kara listeye alındı (+2 Sinerji, -3 Scrim İtibarı).';
+  } else if (action.type === 'ACCEPT_CONTENT_DEAL') {
+    if (userTeam) userTeam.budget += 60000;
+    const p = state.players.find(x => x.id === action.payload?.playerId);
+    if (p) {
+      p.morale = Math.min(100, (p.morale || 75) + 4);
+      p.fatigue = Math.min(100, (p.fatigue || 0) + 4);
+    }
+    bumpManagerRep(state, 0.3, 'mediaRep', 1);
+    confirmMsg = `İçerik anlaşması imzalandı (+$60K, ${p ? p.name + ' Moral +4, Yorgunluk +4' : ''}).`;
+  } else if (action.type === 'DECLINE_CONTENT_DEAL') {
+    const p = state.players.find(x => x.id === action.payload?.playerId);
+    if (p) p.morale = Math.max(25, (p.morale || 75) - 3);
+    confirmMsg = `İçerik anlaşması reddedildi (${p ? p.name + ' Moral -3' : 'antrenman öncelikli'}).`;
+  }
+
+  msg.actionTaken = action.label;
+  msg.read = true;
+  if (Array.isArray(state.notifications)) {
+    const n = state.notifications.find(x => x.msgId === msg.id);
+    if (n) n.read = true;
+  }
+  return { ok: true, msg: confirmMsg };
 }
 
 export function getTransferWindowStatus(state) {
@@ -688,6 +853,19 @@ export function ensureCalendarState(state) {
   if (!state.recentNewsIds) state.recentNewsIds = [];
   if (!state.financeLog) state.financeLog = [];
   if (!state.socialFeed) state.socialFeed = [];
+  if (!state.notifications) state.notifications = [];
+  if (!state.managerProfile) {
+    const ut = Array.isArray(state.teams) ? state.teams.find(t => t.id === state.userTeamId) : null;
+    const initRep = Math.round(35 + ((ut?.prestige || 50) * 0.25));
+    state.managerProfile = {
+      reputation: Math.max(25, Math.min(85, initRep)),
+      tacticalRep: 50,
+      youthRep: 45,
+      mediaRep: 50,
+      trophiesWon: 0,
+      titleHistory: [],
+    };
+  }
   if (!state.records) state.records = { careerWins: 0, careerLosses: 0, currentStreak: 0, bestStreak: 0, hallOfFame: [] };
   if (Array.isArray(state.players)) {
     for (const p of state.players) {
@@ -1028,26 +1206,31 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
   match.played = true;
   match.winnerId = blueScore > redScore ? match.blueId : match.redId;
 
-  // Career records & streak tracking for user team
-  if (match.blueId === state.userTeamId || match.redId === state.userTeamId) {
+  // Career records, manager reputation & streak tracking for user team
+  const isUserMatch = match.blueId === state.userTeamId || match.redId === state.userTeamId;
+  const userWonSeries = isUserMatch && match.winnerId === state.userTeamId;
+  if (isUserMatch) {
     ensureCalendarState(state);
-    if (match.winnerId === state.userTeamId) {
+    const isHighStage = state.phase === 'MSI' || state.phase.startsWith('WORLDS') || state.phase.includes('PLAYOFFS');
+    if (userWonSeries) {
       state.records.careerWins++;
       state.records.currentStreak++;
       if (state.records.currentStreak > state.records.bestStreak) state.records.bestStreak = state.records.currentStreak;
+      bumpManagerRep(state, isHighStage ? 1.2 : 0.6, 'tacticalRep', isHighStage ? 1.5 : 0.7);
     } else {
       state.records.careerLosses++;
       state.records.currentStreak = 0;
+      bumpManagerRep(state, -0.4, 'tacticalRep', -0.4);
     }
   }
 
   // Match win prize bonus (helps clubs earn money throughout the season!)
   const winnerClub = state.teams.find(t => t.id === match.winnerId);
+  const isIntl = state.phase === 'MSI' || state.phase.startsWith('WORLDS');
+  const isPo = state.phase.includes('PLAYOFFS');
+  const isRiv = !!getRivalryName(match.blueId, match.redId);
+  const winCash = isIntl ? 110000 : isPo ? 75000 : isRiv ? 55000 : 35000;
   if (winnerClub) {
-    const isIntl = state.phase === 'MSI' || state.phase.startsWith('WORLDS');
-    const isPo = state.phase.includes('PLAYOFFS');
-    const isRiv = !!getRivalryName(match.blueId, match.redId);
-    const winCash = isIntl ? 110000 : isPo ? 75000 : isRiv ? 55000 : 35000;
     winnerClub.budget += winCash;
   }
 
@@ -1112,6 +1295,42 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
         likes: Math.round(900 + Math.random() * 4800),
         replies: Math.round(140 + Math.random() * 820),
       });
+
+      // Post-Match Analyst Breakdown Inbox Mail
+      const userRoster = getTeamRoster(state, state.userTeamId);
+      const topFormP = [...userRoster].sort((a, b) => (b.form || 75) - (a.form || 75))[0];
+      const boardConf = getBoardConfidence(state);
+      addInboxMessage(state, {
+        title: `Maç Raporu: ${bTeam.tag} ${blueScore} - ${redScore} ${rTeam.tag}`,
+        sender: 'Analist Ekibi',
+        category: 'TOURNAMENT',
+        priority: 'NORMAL',
+        body: `${bTeam.name} ${blueScore} - ${redScore} ${rTeam.name} serisi tamamlandı (${userWon ? `GALİBİYET · +${formatMoney(winCash)} maç primi` : 'MAĞLUBİYET'}). Güncel seri: ${state.records.currentStreak} galibiyet. Öne çıkan oyuncu: ${topFormP ? `${topFormP.name} (Form ${topFormP.form})` : '-'}. Yönetim Güveni: %${boardConf.score}.`,
+        actions: [{ id: 'nav_tactics', label: 'Taktik Tahtasına Git', type: 'NAV', payload: { tab: 'tactics' } }],
+      });
+
+      // Career & Streak Milestones
+      if (userWon && (state.records.currentStreak === 5 || state.records.currentStreak === 10)) {
+        bumpManagerRep(state, 1, 'tacticalRep', 1);
+        addInboxMessage(state, {
+          title: `Kilometre Taşı: ${state.records.currentStreak} Maçlık Galibiyet Serisi!`,
+          sender: 'Yönetim Kurulu',
+          category: 'BOARD',
+          priority: 'HIGH',
+          body: `Tebrikler Koç! Üst üste ${state.records.currentStreak} resmi seri kazanarak ligde büyük saygı topladın (Koç İtibarı +1).`,
+        });
+      }
+      const cw = state.records.careerWins;
+      if (userWon && (cw === 10 || cw === 25 || cw === 50 || cw === 100)) {
+        bumpManagerRep(state, 1, 'tacticalRep', 1);
+        addInboxMessage(state, {
+          title: `Kariyer Başarısı: ${cw}. Resmi Galibiyet!`,
+          sender: 'Yönetim Kurulu',
+          category: 'BOARD',
+          priority: 'HIGH',
+          body: `Başantrenörlük kariyerinde ${cw}. galibiyete ulaştın! Yönetim kurulu istikrarlı vizyonunu takdir ediyor (Koç İtibarı +1).`,
+        });
+      }
     }
   }
 }
@@ -1175,9 +1394,65 @@ function maybeGenerateLivingWorldNews(state, dow) {
     }
   }
 
-  // Tuesday / Wednesday: Varied World & Club Stories (38% chance so inbox feels alive, not spammed)
-  if (Math.random() > 0.38) return;
+  // Tuesday / Wednesday: Varied World & Club Stories + Interactive Decisions (58% chance so inbox feels alive)
+  if (Math.random() > 0.58) return;
   const stories = [
+    {
+      id: 'sponsor_shoot',
+      run: () => {
+        addInboxMessage(state, {
+          title: 'Sponsor Çekimi & Medya Günü Teklifi (+$95K)',
+          sender: 'Ticari Direktör',
+          category: 'BOARD',
+          priority: 'HIGH',
+          body: `Ana sponsorumuz hafta içi yarım günlük stüdyo reklam çekimi talep ediyor. Katılım halinde kulüp kasasına +$95.000 gelir ve +2 Taraftar kazanılır; ancak ilk 5 oyuncularının yorgunluğu +6 artar.`,
+          actions: [
+            { id: 'sp_acc', label: 'Çekimi Onayla (+$95K)', type: 'ACCEPT_SPONSOR_SHOOT', style: 'primary' },
+            { id: 'sp_dec', label: 'Antrenmana Odaklan (-4 Yorgunluk)', type: 'DECLINE_SPONSOR_SHOOT', style: 'secondary' },
+          ],
+        });
+      },
+    },
+    {
+      id: 'content_deal',
+      run: () => {
+        const star = roster[Math.floor(Math.random() * roster.length)];
+        if (!star) return;
+        addInboxMessage(state, {
+          title: `Yayın & Belgesel Anlaşması: ${star.name}`,
+          sender: 'Medya İlişkileri',
+          category: 'NEWS',
+          priority: 'HIGH',
+          body: `Bir yayın platformu ${star.name} için özel "Oyuncu Gözünden" mini belgesel bölümü istiyor. Kabul ederseniz +$60.000 gelir ve ${star.name} için +4 Moral (+4 Yorgunluk); reddederseniz oyuncu hafif hayal kırıklığı yaşayabilir.`,
+          actions: [
+            { id: 'cd_acc', label: 'Anlaşmayı İmzala (+$60K)', type: 'ACCEPT_CONTENT_DEAL', payload: { playerId: star.id }, style: 'primary' },
+            { id: 'cd_dec', label: 'İptal Et', type: 'DECLINE_CONTENT_DEAL', payload: { playerId: star.id }, style: 'secondary' },
+          ],
+        });
+      },
+    },
+    {
+      id: 'agent_tip',
+      run: () => {
+        const targets = state.players
+          .filter(p => p.teamId !== team.id && p.ovr >= 80 && (!p.teamId || p.contractYears <= 1 || p.morale < 75))
+          .sort((a, b) => b.ovr - a.ovr);
+        const pickP = targets[Math.floor(Math.random() * Math.min(8, targets.length))];
+        if (!pickP) return;
+        const currClub = pickP.teamId ? state.teams.find(t => t.id === pickP.teamId) : null;
+        addInboxMessage(state, {
+          title: `Menajer İstihbaratı: ${pickP.name} (${pickP.role} · OVR ${pickP.ovr})`,
+          sender: 'Baş Scout & Menajer Ağı',
+          category: 'TRANSFER',
+          priority: 'HIGH',
+          body: `${currClub ? `${currClub.name} forması giyen` : 'Serbest piyasadaki'} ${pickP.name} (${pickP.age} yaş, ${pickP.role}, OVR ${pickP.ovr}) için uygun transfer koşulları oluştu (${currClub ? `Sözleşme: ${pickP.contractYears} yıl` : 'Bonservissiz'}). Kadro planlaması için profili inceleyebilirsin.`,
+          actions: [
+            { id: 'ag_open', label: `${pickP.name} Profilini Gör`, type: 'OPEN_PLAYER', payload: { playerId: pickP.id }, style: 'primary' },
+            { id: 'ag_nav', label: 'Transfer Merkezine Git', type: 'NAV', payload: { tab: 'transfers' }, style: 'secondary' },
+          ],
+        });
+      },
+    },
     {
       id: 'power_rank',
       run: () => {
@@ -1706,6 +1981,44 @@ function runWeeklyClubTick(state) {
     }
   }
 
+  // Weekly Assistant Coach Executive Digest for User Team
+  const userTeam = state.teams.find(t => t.id === state.userTeamId);
+  if (userTeam) {
+    const userStarters = getTeamRoster(state, userTeam.id);
+    const allUserPlayers = state.players.filter(p => p.teamId === userTeam.id);
+    const topForm = [...userStarters].sort((a, b) => (b.form || 75) - (a.form || 75))[0];
+    const mostTired = [...userStarters].sort((a, b) => (b.fatigue || 0) - (a.fatigue || 0))[0];
+    const loanedOut = allUserPlayers.filter(p => p.loanedTo);
+    const expiringStarters = userStarters.filter(p => (p.contractYears ?? 2) <= 1);
+
+    const lines = [
+      topForm ? `• En Formda Oyuncu: ${topForm.name} (Form ${topForm.form}, OVR ${topForm.ovr})` : null,
+      mostTired ? `• En Yorgun İlk 5: ${mostTired.name} (%${Math.round(mostTired.fatigue || 0)} yorgunluk)` : null,
+      loanedOut.length > 0 ? `• Kiralık Takip (${loanedOut.length} oyuncu): ${loanedOut.map(p => `${p.name} (+${p.loanedTo.growthGained || 0} gelişim)`).join(', ')}` : null,
+      expiringStarters.length > 0 ? `• Sözleşme Uyarısı (${expiringStarters.length} oyuncu ≤1 yıl): ${expiringStarters.map(p => p.name).join(', ')}` : null,
+    ].filter(Boolean);
+
+    const isFatigueUrgent = mostTired && (mostTired.fatigue || 0) >= 60;
+    const digestPriority = isFatigueUrgent ? 'URGENT' : expiringStarters.length > 0 ? 'HIGH' : 'NORMAL';
+    const digestActions = isFatigueUrgent
+      ? [
+          { id: 'wk_rest', label: `${mostTired.name} Dinlendir (-14 Yorgunluk)`, type: 'REST_PLAYER', payload: { playerId: mostTired.id }, style: 'primary' },
+          { id: 'wk_light', label: 'Hafif Antrenmana Geç', type: 'SET_LIGHT_TRAINING', style: 'secondary' },
+        ]
+      : expiringStarters.length > 0
+        ? [{ id: 'wk_squad', label: 'Sözleşmeler için Kadroya Git', type: 'NAV', payload: { tab: 'squad' }, style: 'primary' }]
+        : null;
+
+    addInboxMessage(state, {
+      title: `Haftalık Rapor · H${state.week}${isFatigueUrgent ? ' (Yorgunluk Uyarısı)' : ''}`,
+      sender: 'Yardımcı Antrenör',
+      category: 'BOARD',
+      priority: digestPriority,
+      body: `Hafta ${state.week} kulüp değerlendirmesi:\n${lines.join('\n')}`,
+      actions: digestActions,
+    });
+  }
+
   // Living Mid-Season AI Transfers while transfer window is open!
   if (isTransferWindowOpen(state) && (state.phase === 'SPRING_SPLIT' || state.phase === 'SUMMER_SPLIT')) {
     runLivingAITransfers(state, 2);
@@ -2142,6 +2455,9 @@ function finishBracketAndTransition(state) {
         userPrize = 750000;
         userPlace = `${fm.region} ${splitLbl} ŞAMPİYONU`;
         userSponsorBonus = awardSponsorGoal(userTeam, 'FINAL') + awardSponsorGoal(userTeam, 'PLAYOFF');
+        bumpManagerRep(state, 6, 'tacticalRep', 4);
+        state.managerProfile.trophiesWon = (state.managerProfile.trophiesWon || 0) + 1;
+        state.managerProfile.titleHistory.unshift(`${state.season} ${fm.region} ${splitLbl}`);
       } else if (runnerId === uid) {
         userPrize = 480000;
         userPlace = `${fm.region} ${splitLbl} İkincisi (Finalist)`;
@@ -2236,6 +2552,11 @@ function finishBracketAndTransition(state) {
     const playedMSI = (rounds[0]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
     if (playedMSI) {
       const won = msiWinner.id === uid;
+      if (won) {
+        bumpManagerRep(state, 6, 'tacticalRep', 5);
+        state.managerProfile.trophiesWon = (state.managerProfile.trophiesWon || 0) + 1;
+        state.managerProfile.titleHistory.unshift(`MSI ${state.season}`);
+      }
       const isRun = runnerId === uid;
       const isSf = (rounds[1]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
       const prize = won ? 850000 : isRun ? 450000 : isSf ? 260000 : 140000;
@@ -2341,6 +2662,11 @@ function finishBracketAndTransition(state) {
     const inSwiss = (state.swiss?.teams || []).some(st => st.teamId === uid);
     if (inKO || inSwiss) {
       const won = worldsWinner.id === uid;
+      if (won) {
+        bumpManagerRep(state, 6, 'tacticalRep', 6);
+        state.managerProfile.trophiesWon = (state.managerProfile.trophiesWon || 0) + 1;
+        state.managerProfile.titleHistory.unshift(`WORLDS ${state.season}`);
+      }
       const isRun = runnerId === uid;
       const isSf = (rounds[1]?.matches || []).some(m => m.blueId === uid || m.redId === uid);
       const prize = won ? 1800000 : isRun ? 950000 : isSf ? 500000 : inKO ? 320000 : 150000;
@@ -2755,8 +3081,10 @@ export function evaluateTransferInterest(state, player, userTeam) {
   const sellingTeam = player.teamId ? state.teams.find(t => t.id === player.teamId) : null;
   const sellReg = sellingTeam ? REGIONS.find(r => r.id === sellingTeam.region) : null;
 
-  // Club allure grows with prestige, league level, and international trophies!
-  const userAllure = userTeam.prestige * 0.62 + (userReg?.prestige || 75) * 0.38 + Math.min(10, userTeam.trophies.length * 2.5);
+  // Club allure grows with prestige, league level, manager reputation, and international trophies!
+  const isUserTarget = userTeam.id === state.userTeamId;
+  const mgrRepBonus = isUserTarget ? (((state.managerProfile?.reputation ?? 50) - 50) * 0.12) : 0;
+  const userAllure = userTeam.prestige * 0.62 + (userReg?.prestige || 75) * 0.38 + Math.min(10, userTeam.trophies.length * 2.5) + mgrRepBonus;
   const sellAllure = sellingTeam ? (sellingTeam.prestige * 0.62 + (sellReg?.prestige || 75) * 0.38) : 72;
 
   // Free agents demand realistic club prestige + signing bonus + FA salary premium!

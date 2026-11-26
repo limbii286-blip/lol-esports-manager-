@@ -17,6 +17,8 @@ import {
   Home,
   Search,
   Database,
+  Bell,
+  CheckCheck,
 } from 'lucide-react';
 import {
   createNewCareer,
@@ -32,6 +34,7 @@ import {
   formatMoney,
   saveGame,
   loadFromSlot,
+  markAllNotificationsRead,
 } from './engine/gameEngine.js';
 import { soundFx } from './engine/soundFx';
 import { ActiveSeriesContext, NavTab } from './types/game';
@@ -75,7 +78,8 @@ export default function App() {
   const [mayhemOpen, setMayhemOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [muted, setMuted] = useState(() => soundFx.isMuted());
-  const [toast, setToast] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+  const [bellOpen, setBellOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState('');
 
   useEffect(() => {
@@ -87,9 +91,10 @@ export default function App() {
 
   const showToast = (msg?: string) => {
     if (!msg) return;
-    setToast(msg);
+    const id = Date.now() + Math.floor(Math.random() * 10000);
+    setToasts((prev) => [...prev.slice(-2), { id, msg }]);
     window.setTimeout(() => {
-      setToast((prev) => (prev === msg ? null : prev));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4200);
   };
 
@@ -114,6 +119,8 @@ export default function App() {
       teams: nextTeams,
       players: Array.isArray(st.players) ? [...st.players] : [],
       inbox: Array.isArray(st.inbox) ? [...st.inbox] : [],
+      notifications: Array.isArray(st.notifications) ? [...st.notifications] : [],
+      managerProfile: st.managerProfile ? { ...st.managerProfile } : undefined,
       socialFeed: Array.isArray(st.socialFeed) ? [...st.socialFeed] : [],
       incomingOffers: Array.isArray(st.incomingOffers) ? [...st.incomingOffers] : [],
       challengerPool: Array.isArray(st.challengerPool) ? [...st.challengerPool] : [],
@@ -161,6 +168,15 @@ export default function App() {
   const unreadInboxCount = useMemo(() => {
     if (!careerState?.inbox) return 0;
     return careerState.inbox.filter((m: any) => !m.read).length;
+  }, [careerState, revision]);
+
+  const notificationsList = useMemo(() => {
+    return (careerState?.notifications || []).slice(0, 12);
+  }, [careerState, revision]);
+
+  const unreadNotifCount = useMemo(() => {
+    if (!careerState?.notifications) return 0;
+    return careerState.notifications.filter((n: any) => !n.read).length;
   }, [careerState, revision]);
 
   const handleOpenMatchArena = (match: any) => {
@@ -225,7 +241,7 @@ export default function App() {
 
   // Classic FM Spacebar shortcut to Continue / Match Day (when no modal or input is focused)
   useEffect(() => {
-    if (!careerState || activeSeries || selectedPlayerId || pressOpen || saveModalOpen || mayhemOpen) return;
+    if (!careerState || activeSeries || selectedPlayerId || pressOpen || saveModalOpen || mayhemOpen || editorOpen || bellOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
@@ -236,7 +252,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [careerState, revision, activeSeries, selectedPlayerId, pressOpen, saveModalOpen, mayhemOpen, nextMatch]);
+  }, [careerState, revision, activeSeries, selectedPlayerId, pressOpen, saveModalOpen, mayhemOpen, editorOpen, bellOpen, nextMatch]);
 
   const globalSearchResults = useMemo(() => {
     const q = globalQuery.trim().toLowerCase();
@@ -283,9 +299,16 @@ export default function App() {
           />
         )}
         {mayhemOpen && <WorldsMayhemModal onClose={() => setMayhemOpen(false)} />}
-        {toast && (
-          <div className="fixed bottom-5 right-5 z-50 bg-[#171E2C] border border-[#C89B3C]/60 text-white text-xs font-medium px-4 py-3 rounded-md shadow-xl max-w-sm">
-            {toast}
+        {toasts.length > 0 && (
+          <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm">
+            {toasts.map((t) => (
+              <div
+                key={t.id}
+                className="bg-[#171E2C] border border-[#C89B3C]/60 text-white text-xs font-medium px-4 py-3 rounded-md shadow-xl"
+              >
+                {t.msg}
+              </div>
+            ))}
           </div>
         )}
       </>
@@ -423,7 +446,88 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0 relative">
+            <div className="relative">
+              <button
+                onClick={() => {
+                  soundFx.click();
+                  setBellOpen((o) => !o);
+                }}
+                title="Bildirim Merkezi"
+                className="relative p-2 rounded-md border border-white/[0.1] text-slate-300 hover:text-white hover:border-[#C89B3C]/60 cursor-pointer"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#C89B3C] text-[#0B0E14] font-mono-num text-[10px] font-extrabold flex items-center justify-center">
+                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {bellOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-[#121722] border border-white/[0.14] rounded-lg shadow-2xl z-50 overflow-hidden">
+                  <div className="px-3.5 py-2.5 border-b border-white/[0.08] flex items-center justify-between gap-2 bg-[#0E121B]">
+                    <span className="text-xs font-bold text-white">Bildirimler ({unreadNotifCount} okunmamış)</span>
+                    <button
+                      onClick={() => {
+                        soundFx.click();
+                        markAllNotificationsRead(careerState);
+                        commitState(careerState);
+                      }}
+                      className="text-[11px] text-[#E4BD67] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      Tümünü Okundu İşaretle
+                    </button>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto divide-y divide-white/[0.06]">
+                    {notificationsList.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-400">Henüz yeni bildirim yok.</div>
+                    ) : (
+                      notificationsList.map((n: any) => (
+                        <button
+                          key={n.id}
+                          onClick={() => {
+                            soundFx.click();
+                            n.read = true;
+                            const m = (careerState.inbox || []).find((x: any) => x.id === n.msgId);
+                            if (m) m.read = true;
+                            setBellOpen(false);
+                            setActiveTab('inbox');
+                            commitState(careerState);
+                          }}
+                          className={`w-full text-left px-3.5 py-2.5 hover:bg-[#171E2C] transition-colors cursor-pointer ${
+                            !n.read ? 'bg-[#171E2C]/60 border-l-2 border-l-[#E4BD67]' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 text-[10px] font-mono-num">
+                            <span
+                              className={
+                                n.priority === 'URGENT'
+                                  ? 'text-rose-400 font-bold'
+                                  : n.priority === 'HIGH'
+                                  ? 'text-amber-400 font-bold'
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {n.priority === 'URGENT' ? 'ACİL' : n.priority === 'HIGH' ? 'ÖNEMLİ' : n.category}
+                            </span>
+                            <span className="text-slate-500">
+                              S{n.season} H{n.week}
+                            </span>
+                          </div>
+                          <div className={`text-xs mt-0.5 truncate ${!n.read ? 'font-bold text-white' : 'text-slate-300'}`}>
+                            {n.title}
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate mt-0.5">{n.detail}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={toggleSound}
               title={muted ? 'Sesi Aç' : 'Sesi Kapat'}
@@ -467,7 +571,12 @@ export default function App() {
           )}
 
           {activeTab === 'inbox' && (
-            <InboxView state={careerState} onUpdate={() => commitState(careerState)} />
+            <InboxView
+              state={careerState}
+              onUpdate={(msg) => commitState(careerState, msg)}
+              onNavigate={setActiveTab}
+              onOpenPlayer={(pid) => setSelectedPlayerId(pid)}
+            />
           )}
 
           {activeTab === 'squad' && (
@@ -635,10 +744,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Clean Toast Feedback */}
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-50 bg-[#171E2C] border border-[#C89B3C]/60 text-white text-xs font-medium px-4 py-3 rounded-md shadow-xl max-w-sm">
-          {toast}
+      {/* Stacked Live Toast Feedback Queue */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="bg-[#171E2C] border border-[#C89B3C]/60 text-white text-xs font-medium px-4 py-3 rounded-md shadow-xl"
+            >
+              {t.msg}
+            </div>
+          ))}
         </div>
       )}
     </div>

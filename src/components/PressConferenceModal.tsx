@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Mic, X, CheckCircle2 } from 'lucide-react';
 import { generatePressConference, PressChoice } from '../engine/fmExtensions';
-import { addInboxMessage } from '../engine/gameEngine.js';
+import { addInboxMessage, bumpManagerRep } from '../engine/gameEngine.js';
 import { soundFx } from '../engine/soundFx';
 
 interface PressConferenceModalProps {
@@ -45,6 +45,7 @@ export const PressConferenceModal: React.FC<PressConferenceModalProps> = ({
       userTeam.synergy = Math.max(30, Math.min(100, (userTeam.synergy || 70) + nextTotals.synergy));
       userTeam.fanbase = Math.max(10, Math.min(100, (userTeam.fanbase || 60) + nextTotals.fanbase));
       state.pressDoneWeek = `${state.season}_${state.phase}_${state.week}`;
+      bumpManagerRep(state, 0.5, 'mediaRep', 1.5);
       addInboxMessage(state, {
         title: `Basın Toplantısı Özeti — ${userTeam.tag} Medya Yansımaları`,
         sender: 'Medya İlişkileri',
