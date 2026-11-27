@@ -39,6 +39,7 @@ import {
   promoteFromAcademy,
   runPlayerInterview,
   negotiatePlayerContract,
+  resolvePlayerStoryEvent,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -253,16 +254,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </h2>
               <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono-num text-slate-300 mt-1">
                 <span>
+                  Rol Statüsü: <strong className="text-sky-400">{pc.squadRole || (pc.inAcademy ? 'Akademi Çaylağı' : 'İlk 5')}</strong>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span>
+                  XP: <strong className="text-emerald-400">{pc.xp || 0}/{pc.xpNext || 100}</strong>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span>
                   Oyun Tarzı:{' '}
                   <strong className={pc.styleUnlocked ? 'text-[#E4BD67]' : 'text-slate-400'}>
-                    {pc.styleUnlocked ? userPlayer.style : `Şekilleniyor (${Math.min(8, pc.decisionCount || 0)}/8 karar)`}
+                    {pc.styleUnlocked ? userPlayer.style : `Şekilleniyor (${Math.min(8, pc.decisionCount || 0)}/8)`}
                   </strong>
                 </span>
                 <span className="text-slate-600">·</span>
                 <span>
                   Kişilik:{' '}
                   <strong className={pc.traitUnlocked ? 'text-emerald-400' : 'text-slate-400'}>
-                    {pc.traitUnlocked ? userPlayer.trait : `Gelişiyor (${Math.min(14, pc.decisionCount || 0)}/14 karar)`}
+                    {pc.traitUnlocked ? userPlayer.trait : `Gelişiyor (${Math.min(14, pc.decisionCount || 0)}/14)`}
                   </strong>
                 </span>
               </div>
@@ -548,6 +557,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         )}
       </div>
+      )}
+
+      {/* Pending Player Story / Agent Event (Be a Legend Mode only) */}
+      {isPlayerMode && pc?.pendingPlayerEvent && (
+        <div className="bg-[#171E2C] border border-sky-400/50 rounded-lg p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-sky-400">Efsane Ol · Kişisel Kariyer Olayı</div>
+              <h3 className="text-base font-bold text-white">{pc.pendingPlayerEvent.title}</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">{pc.pendingPlayerEvent.desc}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {(pc.pendingPlayerEvent.choices || []).map((ch: any, idx: number) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  soundFx.click();
+                  const msg = resolvePlayerStoryEvent(state, idx);
+                  onUpdate(msg);
+                }}
+                className="text-left p-3.5 rounded-md bg-[#0B0E14] border border-white/[0.1] hover:border-[#C89B3C] text-xs cursor-pointer transition-colors"
+              >
+                <div className="font-bold text-white">{ch.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Pending Drama Event Alert (Manager Mode only) */}

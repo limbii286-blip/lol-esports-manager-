@@ -1047,11 +1047,18 @@ export function advanceOneDay(state) {
     maybeGenerateLivingWorldNews(state, newDow);
   }
 
-  // Thursday (4): Mid-week Drama Event or AI Transfer Offer!
+  // Thursday (4): Mid-week Drama Event or Player Story Event!
   if (newDow === 4) {
-    maybeTriggerDramaEvent(state);
-    maybeGenerateIncomingOffer(state);
-    if (state.pendingEvent) return { status: 'EVENT', msg: `Gündem: ${state.pendingEvent.title}` };
+    if (state.careerMode === 'PLAYER') {
+      maybeTriggerPlayerStoryEvent(state);
+      if (state.playerCareer?.pendingPlayerEvent) {
+        return { status: 'EVENT', msg: `Gündem: ${state.playerCareer.pendingPlayerEvent.title}` };
+      }
+    } else {
+      maybeTriggerDramaEvent(state);
+      maybeGenerateIncomingOffer(state);
+      if (state.pendingEvent) return { status: 'EVENT', msg: `Gündem: ${state.pendingEvent.title}` };
+    }
   }
 
   // Saturday (6): Match Day arrived!
@@ -1239,10 +1246,15 @@ export function createPlayerCareer({
   state.userPlayerId = userPlayer.id;
   state.playerCareer = {
     skillPoints: startInAcademy ? 3 : 2,
+    xp: 0,
+    xpNext: 100,
+    squadRole: startInAcademy ? 'Akademi Çaylağı' : 'İlk 5',
     coachTrust: startInAcademy ? 50 : 60,
     soloqLP: startInAcademy ? 480 : 640,
     fame: startInAcademy ? 8 : 15,
     personalEarnings: 0,
+    pendingPlayerEvent: null,
+    recentPlayerEventIds: [],
     interviewDoneThisWeek: false,
     contractTriedThisWeek: false,
     weeklyActionDone: false,
@@ -1354,6 +1366,7 @@ export function promoteFromAcademy(state) {
   p.rolePromise = 'STAR';
   p.salary = 4500;
   pc.inAcademy = false;
+  pc.squadRole = 'İlk 5';
   pc.fame = Math.min(100, (pc.fame || 10) + 10);
 
   if (!Array.isArray(p.careerHistory)) p.careerHistory = [];
@@ -1559,6 +1572,166 @@ export function negotiatePlayerContract(state) {
     chancePct: pct,
     msg: `Yönetim zam talebini reddetti (%${pct} şanstı). Koç Güveni -2, Moral -3. Bütçe veya MVP performansıyla tekrar dene.`,
   };
+}
+
+export function awardPlayerXP(state, amount) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return 0;
+  const pc = state.playerCareer;
+  pc.xp = (pc.xp || 0) + amount;
+  if (!pc.xpNext) pc.xpNext = 100;
+  let levelUps = 0;
+  while (pc.xp >= pc.xpNext) {
+    pc.xp -= pc.xpNext;
+    pc.skillPoints = (pc.skillPoints || 0) + 1;
+    pc.xpNext = Math.min(220, pc.xpNext + 15);
+    levelUps++;
+  }
+  return levelUps;
+}
+
+export function generatePlayerMatchObjectives(state) {
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const role = p?.role || 'MID';
+  const poolA = [
+    { id: 'rating_73', label: 'Maç Notu ≥ 7.3 Al', type: 'RATING', target: 7.3 },
+    { id: 'ka_5', label: 'En Az 5 Skor + Asist Üret', type: 'KA', target: 5 },
+  ];
+  const poolB = [
+    { id: 'deaths_3', label: 'En Fazla 3 Kez Öl', type: 'MAX_DEATHS', target: 3 },
+    role === 'SUP'
+      ? { id: 'vision_12', label: 'En Az 10 Görüş Skoru / Asist', type: 'KA', target: 6 }
+      : { id: 'cs_140', label: 'En Az 140 CS Yap', type: 'CS', target: 140 },
+  ];
+  return [
+    poolA[Math.floor(Math.random() * poolA.length)],
+    poolB[Math.floor(Math.random() * poolB.length)],
+  ];
+}
+
+export function evaluatePlayerMatchReport(state, objectives, livePlayer, won) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer || !livePlayer) return null;
+  const pc = state.playerCareer;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const ka = (livePlayer.kills || 0) + (livePlayer.assists || 0);
+  const rating = livePlayer.rating || 6.5;
+  const deaths = livePlayer.deaths || 0;
+  const cs = livePlayer.cs || 0;
+
+  const evaluated = (objectives || []).map((obj) => {
+    let done = false;
+    if (obj.type === 'RATING') done = rating >= obj.target;
+    else if (obj.type === 'KA') done = ka >= obj.target;
+    else if (obj.type === 'MAX_DEATHS') done = deaths <= obj.target;
+    else if (obj.type === 'CS') done = cs >= obj.target;
+    return { ...obj, done };
+  });
+
+  const doneCount = evaluated.filter(o => o.done).length;
+  const xpEarned = (won ? 45 : 25) + doneCount * 35 + (rating >= 8.2 ? 20 : 0);
+  const levelUps = awardPlayerXP(state, xpEarned);
+  const trustDelta = (won ? 2 : -1) + doneCount * 2;
+  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + trustDelta));
+
+  let grade = 'B';
+  if (rating >= 8.5) grade = 'S';
+  else if (rating >= 7.6) grade = 'A';
+  else if (rating < 6.2) grade = 'C';
+
+  // Squad role progression
+  let rolePromoted = null;
+  if (!pc.inAcademy && p) {
+    if (p.ovr >= 85 && pc.coachTrust >= 80 && pc.squadRole !== 'Süperstar') {
+      pc.squadRole = 'Süperstar';
+      rolePromoted = 'Süperstar';
+    } else if (p.ovr >= 78 && pc.coachTrust >= 70 && pc.squadRole === 'İlk 5') {
+      pc.squadRole = 'Takım Yıldızı';
+      rolePromoted = 'Takım Yıldızı';
+    }
+  }
+
+  return {
+    grade,
+    rating: +rating.toFixed(1),
+    kda: `${livePlayer.kills}/${livePlayer.deaths}/${livePlayer.assists}`,
+    cs,
+    xpEarned,
+    levelUps,
+    trustDelta,
+    objectives: evaluated,
+    rolePromoted,
+  };
+}
+
+export function maybeTriggerPlayerStoryEvent(state) {
+  if (state.careerMode !== 'PLAYER' || !state.playerCareer) return;
+  const pc = state.playerCareer;
+  if (pc.pendingPlayerEvent || Math.random() > 0.55) return;
+  const p = state.players.find(x => x.id === state.userPlayerId);
+  const team = state.teams.find(t => t.id === state.userTeamId);
+  if (!p || !team) return;
+  if (!Array.isArray(pc.recentPlayerEventIds)) pc.recentPlayerEventIds = [];
+
+  const events = [
+    {
+      id: 'gear_sponsor',
+      title: 'Temsilci Mesajı: Ekipman Markası Sponsorluğu',
+      desc: `Menajerin aradı: Ünlü bir oyuncu ekipmanı markası seninle kısa bir reklam çekimi yapmak istiyor (+$12K kişisel kazanç, +5 Şöhret).`,
+      choices: [
+        { label: 'Anlaşmayı İmzala (+$12K, +5 Şöhret, +5 Yorgunluk)', effect: () => { pc.personalEarnings = (pc.personalEarnings || 0) + 12000; pc.fame = Math.min(100, (pc.fame || 10) + 5); p.fatigue = Math.min(100, (p.fatigue || 0) + 5); recordPlayerBehavior(state, 'Aggressive', 'Streamer', 1); } },
+        { label: 'Reddet & Antrenmana Odaklan (+55 XP, +3 Koç Güveni)', effect: () => { awardPlayerXP(state, 55); pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 3); recordPlayerBehavior(state, 'Consistent', 'Grinder', 1); } },
+      ],
+    },
+    {
+      id: 'rival_callout',
+      title: 'Medya Gündemi: Rakip Yıldızdan Meydan Okuma',
+      desc: `Ligdeki rakiplerinden biri röportajında "${p.name} henüz büyük sahne için hazır değil" dedi. Nasıl yanıt vereceksin?`,
+      choices: [
+        { label: 'Sert Cevap Ver (+6 Şöhret, +2 Form, Ego)', effect: () => { pc.fame = Math.min(100, (pc.fame || 10) + 6); p.form = Math.min(99, (p.form || 75) + 2); recordPlayerBehavior(state, 'Aggressive', 'Ego', 2); } },
+        { label: 'Cevabı Vadide Veririm (+50 XP, +4 Koç Güveni)', effect: () => { awardPlayerXP(state, 50); pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 4); recordPlayerBehavior(state, 'Consistent', 'Clutch', 2); } },
+      ],
+    },
+    {
+      id: 'sub_competition',
+      title: 'Kadro İçi Rekabet: 1v1 Antrenman Talebi',
+      desc: `${team.tag} yedek oyuncusu hafta içi seninle koridor 1v1 antrenmanı yapmak istiyor. Kabul edecek misin?`,
+      choices: [
+        { label: '1v1 Meydan Okumasını Kabul Et (+65 XP, +4 Yorgunluk)', effect: () => { awardPlayerXP(state, 65); p.fatigue = Math.min(100, (p.fatigue || 0) + 4); recordPlayerBehavior(state, 'Aggressive', 'Grinder', 1); } },
+        { label: 'Takım İletişimi & VOD Paylaş (+4 Koç Güveni, +2 Takım Sinerjisi)', effect: () => { pc.coachTrust = Math.min(100, (pc.coachTrust || 50) + 4); team.synergy = Math.min(100, +(team.synergy + 1.5).toFixed(1)); recordPlayerBehavior(state, 'Playmaker', 'Leader', 2); } },
+      ],
+    },
+    {
+      id: 'soloq_duo',
+      title: 'SoloQ Duo Daveti',
+      desc: `Ligin en iyi ormancılarından biri bu gece yüksek elo SoloQ duo atmak için mesaj attı.`,
+      choices: [
+        { label: 'Duo At (+45 LP, +40 XP, +3 Şöhret)', effect: () => { pc.soloqLP = (pc.soloqLP || 500) + 45; awardPlayerXP(state, 40); pc.fame = Math.min(100, (pc.fame || 10) + 3); recordPlayerBehavior(state, 'Playmaker', 'Grinder', 1); } },
+        { label: 'Erken Uyu & Dinlen (-14 Yorgunluk, +4 Moral)', effect: () => { p.fatigue = Math.max(0, (p.fatigue || 0) - 14); p.morale = Math.min(100, (p.morale || 75) + 4); } },
+      ],
+    },
+  ];
+
+  const fresh = events.filter(e => !pc.recentPlayerEventIds.includes(e.id));
+  const pool = fresh.length ? fresh : events;
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  pc.recentPlayerEventIds.push(chosen.id);
+  if (pc.recentPlayerEventIds.length > 3) pc.recentPlayerEventIds.shift();
+
+  pc.pendingPlayerEvent = {
+    title: chosen.title,
+    desc: chosen.desc,
+    choices: chosen.choices.map((c, idx) => ({ idx, label: c.label })),
+    _effects: chosen.choices.map(c => c.effect),
+  };
+}
+
+export function resolvePlayerStoryEvent(state, choiceIdx) {
+  const pc = state.playerCareer;
+  if (!pc?.pendingPlayerEvent) return '';
+  const fn = pc.pendingPlayerEvent._effects?.[choiceIdx];
+  if (fn) fn();
+  const lbl = pc.pendingPlayerEvent.choices?.[choiceIdx]?.label || 'Karar uygulandı.';
+  pc.pendingPlayerEvent = null;
+  return lbl;
 }
 
 /**
@@ -2905,8 +3078,11 @@ export function advanceWeekOrRound(state) {
     }
     runWeeklyClubTick(state);
     evaluateBoardJobSecurity(state);
-    maybeTriggerDramaEvent(state);
-    maybeGenerateIncomingOffer(state);
+    if (state.careerMode === 'PLAYER') maybeTriggerPlayerStoryEvent(state);
+    else {
+      maybeTriggerDramaEvent(state);
+      maybeGenerateIncomingOffer(state);
+    }
 
     if (state.week === 2) {
       addInboxMessage(state, {

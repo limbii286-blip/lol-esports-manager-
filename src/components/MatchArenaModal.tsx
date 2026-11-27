@@ -38,6 +38,8 @@ import {
   recordAcademySeriesResult,
   applyPostMatchTeamTalk,
   recordPlayerBehavior,
+  generatePlayerMatchObjectives,
+  evaluatePlayerMatchReport,
 } from '../engine/gameEngine.js';
 import { TOUCHLINE_SHOUTS, applyTouchlineShout } from '../engine/fmExtensions';
 import { soundFx } from '../engine/soundFx';
@@ -126,6 +128,10 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const [coachPickReqId, setCoachPickReqId] = useState<string | null>(null);
   const [coachPickStatus, setCoachPickStatus] = useState<string>('');
   const [autoDecide, setAutoDecide] = useState<boolean>(false);
+  const [playerObjectives, setPlayerObjectives] = useState<any[]>(() =>
+    isPlayerMode ? generatePlayerMatchObjectives(careerState) : []
+  );
+  const [playerMatchReport, setPlayerMatchReport] = useState<any>(null);
   const [pendingDecision, setPendingDecision] = useState<{
     minute: number;
     title: string;
@@ -286,6 +292,8 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLastShoutMin(-10);
     setShoutNotice('');
     setPendingDecision(null);
+    setPlayerMatchReport(null);
+    if (isPlayerMode) setPlayerObjectives(generatePlayerMatchObjectives(careerState));
     triggeredDecisionMinsRef.current = new Set();
     setBroadcastBanner(null);
     setIsPlaying(true);
@@ -440,6 +448,14 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     const userWonGame = ms.winner === userSide;
     if (userWonGame) soundFx.victory();
     else soundFx.defeat();
+
+    if (isPlayerMode) {
+      const myLiveP = (userSide === 'blue' ? ms.bluePlayers : ms.redPlayers).find(
+        (mp: any) => mp.playerId === careerState.userPlayerId
+      );
+      const rep = evaluatePlayerMatchReport(careerState, playerObjectives, myLiveP, userWonGame);
+      if (rep) setPlayerMatchReport(rep);
+    }
 
     if (nextBlue >= winsNeeded || nextRed >= winsNeeded) {
       if (seriesCtx.isAcademy) {
@@ -1371,8 +1387,78 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                   </div>
                 </div>
 
-                {/* Right 7 cols: Player Decisions / Touchline Shouts + Scoreboard + Live Commentary */}
+                {/* Right 7 cols: Live Pro Player HUD + Player Decisions / Touchline Shouts + Scoreboard + Live Commentary */}
                 <div className="lg:col-span-7 space-y-4">
+                  {/* Be a Legend Live Pro HUD (Rating, Lane Matchup, Objectives) */}
+                  {phase === 'LIVE' && isPlayerMode && userLegendPlayer && (() => {
+                    const mySidePlayers = userSide === 'blue' ? liveState.bluePlayers : liveState.redPlayers;
+                    const oppSidePlayers = userSide === 'blue' ? liveState.redPlayers : liveState.bluePlayers;
+                    const myLive = mySidePlayers.find((p: any) => p.playerId === userLegendPlayer.id) || mySidePlayers[0];
+                    const oppLive = oppSidePlayers.find((p: any) => p.role === userLegendPlayer.role) || oppSidePlayers[0];
+                    const gd = Math.round((myLive?.gold || 0) - (oppLive?.gold || 0));
+                    const ka = (myLive?.kills || 0) + (myLive?.assists || 0);
+                    return (
+                      <div className="bg-[#121722] border border-[#C89B3C]/45 rounded-lg p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-bold text-[#E4BD67]">
+                              SENİN PERFORMANSIN · {myLive?.champName} ({userLegendPlayer.role})
+                            </div>
+                            <div className="text-xs text-slate-400 font-mono-num">
+                              Rakip: {oppLive?.name} ({oppLive?.champName})
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 font-mono-num text-xs">
+                            <div>
+                              <span className="text-slate-400">KDA: </span>
+                              <strong className="text-white">{myLive?.kills}/{myLive?.deaths}/{myLive?.assists}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-400">CS: </span>
+                              <strong className="text-white">{myLive?.cs}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-400">Fark: </span>
+                              <strong className={gd >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                                {gd >= 0 ? `+${gd}g` : `${gd}g`}
+                              </strong>
+                            </div>
+                            <div className="px-2.5 py-1 rounded bg-[#0B0E14] border border-[#C89B3C]/50 text-[#E4BD67] font-extrabold">
+                              Not {(myLive?.rating || 6.4).toFixed(1)}
+                            </div>
+                          </div>
+                        </div>
+                        {playerObjectives.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-white/[0.06] text-[11px]">
+                            {playerObjectives.map((obj: any) => {
+                              const ok =
+                                obj.type === 'RATING'
+                                  ? (myLive?.rating || 0) >= obj.target
+                                  : obj.type === 'KA'
+                                  ? ka >= obj.target
+                                  : obj.type === 'MAX_DEATHS'
+                                  ? (myLive?.deaths || 0) <= obj.target
+                                  : (myLive?.cs || 0) >= obj.target;
+                              return (
+                                <span
+                                  key={obj.id}
+                                  className={`px-2.5 py-1 rounded border font-semibold ${
+                                    ok
+                                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                                      : 'border-white/[0.1] bg-[#0B0E14] text-slate-300'
+                                  }`}
+                                >
+                                  {ok ? '✓ ' : '○ '}
+                                  {obj.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Be a Legend Interactive In-Game Decision Card */}
                   {phase === 'LIVE' && isPlayerMode && pendingDecision && userLegendPlayer && (
                     <div className="bg-[#171E2C] border border-[#C89B3C] rounded-lg p-5 space-y-3 shadow-2xl">
@@ -1863,6 +1949,48 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Player Mode Match Report Card (Grade, Objectives, XP) */}
+              {isPlayerMode && playerMatchReport && (
+                <div className="bg-[#0B0E14] border border-[#C89B3C]/40 rounded-lg p-5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-bold text-[#E4BD67]">MAÇ KARNESİ & XP ÖZETİ</div>
+                      <div className="text-xs text-slate-300 font-mono-num mt-0.5">
+                        KDA: <strong className="text-white">{playerMatchReport.kda}</strong> · CS: {playerMatchReport.cs} · Maç Notu:{' '}
+                        <strong className="text-[#E4BD67]">{playerMatchReport.rating}</strong>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono-num">
+                      <span className="px-3 py-1 rounded bg-[#171E2C] border border-[#C89B3C] text-lg font-extrabold text-[#E4BD67]">
+                        Not: {playerMatchReport.grade}
+                      </span>
+                      <span className="text-xs font-bold text-emerald-400">
+                        +{playerMatchReport.xpEarned} XP
+                        {playerMatchReport.levelUps > 0 ? ` (+${playerMatchReport.levelUps} Gelişim Puanı!)` : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {playerMatchReport.objectives.map((o: any) => (
+                      <span
+                        key={o.id}
+                        className={`px-2.5 py-1 rounded border ${
+                          o.done ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/[0.08] text-slate-500'
+                        }`}
+                      >
+                        {o.done ? '✓ ' : '✗ '}
+                        {o.label}
+                      </span>
+                    ))}
+                  </div>
+                  {playerMatchReport.rolePromoted && (
+                    <div className="text-xs font-bold text-[#E4BD67]">
+                      Kadro Statün Yükseldi: {playerMatchReport.rolePromoted}!
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Post-Match Locker Room Reaction (Manager Mode Only) */}
               {!isPlayerMode && (
