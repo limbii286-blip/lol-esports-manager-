@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { CHAMPIONS, CHAMPION_MAP, getChampionMetaTier } from '../data/champions.js';
 import { ROLES, getRivalryName } from '../data/teamsAndPlayers.js';
+import { buildDynamicPlayerDecision } from '../data/playerDecisions';
 import {
   DRAFT_STEPS,
   createDraftState,
@@ -113,7 +114,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const [liveState, setLiveState] = useState<any>(null);
   const [liveTick, setLiveTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [speed, setSpeed] = useState<number>(isPlayerMode ? 1 : 2);
+  const [speed, setSpeed] = useState<number>(1);
   const [lastShoutMin, setLastShoutMin] = useState<number>(-10);
   const [shoutNotice, setShoutNotice] = useState<string>('');
   const [postTalkDone, setPostTalkDone] = useState(false);
@@ -139,6 +140,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     options: { id: string; label: string; kind: string; attr: string; baseProb: number }[];
   } | null>(null);
   const triggeredDecisionMinsRef = useRef<Set<number>>(new Set());
+  const usedScenarioIdsRef = useRef<Set<string>>(new Set());
   const [broadcastBanner, setBroadcastBanner] = useState<{ text: string; color: string } | null>(null);
 
   const timerRef = useRef<number | null>(null);
@@ -295,57 +297,42 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setPlayerMatchReport(null);
     if (isPlayerMode) setPlayerObjectives(generatePlayerMatchObjectives(careerState));
     triggeredDecisionMinsRef.current = new Set();
+    usedScenarioIdsRef.current = new Set();
     setBroadcastBanner(null);
     setIsPlaying(true);
     setPhase('LIVE');
     soundFx.objectiveSecured();
   };
 
-  const buildPlayerDecision = (minute: number) => {
+  const buildPlayerDecision = (ms: any) => {
     const role = userLegendPlayer?.role || 'MID';
-    if (minute <= 5) {
-      return {
-        minute,
-        title: `Dakika ${minute}: Erken Koridor Kararı`,
-        desc: `${role} koridorunda ilk minyon dalgaları çarpışıyor. Nasıl oynamak istersin?`,
-        options: [
-          { id: 'aggro', label: 'Agresif Takasa Gir & Kill Ara (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.6 },
-          { id: 'roam', label: 'Orman/Nehir Kontrolüne Destek Çık (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.65 },
-          { id: 'safe', label: 'Kusursuz CS & Kule Altı Güvenli Kal (Koridor)', kind: 'SAFE', attr: 'laning', baseProb: 0.9 },
-          { id: 'obj', label: 'Derin Totem At & Rakip Ormancıyı Tespit Et', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.72 },
-        ],
-      };
-    }
-    if (minute <= 16) {
-      return {
-        minute,
-        title: `Dakika ${minute}: Orta Oyun & Harita Rotasyonu`,
-        desc: `Ejder ve kule plakaları için kritik an. Takımın için en doğru hamle ne?`,
-        options: [
-          { id: 'roam', label: 'Yan Koridora Roam At & Skor Üret (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.64 },
-          { id: 'aggro', label: '1v1 Düelloya Zorla & Baskı Kur (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.58 },
-          { id: 'obj', label: 'Ejder Çukuru Etrafında Görüş & Pozisyon Al', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.68 },
-          { id: 'safe', label: 'Yan Dalga İttir & Güvenli Altın Topla', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
-        ],
-      };
-    }
-    return {
-      minute,
-      title: `Dakika ${minute}: Geç Oyun & Baron Savaşı`,
-      desc: `5v5 takım savaşları oyunu belirleyecek! Savaşta nasıl pozisyon alacaksın?`,
-      options: [
-        { id: 'obj', label: 'Takım Savaşında Ön/Arka Saf Koordinasyonu (Savaş)', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.66 },
-        { id: 'aggro', label: 'Rakip Taşıyıcıya Flash Engage / Odaklan (Mekanik)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.57 },
-        { id: 'roam', label: 'Yan Koridordan Flank / TP Fırsatı Kovala (Makro)', kind: 'ROAM', attr: 'macro', baseProb: 0.63 },
-        { id: 'safe', label: 'Dalgayı Temizle & Takımı Güvende Tut', kind: 'SAFE', attr: 'laning', baseProb: 0.85 },
-      ],
-    };
+    const myPlayers = userSide === 'blue' ? ms.bluePlayers : ms.redPlayers;
+    const oppPlayers = userSide === 'blue' ? ms.redPlayers : ms.bluePlayers;
+    const myP = myPlayers.find((p: any) => p.playerId === userLegendPlayer?.id) || myPlayers.find((p: any) => p.role === role) || myPlayers[0];
+    const oppP = oppPlayers.find((p: any) => p.role === role) || oppPlayers[0];
+    const myTeamObj = userSide === 'blue' ? ms.blueTeam : ms.redTeam;
+    const oppTeamObj = userSide === 'blue' ? ms.redTeam : ms.blueTeam;
+    const goldDiff = Math.round((userSide === 'blue' ? 1 : -1) * ((ms.blueGold || 0) - (ms.redGold || 0)));
+
+    return buildDynamicPlayerDecision(
+      {
+        minute: ms.minute,
+        role,
+        myChamp: myP?.champName || 'Şampiyon',
+        oppName: oppP?.name || 'Rakip',
+        oppChamp: oppP?.champName || 'Rakip Şampiyon',
+        oppTag: oppTeamObj?.tag || 'RAKİP',
+        myTag: myTeamObj?.tag || 'TAKIM',
+        goldDiff,
+      },
+      usedScenarioIdsRef.current
+    );
   };
 
   // Live Match Simulation Loop
   useEffect(() => {
     if (phase !== 'LIVE' || !liveState || liveState.finished || !isPlaying || pendingDecision) return;
-    const intervalMs = speed === 1 ? 820 : speed === 2 ? 440 : speed === 4 ? 220 : 100;
+    const intervalMs = speed === 1 ? 1400 : speed === 2 ? 750 : speed === 4 ? 380 : 160;
     timerRef.current = window.setInterval(() => {
       const prevBlueKills = liveState.blueKills;
       const prevRedKills = liveState.redKills;
@@ -402,7 +389,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       ) {
         triggeredDecisionMinsRef.current.add(liveState.minute);
         setIsPlaying(false);
-        setPendingDecision(buildPlayerDecision(liveState.minute));
+        setPendingDecision(buildPlayerDecision(liveState));
       }
     }, intervalMs);
 
