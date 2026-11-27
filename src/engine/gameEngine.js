@@ -1402,15 +1402,24 @@ export function createAcademyMatchContext(state) {
   const oppClubName = sub.clubs.find(c => !c.includes(team.tag)) || sub.clubs[0] || 'Rival Academy';
   const oppTag = oppClubName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ACD';
 
+  const acadNickPool = [
+    'Kairo', 'Vexen', 'Sora', 'Nero', 'Kael', 'Mori', 'Zeph', 'Taki',
+    'Lumen', 'Drako', 'Aether', 'Ryu', 'Haze', 'Kage', 'Orin', 'Vyn',
+    'Breeze', 'Cinder', 'Penta', 'Syx', 'Toren', 'Dusk', 'Lira', 'Valkor',
+    'Minseo', 'Jihoon', 'Haneul', 'Kiro', 'Noxus', 'Rivenx', 'Zedex', 'Yuna',
+  ].sort(() => Math.random() - 0.5);
+  let nickIdx = 0;
+
   const makeAcadMate = (role, prefix, ovrBase) => {
     const o = Math.round(ovrBase + (Math.random() * 4 - 2));
+    const nick = acadNickPool[nickIdx++ % acadNickPool.length];
     return {
       id: `acad_${prefix}_${role}`,
-      name: `${prefix}_${role}`,
+      name: nick,
       role,
-      age: 18,
+      age: 17 + Math.floor(Math.random() * 3),
       ovr: o,
-      pot: 78,
+      pot: 78 + Math.floor(Math.random() * 8),
       attrs: { laning: o, mechanics: o, macro: o - 1, teamfight: o, clutch: o - 1, pool: 72 },
       sigChamps: [],
       style: 'Consistent',

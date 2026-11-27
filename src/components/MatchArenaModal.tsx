@@ -129,6 +129,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const [coachPickReqId, setCoachPickReqId] = useState<string | null>(null);
   const [coachPickStatus, setCoachPickStatus] = useState<string>('');
   const [autoDecide, setAutoDecide] = useState<boolean>(false);
+  const [decisionFeedback, setDecisionFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [playerObjectives, setPlayerObjectives] = useState<any[]>(() =>
     isPlayerMode ? generatePlayerMatchObjectives(careerState) : []
   );
@@ -294,6 +295,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
     setLastShoutMin(-10);
     setShoutNotice('');
     setPendingDecision(null);
+    setDecisionFeedback(null);
     setPlayerMatchReport(null);
     if (isPlayerMode) setPlayerObjectives(generatePlayerMatchObjectives(careerState));
     triggeredDecisionMinsRef.current = new Set();
@@ -1446,6 +1448,35 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                     );
                   })()}
 
+                  {/* Player Decision Outcome Feedback Banner */}
+                  {phase === 'LIVE' && isPlayerMode && decisionFeedback && !pendingDecision && (
+                    <div
+                      className={`rounded-lg px-4 py-3 border text-xs flex items-center justify-between gap-3 ${
+                        decisionFeedback.ok
+                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-200'
+                          : 'bg-rose-500/10 border-rose-500/50 text-rose-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`px-2 py-0.5 rounded font-mono-num text-[10px] font-extrabold shrink-0 ${
+                            decisionFeedback.ok ? 'bg-emerald-500 text-[#0B0E14]' : 'bg-rose-500 text-white'
+                          }`}
+                        >
+                          {decisionFeedback.ok ? 'BAŞARILI' : 'BAŞARISIZ'}
+                        </span>
+                        <span className="font-medium leading-snug">{decisionFeedback.text}</span>
+                      </div>
+                      <button
+                        onClick={() => setDecisionFeedback(null)}
+                        className="text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                        aria-label="Kapat"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Be a Legend Interactive In-Game Decision Card */}
                   {phase === 'LIVE' && isPlayerMode && pendingDecision && userLegendPlayer && (
                     <div className="bg-[#171E2C] border border-[#C89B3C] rounded-lg p-5 space-y-3 shadow-2xl">
@@ -1495,7 +1526,10 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                                 );
                                 if (res.success) soundFx.killAlert();
                                 else soundFx.click();
-                                setShoutNotice(unlock ? `${res.text} · ${unlock}` : res.text);
+                                setDecisionFeedback({
+                                  ok: Boolean(res.success),
+                                  text: unlock ? `${res.text} (${unlock})` : res.text,
+                                });
                                 setPendingDecision(null);
                                 setIsPlaying(true);
                                 setLiveTick((t) => t + 1);
