@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy, CalendarDays, Globe } from 'lucide-react';
 import { REGIONS } from '../data/teamsAndPlayers.js';
-import { getSortedStandings, getPhaseLabel, getTeamOVR } from '../engine/gameEngine.js';
+import { getSortedStandings, getPhaseLabel, getTeamOVR, getAcademyStandings } from '../engine/gameEngine.js';
 import { MEDIA_ASSETS } from '../assets/media';
 import { SafeImage, TeamCrest, OvrValue } from './shared/Visuals';
 
@@ -58,6 +58,44 @@ export const LeagueView: React.FC<LeagueViewProps> = ({ state, userTeam }) => {
       {/* TAB 1: REGIONAL STANDINGS & FIXTURES */}
       {subView === 'standings' && (
         <div className="space-y-5">
+          {state.careerMode === 'PLAYER' && state.playerCareer?.inAcademy && (
+            <div className="bg-[#121722] border border-sky-400/40 rounded-lg overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between">
+                <span className="text-sm font-bold text-sky-400">
+                  Senin Ligin: {state.playerCareer.academyLeague} Puan Durumu
+                </span>
+                <span className="text-xs font-mono-num text-slate-400">
+                  {state.playerCareer.academyClub}
+                </span>
+              </div>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-white/[0.08] bg-[#0B0E14]/60 text-[11px] text-slate-400">
+                    <th className="py-2 px-4">#</th>
+                    <th className="py-2 px-3">Akademi Takımı</th>
+                    <th className="py-2 px-3 text-right">G</th>
+                    <th className="py-2 px-3 text-right">M</th>
+                    <th className="py-2 px-4 text-right">Averaj</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06]">
+                  {getAcademyStandings(state).map((row: any, idx: number) => (
+                    <tr key={row.id} className={row.isUser ? 'bg-[#C89B3C]/12' : ''}>
+                      <td className="py-2 px-4 font-mono-num text-slate-400">{idx + 1}</td>
+                      <td className={`py-2 px-3 font-semibold ${row.isUser ? 'text-[#E4BD67]' : 'text-white'}`}>
+                        {row.name}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono-num font-bold text-emerald-400">{row.wins}</td>
+                      <td className="py-2 px-3 text-right font-mono-num font-bold text-rose-400">{row.losses}</td>
+                      <td className="py-2 px-4 text-right font-mono-num text-slate-300">
+                        {row.diff >= 0 ? `+${row.diff}` : row.diff}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="flex items-center gap-1 p-1 bg-[#121722] border border-white/[0.08] rounded-lg w-fit overflow-x-auto">
             {REGIONS.map((r: any) => (
               <button

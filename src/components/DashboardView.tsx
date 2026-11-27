@@ -40,6 +40,7 @@ import {
   runPlayerInterview,
   negotiatePlayerContract,
   resolvePlayerStoryEvent,
+  getAcademyStandings,
 } from '../engine/gameEngine.js';
 import { generateOpponentScoutReport } from '../engine/fmExtensions';
 import { MEDIA_ASSETS } from '../assets/media';
@@ -95,6 +96,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [state, isPlayerMode]
   );
   const pc = state.playerCareer;
+  const academyStandings = useMemo(
+    () => (isPlayerMode && pc?.inAcademy ? getAcademyStandings(state) : []),
+    [state, isPlayerMode, pc?.inAcademy]
+  );
 
   const blueTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.blueId) : null;
   const redTeam = nextMatch ? state.teams.find((t: any) => t.id === nextMatch.redId) : null;
@@ -722,7 +727,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
               <div>
                 <div className="text-xs text-[#E4BD67] font-semibold">
-                  {nextMatch
+                  {isPlayerMode && pc?.inAcademy
+                    ? pc.academyPlayedThisWeek
+                      ? 'Bu Haftaki Akademi Maçı Tamamlandı'
+                      : `Akademi Ligi Haftalık Maçı · ${pc.academyLeague}`
+                    : nextMatch
                     ? matchDayToday
                       ? 'Bugün Maç Günü · Sahneye Çıkmaya Hazır'
                       : 'Sıradaki Resmi Karşılaşma'
@@ -845,6 +854,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 )}
               </>
+            ) : isPlayerMode && pc?.inAcademy ? (
+              <div className="py-4 space-y-4">
+                <div className="text-xs text-slate-300 leading-relaxed">
+                  {pc.academyPlayedThisWeek
+                    ? `Bu haftaki ${pc.academyLeague} maçını oynadın. Kişisel antrenmanını bitirdiysen sonraki haftaya geçebilirsin.`
+                    : `${pc.academyClub} formasıyla ${pc.academyLeague} sahnesine çıkmaya hazırsın!`}
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {!pc.academyPlayedThisWeek && onPlayAcademyMatch && (
+                    <button
+                      onClick={onPlayAcademyMatch}
+                      className="px-5 py-2.5 rounded-md bg-sky-500 hover:bg-sky-400 text-[#0B0E14] text-xs font-bold flex items-center gap-2 cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      Akademi Maçına Çık (Canlı 2D)
+                    </button>
+                  )}
+                  <button
+                    onClick={onAdvanceWeek}
+                    className="px-5 py-2.5 rounded-md bg-[#C89B3C] hover:bg-[#D9AC4A] text-[#0B0E14] text-xs font-bold cursor-pointer"
+                  >
+                    Sonraki Haftaya Geç
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="py-6 text-center space-y-3">
                 <p className="text-sm text-slate-300">
@@ -978,10 +1012,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           )}
 
-          {/* Regional Standings Table */}
+          {/* Regional or Academy Standings Table */}
           <div className="bg-[#121722] border border-white/[0.08] rounded-lg overflow-hidden">
             <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between">
-              <span className="text-sm font-bold text-white">{userTeam.region} Puan Durumu</span>
+              <span className="text-sm font-bold text-white">
+                {isPlayerMode && pc?.inAcademy ? `${pc.academyLeague} Puan Durumu` : `${userTeam.region} Puan Durumu`}
+              </span>
               <button
                 onClick={() => onNavigate('league')}
                 className="text-xs text-[#E4BD67] hover:underline cursor-pointer"
@@ -999,31 +1035,48 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.06]">
-                {standings.map((row: any, idx: number) => {
-                  const t = state.teams.find((x: any) => x.id === row.teamId);
-                  if (!t) return null;
-                  const isMe = t.id === userTeam.id;
-                  const diff = (row.gameWins || 0) - (row.gameLosses || 0);
-                  return (
-                    <tr key={t.id} className={isMe ? 'bg-[#C89B3C]/12' : ''}>
-                      <td className="py-2 px-4 font-mono-num text-slate-400">{idx + 1}</td>
-                      <td className="py-2 px-2">
-                        <div className="flex items-center gap-2">
-                          <TeamCrest tag={t.tag} color={t.color} color2={t.color2} size="xs" />
-                          <span className={`font-semibold truncate ${isMe ? 'text-[#E4BD67]' : 'text-white'}`}>
-                            {t.name}
+                {isPlayerMode && pc?.inAcademy
+                  ? academyStandings.map((row: any, idx: number) => (
+                      <tr key={row.id} className={row.isUser ? 'bg-[#C89B3C]/12' : ''}>
+                        <td className="py-2 px-4 font-mono-num text-slate-400">{idx + 1}</td>
+                        <td className="py-2 px-2">
+                          <span className={`font-semibold truncate ${row.isUser ? 'text-[#E4BD67]' : 'text-white'}`}>
+                            {row.name}
                           </span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono-num font-bold text-white">
-                        {row.wins}-{row.losses}
-                      </td>
-                      <td className="py-2 px-4 text-right font-mono-num text-slate-400">
-                        {diff >= 0 ? `+${diff}` : diff}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-num font-bold text-white">
+                          {row.wins}-{row.losses}
+                        </td>
+                        <td className="py-2 px-4 text-right font-mono-num text-slate-400">
+                          {row.diff >= 0 ? `+${row.diff}` : row.diff}
+                        </td>
+                      </tr>
+                    ))
+                  : standings.map((row: any, idx: number) => {
+                      const t = state.teams.find((x: any) => x.id === row.teamId);
+                      if (!t) return null;
+                      const isMe = t.id === userTeam.id;
+                      const diff = (row.gameWins || 0) - (row.gameLosses || 0);
+                      return (
+                        <tr key={t.id} className={isMe ? 'bg-[#C89B3C]/12' : ''}>
+                          <td className="py-2 px-4 font-mono-num text-slate-400">{idx + 1}</td>
+                          <td className="py-2 px-2">
+                            <div className="flex items-center gap-2">
+                              <TeamCrest tag={t.tag} color={t.color} color2={t.color2} size="xs" />
+                              <span className={`font-semibold truncate ${isMe ? 'text-[#E4BD67]' : 'text-white'}`}>
+                                {t.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono-num font-bold text-white">
+                            {row.wins}-{row.losses}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono-num text-slate-400">
+                            {diff >= 0 ? `+${diff}` : diff}
+                          </td>
+                        </tr>
+                      );
+                    })}
               </tbody>
             </table>
           </div>

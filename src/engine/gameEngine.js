@@ -1298,6 +1298,39 @@ export function createPlayerCareer({
   return state;
 }
 
+export function getAcademyStandings(state) {
+  if (!state.playerCareer) return [];
+  const pc = state.playerCareer;
+  if (!Array.isArray(pc.academyStandings) || pc.academyStandings.length === 0) {
+    const team = state.teams.find(t => t.id === state.userTeamId);
+    const sub = SUB_LEAGUES[team?.region || 'LEC'] || SUB_LEAGUES.LEC;
+    const clubList = [pc.academyClub, ...sub.clubs.filter(c => c !== pc.academyClub)].slice(0, 6);
+    pc.academyStandings = clubList.map((name, idx) => ({
+      id: `ac_club_${idx}`,
+      name,
+      isUser: idx === 0,
+      wins: 0,
+      losses: 0,
+      diff: 0,
+    }));
+  }
+  return [...pc.academyStandings].sort((a, b) => b.wins - a.wins || b.diff - a.diff);
+}
+
+function updateAcademyStandingsRound(state, userWon) {
+  const list = getAcademyStandings(state);
+  for (const row of list) {
+    if (row.isUser) {
+      if (userWon) { row.wins++; row.diff += 1; }
+      else { row.losses++; row.diff -= 1; }
+    } else {
+      const w = Math.random() < 0.5;
+      if (w) { row.wins++; row.diff += 1; }
+      else { row.losses++; row.diff -= 1; }
+    }
+  }
+}
+
 export function playAcademyMatch(state) {
   if (state.careerMode !== 'PLAYER' || !state.playerCareer?.inAcademy) {
     return { ok: false, msg: 'Şu anda Akademi Liginde değilsin.' };
@@ -1324,6 +1357,7 @@ export function playAcademyMatch(state) {
   if (won) pc.academyWins = (pc.academyWins || 0) + 1;
   if (isMvp) pc.academyMvps = (pc.academyMvps || 0) + 1;
   pc.academyPlayedThisWeek = true;
+  updateAcademyStandingsRound(state, won);
 
   p.fatigue = Math.min(100, (p.fatigue || 0) + 8);
   p.form = Math.min(99, Math.max(55, (p.form || 75) + (won ? 3 : -1)));
@@ -1493,6 +1527,8 @@ export function recordAcademySeriesResult(state, won, userLivePlayer = null) {
   if (won) pc.academyWins = (pc.academyWins || 0) + 1;
   if (isMvp) pc.academyMvps = (pc.academyMvps || 0) + 1;
   pc.academyPlayedThisWeek = true;
+  updateAcademyStandingsRound(state, won);
+  updateAcademyStandingsRound(state, won);
 
   pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 4 : 2) : -1)));
   pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 2 : 1));
