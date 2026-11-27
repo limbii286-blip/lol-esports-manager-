@@ -20,6 +20,7 @@ export interface PlayerDecisionContext {
 interface ScenarioTemplate {
   id: string;
   phase: 'EARLY' | 'MID' | 'LATE';
+  roles?: ('TOP' | 'JGL' | 'MID' | 'BOT' | 'SUP')[];
   title: string;
   buildDesc: (ctx: PlayerDecisionContext) => string;
   options: PlayerDecisionOption[];
@@ -631,6 +632,267 @@ const SCENARIO_POOL: ScenarioTemplate[] = [
       { id: 'l20_d', label: 'Dalgayı kesip rakibin oyunu bitirmesini engelle', kind: 'ROAM', attr: 'macro', baseProb: 0.71 },
     ],
   },
+
+  // ==================== ROLE-SPECIFIC SCENARIOS (25: 5 PER ROLE) ====================
+  // TOP
+  {
+    id: 'r_top1', phase: 'EARLY', roles: ['TOP'], title: 'Üst Koridor 1v1 Ada Savaşı',
+    buildDesc: (c) => `${c.oppName} (${c.oppChamp}) ile uzun üst koridorda tamamen baş başasın. Ormancılar alt tarafta.`,
+    options: [
+      { id: 'rt1_a', label: 'Mekanik sınırda uzun takasa girip solo kill ara', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rt1_b', label: 'Dalgayı kule önünde dondurup rakibi aç bırak', kind: 'SAFE', attr: 'laning', baseProb: 0.89 },
+      { id: 'rt1_c', label: 'Dalgayı itip Hiçlik Kurtçukları bölgesine toteme in', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.74 },
+      { id: 'rt1_d', label: 'Alt koridora sürpriz TP açısı için çalı kontrolü kur', kind: 'ROAM', attr: 'macro', baseProb: 0.67 },
+    ],
+  },
+  {
+    id: 'r_top2', phase: 'EARLY', roles: ['TOP'], title: 'Weakside 1v2 Hayatta Kalma',
+    buildDesc: (c) => `${c.oppTag} ormancısı üst koridora kamp kurdu; senin ormancın ise alt koridoru oynuyor.`,
+    options: [
+      { id: 'rt2_a', label: 'Kule altında sabırlı kal & XP kaçırmadan zaman kazan', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+      { id: 'rt2_b', label: 'Kule dibinde outplay deneyip 1v2 skor çevir', kind: 'AGGRO', attr: 'clutch', baseProb: 0.52 },
+      { id: 'rt2_c', label: 'Arka çalıları totemleyip takımına Ejder alanı aç', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.73 },
+      { id: 'rt2_d', label: 'Hızlıca orta koridora kayıp rakibi şaşırt', kind: 'ROAM', attr: 'macro', baseProb: 0.63 },
+    ],
+  },
+  {
+    id: 'r_top3', phase: 'MID', roles: ['TOP'], title: 'Proxy Dalga & Rakip Kamp Çalma',
+    buildDesc: (c) => `${c.oppName} (${c.oppChamp}) kule altına sıkıştı. Kule arkasından proxy dalga kesme fırsatın var.`,
+    options: [
+      { id: 'rt3_a', label: 'Proxy yapıp {oppTag} Gromp/Krug kampını çal', kind: 'ROAM', attr: 'macro', baseProb: 0.69 },
+      { id: 'rt3_b', label: 'Kuleye odaklanıp 2. kuleyi doğrudan yık', kind: 'SAFE', attr: 'laning', baseProb: 0.85 },
+      { id: 'rt3_c', label: 'Çalıda pusuya yatıp kuleye dönen {oppName} avla', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.60 },
+      { id: 'rt3_d', label: 'Derin görüş atıp takımına Baron bölgesi güvenliği sağla', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.75 },
+    ],
+  },
+  {
+    id: 'r_top4', phase: 'MID', roles: ['TOP'], title: 'Yan Koridorda Çift Baskı (Split Push)',
+    buildDesc: (c) => `TP hazır! Takımın Baron önünde oyalanırken sen alt koridorda ${c.oppName} karşısındasın.`,
+    options: [
+      { id: 'rt4_a', label: '{oppName} 1v1de ezip inhibitör kulesine dayan', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rt4_b', label: 'Baron savaşının ortasına arkadan TP Flank at!', kind: 'ROAM', attr: 'teamfight', baseProb: 0.70 },
+      { id: 'rt4_c', label: 'İki kişiyi üstüne çekip hasar almadan geri süzül', kind: 'SAFE', attr: 'laning', baseProb: 0.87 },
+      { id: 'rt4_d', label: 'Haritayı açıp takımına ücretsiz Baron çağrısı yap', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.73 },
+    ],
+  },
+  {
+    id: 'r_top5', phase: 'LATE', roles: ['TOP'], title: 'Ön Saf (Frontline) / Flank Kararı',
+    buildDesc: (c) => `Son takım savaşında ${c.oppTag} dizilişini kurdu. Takımının senden beklentisi büyük.`,
+    options: [
+      { id: 'rt5_a', label: 'Arka safa yan açıdan atlayıp taşıyıcıyı kilitle', kind: 'AGGRO', attr: 'clutch', baseProb: 0.60 },
+      { id: 'rt5_b', label: 'Kendi taşıyıcının önünde duvar olup hasarı tankla', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.73 },
+      { id: 'rt5_c', label: 'Yan koridor süper minyonlarıyla üssü zorla', kind: 'ROAM', attr: 'macro', baseProb: 0.67 },
+      { id: 'rt5_d', label: 'Sabırlı pozisyon alıp karşı engage\'i boz', kind: 'SAFE', attr: 'laning', baseProb: 0.85 },
+    ],
+  },
+
+  // JGL
+  {
+    id: 'r_jgl1', phase: 'EARLY', roles: ['JGL'], title: 'Seviye 3 İlk Baskın Rotası',
+    buildDesc: (c) => `İlk orman temizliğini bitirdin! Üst koridor itilmiş, orta koridorda ise ${c.oppTag} oyuncusu Flash\'sız.`,
+    options: [
+      { id: 'rj1_a', label: 'Orta koridora Flash\'sız hedefe agresif gank at', kind: 'ROAM', attr: 'macro', baseProb: 0.71 },
+      { id: 'rj1_b', label: '{oppName} ormanına girip ikinci buffını çal (Counter-Jungle)', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.62 },
+      { id: 'rj1_c', label: 'Yengeçleri alıp tam temizlikle Seviye 4 garantile', kind: 'SAFE', attr: 'laning', baseProb: 0.89 },
+      { id: 'rj1_d', label: 'Rakip orman girişine derin totem bırakıp rotayı çöz', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.76 },
+    ],
+  },
+  {
+    id: 'r_jgl2', phase: 'EARLY', roles: ['JGL'], title: 'Erken Ejder Sneak Fırsatı',
+    buildDesc: (c) => `${c.oppName} (${c.oppChamp}) üst tarafta göründü! Alt koridorun da önceliğe sahip.`,
+    options: [
+      { id: 'rj2_a', label: 'Tarayıcıyı açıp gizlice ilk Ejderi kes (Solo Sneak)', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.72 },
+      { id: 'rj2_b', label: 'Alt koridora 3v2 kule altı dive çağrısı yap', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.60 },
+      { id: 'rj2_c', label: '{oppTag} alt ormanındaki tüm kampları süpür', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rj2_d', label: 'Kendi kamplarını dönüp altın temposunu koru', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+    ],
+  },
+  {
+    id: 'r_jgl3', phase: 'MID', roles: ['JGL'], title: 'Orman Hakimiyeti & Objektif Kontrolü',
+    buildDesc: (c) => `Çarp (Smite) büyün hazır ve nehirde ${c.oppName} (${c.oppChamp}) ile karşı karşıyasın.`,
+    options: [
+      { id: 'rj3_a', label: 'Objektifi başlatıp Smite savaşında {oppName} alt et', kind: 'OBJECTIVE', attr: 'clutch', baseProb: 0.68 },
+      { id: 'rj3_b', label: 'Önce {oppName} üzerine atlayıp ormancıyı saf dışı bırak', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rj3_c', label: 'Yan koridoru gankleyip sayı üstünlüğüyle dön', kind: 'ROAM', attr: 'macro', baseProb: 0.69 },
+      { id: 'rj3_d', label: 'Kontrol totemleriyle görüş kurup güvenli farm al', kind: 'SAFE', attr: 'laning', baseProb: 0.86 },
+    ],
+  },
+  {
+    id: 'r_jgl4', phase: 'MID', roles: ['JGL'], title: 'Counter-Gank Sezgisi',
+    buildDesc: (c) => `${c.oppName} (${c.oppChamp}) büyük ihtimalle itilmiş olan alt koridoruna gank atmak üzere.`,
+    options: [
+      { id: 'rj4_a', label: 'Alt koridor çalısında pusuya yatıp 3v3 çevir!', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rj4_b', label: 'Üst tarafa ters baskın + Hiçlik Kurtçukları al', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.73 },
+      { id: 'rj4_c', label: 'Orman yolunda {oppName} tek yakalayıp kes', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.62 },
+      { id: 'rj4_d', label: 'Sinyal atıp kendi kamplarında seviye öne geç', kind: 'SAFE', attr: 'laning', baseProb: 0.87 },
+    ],
+  },
+  {
+    id: 'r_jgl5', phase: 'LATE', roles: ['JGL'], title: 'Baron / Kadim 50/50 Smite Anı',
+    buildDesc: (c) => `Baron canı 1600\'e indi! ${c.oppName} (${c.oppChamp}) çukura atlamak için bekliyor.`,
+    options: [
+      { id: 'rj5_a', label: 'Soğukkanlı Smite zamanlamasıyla objektifi kilitle!', kind: 'OBJECTIVE', attr: 'clutch', baseProb: 0.69 },
+      { id: 'rj5_b', label: 'Baron\'u bırakıp çukura giren {oppName} üzerine CC at', kind: 'AGGRO', attr: 'teamfight', baseProb: 0.62 },
+      { id: 'rj5_c', label: 'Çukur dışından rakip taşıyıcıyı uzaklaştır', kind: 'ROAM', attr: 'macro', baseProb: 0.66 },
+      { id: 'rj5_d', label: 'Takım hasarını bekleyip garanti bitiriş yap', kind: 'SAFE', attr: 'laning', baseProb: 0.82 },
+    ],
+  },
+
+  // MID
+  {
+    id: 'r_mid1', phase: 'EARLY', roles: ['MID'], title: 'Orta Koridor Önceliği (Mid Prio)',
+    buildDesc: (c) => `Ormancın nehirde savaşmak istiyor ama ${c.oppName} (${c.oppChamp}) seni orta koridorda tutmaya çalışıyor.`,
+    options: [
+      { id: 'rm1_a', label: 'Yeteneğinle dalgayı anında silip ilk rotasyonu yap', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rm1_b', label: '{oppName} ile agresif takasa girip canını %30\'a indir', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.62 },
+      { id: 'rm1_c', label: 'Kule önünde güvenli dalga yönetimiyle CS kas', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+      { id: 'rm1_d', label: 'Kuşlar (Raptors) kampına totem atıp {oppTag} ormancısını izle', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.75 },
+    ],
+  },
+  {
+    id: 'r_mid2', phase: 'EARLY', roles: ['MID'], title: 'Alt Koridora Roam Penceresi',
+    buildDesc: (c) => `Orta dalgayı ittirdin; ${c.oppTag} alt koridor ikilisi nehir totemini yeni kaybetti.`,
+    options: [
+      { id: 'rm2_a', label: 'Nehirden hızla inip alt koridora 4v2 baskın at!', kind: 'ROAM', attr: 'macro', baseProb: 0.68 },
+      { id: 'rm2_b', label: 'Orta kuleye vurup plaka ve tam base zamanlaması al', kind: 'SAFE', attr: 'laning', baseProb: 0.89 },
+      { id: 'rm2_c', label: 'Yolda karşılaşacağın {oppName} için çalıda tuzak kur', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.60 },
+      { id: 'rm2_d', label: 'Ejder çukurunu tarayıp kontrol totemi yerleştir', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.74 },
+    ],
+  },
+  {
+    id: 'r_mid3', phase: 'MID', roles: ['MID'], title: 'Yan Koridor (Side Lane) Ataması',
+    buildDesc: (c) => `Orta oyunda nişancın orta koridora geçti; şimdi sen yan koridorda dalga yöneteceksin.`,
+    options: [
+      { id: 'rm3_a', label: 'Yan koridorda {oppName} üzerine 1v1 baskısı kur', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rm3_b', label: 'Dalgayı ittirip karanlıktan orta savaşına sark', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rm3_c', label: 'Güvenli biçimde 10 CS/dk temposunu koru', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+      { id: 'rm3_d', label: 'TP avantajınla objektif öncesi görüş kur', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.73 },
+    ],
+  },
+  {
+    id: 'r_mid4', phase: 'MID', roles: ['MID'], title: 'Suikast / Ani Hasar Penceresi',
+    buildDesc: (c) => `${c.oppTag} taşıyıcısı orta koridorda yalnız başına dalga temizliyor.`,
+    options: [
+      { id: 'rm4_a', label: 'Karanlıktan çıkıp tek komboyla taşıyıcıyı sil!', kind: 'AGGRO', attr: 'clutch', baseProb: 0.62 },
+      { id: 'rm4_b', label: 'Ormancınla koordine olup kaçışsız yakala', kind: 'ROAM', attr: 'macro', baseProb: 0.72 },
+      { id: 'rm4_c', label: 'Onu geri püskürtüp orta 2. kuleyi al', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.71 },
+      { id: 'rm4_d', label: 'Tuzak ihtimaline karşı kendi dalgana dön', kind: 'SAFE', attr: 'laning', baseProb: 0.86 },
+    ],
+  },
+  {
+    id: 'r_mid5', phase: 'LATE', roles: ['MID'], title: 'Takım Savaşı Bölge Kontrolü',
+    buildDesc: (c) => `Geç oyunda takım savaşında hem yüksek hasar hem alan kontrolü senden bekleniyor.`,
+    options: [
+      { id: 'rm5_a', label: 'Ultini tüm {oppTag} arka safını vuracak şekilde at', kind: 'AGGRO', attr: 'clutch', baseProb: 0.60 },
+      { id: 'rm5_b', label: 'Nişancınla yan yana durup girenleri erit', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.73 },
+      { id: 'rm5_c', label: 'Yan açıdan TP ile rakip geri çekilme yolunu kes', kind: 'ROAM', attr: 'macro', baseProb: 0.66 },
+      { id: 'rm5_d', label: 'Ölmeden sürekli dürtme (Poke) hasarı çıkar', kind: 'SAFE', attr: 'laning', baseProb: 0.86 },
+    ],
+  },
+
+  // BOT
+  {
+    id: 'r_bot1', phase: 'EARLY', roles: ['BOT'], title: '2v2 Alt Koridor Güç Eşiği',
+    buildDesc: (c) => `Destek oyuncunla Seviye 2/3 üstünlüğünü aldın; ${c.oppName} (${c.oppChamp}) son minyon için öne çıktı.`,
+    options: [
+      { id: 'rb1_a', label: 'Destekle aynı anda all-in girip 2v2 skor çıkar', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.63 },
+      { id: 'rb1_b', label: 'Kusursuz son vuruşlarla (CS) altın farkını aç', kind: 'SAFE', attr: 'laning', baseProb: 0.90 },
+      { id: 'rb1_c', label: 'Dalgayı itip ejder çukuruna görüş & baskı kur', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.74 },
+      { id: 'rb1_d', label: 'Desteğini orta koridora roam için serbest bırak', kind: 'ROAM', attr: 'macro', baseProb: 0.68 },
+    ],
+  },
+  {
+    id: 'r_bot2', phase: 'EARLY', roles: ['BOT'], title: 'Kule Altı Baskı & Gank Korkusu',
+    buildDesc: (c) => `Alt koridoru çok ittirdin ama ${c.oppTag} ormancısı uzun zamandır haritada görünmedi.`,
+    options: [
+      { id: 'rb2_a', label: 'Hemen dalgayı sıfırlayıp güvenli geri çekil', kind: 'SAFE', attr: 'laning', baseProb: 0.89 },
+      { id: 'rb2_b', label: 'Gank gelirse kiting mekanikleriyle 2v3 çevir!', kind: 'AGGRO', attr: 'clutch', baseProb: 0.54 },
+      { id: 'rb2_c', label: 'Nehir çalısına kontrol totemi atıp baskıyı sürdür', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.72 },
+      { id: 'rb2_d', label: 'Hızlı base atıp orta koridora şerit değişimi (Swap) yap', kind: 'ROAM', attr: 'macro', baseProb: 0.66 },
+    ],
+  },
+  {
+    id: 'r_bot3', phase: 'MID', roles: ['BOT'], title: 'Orta Koridora Geçiş (Mid Rotation)',
+    buildDesc: (c) => `Alt 1. kule düştü! Şimdi nişancı-destek ikilisi olarak orta koridora yerleşme zamanı.`,
+    options: [
+      { id: 'rb3_a', label: 'Orta dalgaları hızla eritip Baron/Ejder önceliği al', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.74 },
+      { id: 'rb3_b', label: 'Orta koridorda agresif kuşatmayla kuleyi indir', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.62 },
+      { id: 'rb3_c', label: 'Yan koridorlardaki güvenli büyük dalgaları topla', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+      { id: 'rb3_d', label: 'Takımla rakip ormana girip görüş hattını ileri taşı', kind: 'ROAM', attr: 'macro', baseProb: 0.67 },
+    ],
+  },
+  {
+    id: 'r_bot4', phase: 'MID', roles: ['BOT'], title: 'Suikastçı Baskısı Altında Kiting',
+    buildDesc: (c) => `Takım savaşında ${c.oppTag} suikastçısı sürekli senin üzerine atlamayı bekliyor.`,
+    options: [
+      { id: 'rb4_a', label: 'Sıçra & pozisyonla suikastçıyı dodgelayıp erit!', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rb4_b', label: 'Desteğinin dibinde kalıp en yakın hedefe vur (Front-to-Back)', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.75 },
+      { id: 'rb4_c', label: 'Tehdit bitene kadar savaşın dışında güvenli bekle', kind: 'SAFE', attr: 'laning', baseProb: 0.86 },
+      { id: 'rb4_d', label: 'Yan açıdan kule hasarıyla savaşı hızlandır', kind: 'ROAM', attr: 'macro', baseProb: 0.64 },
+    ],
+  },
+  {
+    id: 'r_bot5', phase: 'LATE', roles: ['BOT'], title: 'Geç Oyun Taşıyıcı Sorumluluğu',
+    buildDesc: (c) => `38. dakikada takımının tüm hasarı senin elinde. Tek bir yanlış adım maçı kaybettirir.`,
+    options: [
+      { id: 'rb5_a', label: 'Öne çıkıp yüksek riskli agresif hasar patlaması yap', kind: 'AGGRO', attr: 'clutch', baseProb: 0.58 },
+      { id: 'rb5_b', label: 'Mükemmel kite ile takım savaşında 100% hayatta kal', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.74 },
+      { id: 'rb5_c', label: 'Baron sonrası Nexus kulelerini hızla erit', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rb5_d', label: 'Menzil sınırında sıfır riskle oyna', kind: 'SAFE', attr: 'laning', baseProb: 0.87 },
+    ],
+  },
+
+  // SUP
+  {
+    id: 'r_sup1', phase: 'EARLY', roles: ['SUP'], title: 'Destek Roam Timing (Orta Baskın)',
+    buildDesc: (c) => `Nişancın güvenli base attı; ${c.oppTag} orta koridoru ise ileri çıkmış durumda.`,
+    options: [
+      { id: 'rs1_a', label: 'Orta koridora gizlice yürüyüp skor çıkar!', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rs1_b', label: 'Rakip alt ormanı derin totemleyip tarayıcı ile temizle', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.77 },
+      { id: 'rs1_c', label: 'Çalıda pusu kurup alt koridora dönen {oppName} yakala', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.61 },
+      { id: 'rs1_d', label: 'Nişancının yanında kalıp kule altında XP topla', kind: 'SAFE', attr: 'laning', baseProb: 0.88 },
+    ],
+  },
+  {
+    id: 'r_sup2', phase: 'EARLY', roles: ['SUP'], title: 'Alt Koridor Çalı Hakimiyeti',
+    buildDesc: (c) => `${c.oppName} (${c.oppChamp}) çalıları kontrol edip nişancına baskı kurmaya çalışıyor.`,
+    options: [
+      { id: 'rs2_a', label: 'Flash + Engage ile {oppName} veya nişancıyı kilitle', kind: 'AGGRO', attr: 'mechanics', baseProb: 0.62 },
+      { id: 'rs2_b', label: 'Kontrol totemiyle çalı görüşünü tamamen al', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.76 },
+      { id: 'rs2_c', label: 'Nişancını kalkan/iyileştirme ile koruyup farm yaptır', kind: 'SAFE', attr: 'laning', baseProb: 0.89 },
+      { id: 'rs2_d', label: 'Ormancıyı çağırıp çalıdan sürpriz gank başlat', kind: 'ROAM', attr: 'macro', baseProb: 0.69 },
+    ],
+  },
+  {
+    id: 'r_sup3', phase: 'MID', roles: ['SUP'], title: 'Objektif Öncesi Görüş Kurulumu',
+    buildDesc: (c) => `Ejder/Baron doğmasına 45 saniye var. Haritanın o bölgesi tamamen karanlık.`,
+    options: [
+      { id: 'rs3_a', label: '3 totem + tarayıcı ile tüm nehir görüşünü kur', kind: 'OBJECTIVE', attr: 'macro', baseProb: 0.76 },
+      { id: 'rs3_b', label: 'Görüş atmaya gelen {oppName} yakalayıp savaş aç', kind: 'AGGRO', attr: 'clutch', baseProb: 0.61 },
+      { id: 'rs3_c', label: 'Ormancınla birlikte rakip orman girişini kapat', kind: 'ROAM', attr: 'macro', baseProb: 0.70 },
+      { id: 'rs3_d', label: 'Tek başına riske girme, nişancınla beraber yürü', kind: 'SAFE', attr: 'laning', baseProb: 0.87 },
+    ],
+  },
+  {
+    id: 'r_sup4', phase: 'MID', roles: ['SUP'], title: 'Engage mi, Peel (Koruma) mi?',
+    buildDesc: (c) => `5v5 savaş başlamak üzere! Hem rakip taşıyıcı açıkta hem de senin taşıyıcın tehlikede.`,
+    options: [
+      { id: 'rs4_a', label: 'Nişancının yanında dur ve gelenleri durdur (Peel)', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.75 },
+      { id: 'rs4_b', label: 'Rakip arka safa Flash Engage atıp savaşı kır!', kind: 'AGGRO', attr: 'clutch', baseProb: 0.60 },
+      { id: 'rs4_c', label: 'Yan açıdan rakibin kaçış/takviye yolunu kes', kind: 'ROAM', attr: 'macro', baseProb: 0.67 },
+      { id: 'rs4_d', label: 'Takımını geri çekip daha iyi pozisyon aldır', kind: 'SAFE', attr: 'laning', baseProb: 0.85 },
+    ],
+  },
+  {
+    id: 'r_sup5', phase: 'LATE', roles: ['SUP'], title: 'Kader Belirleyen Pick / Hook Anı',
+    buildDesc: (c) => `40. dakikada ${c.oppTag} oyuncusu Baron duvarının yanında yarım saniye açıkta kaldı!`,
+    options: [
+      { id: 'rs5_a', label: 'Refleksle tüm CC kombonu atıp maçı kazandıran picki yap!', kind: 'AGGRO', attr: 'clutch', baseProb: 0.62 },
+      { id: 'rs5_b', label: 'Takım savaşında Mikael/Kefaret ile 5 kişiyi hayatta tut', kind: 'OBJECTIVE', attr: 'teamfight', baseProb: 0.74 },
+      { id: 'rs5_c', label: 'Baron çukurundaki son rakip totemini temizle', kind: 'ROAM', attr: 'macro', baseProb: 0.72 },
+      { id: 'rs5_d', label: 'Sabırlı kalıp hata yapmadan pozisyonu koru', kind: 'SAFE', attr: 'laning', baseProb: 0.86 },
+    ],
+  },
 ];
 
 export const PLAYER_DECISION_POOL_SIZE = SCENARIO_POOL.length;
@@ -641,11 +903,33 @@ export function buildDynamicPlayerDecision(
 ): { id: string; minute: number; title: string; desc: string; options: PlayerDecisionOption[] } {
   const phase: 'EARLY' | 'MID' | 'LATE' =
     ctx.minute <= 11 ? 'EARLY' : ctx.minute <= 21 ? 'MID' : 'LATE';
-  const candidates = SCENARIO_POOL.filter((s) => s.phase === phase && !usedIds.has(s.id));
-  const fallback = candidates.length
-    ? candidates
-    : SCENARIO_POOL.filter((s) => !usedIds.has(s.id));
-  const pool = fallback.length ? fallback : SCENARIO_POOL;
+  const roleKey = ctx.role as 'TOP' | 'JGL' | 'MID' | 'BOT' | 'SUP';
+
+  // Prefer role-specific scenarios (~65% when available for this phase/role), then general phase scenarios
+  const roleSpecific = SCENARIO_POOL.filter(
+    (s) => s.phase === phase && s.roles?.includes(roleKey) && !usedIds.has(s.id)
+  );
+  const roleAnyPhase = SCENARIO_POOL.filter(
+    (s) => s.roles?.includes(roleKey) && !usedIds.has(s.id)
+  );
+  const generalPhase = SCENARIO_POOL.filter(
+    (s) => s.phase === phase && (!s.roles || s.roles.includes(roleKey)) && !usedIds.has(s.id)
+  );
+  const fallbackAll = SCENARIO_POOL.filter((s) => !usedIds.has(s.id));
+
+  let pool: ScenarioTemplate[];
+  if (roleSpecific.length > 0 && Math.random() < 0.65) {
+    pool = roleSpecific;
+  } else if (generalPhase.length > 0) {
+    pool = generalPhase;
+  } else if (roleAnyPhase.length > 0) {
+    pool = roleAnyPhase;
+  } else if (fallbackAll.length > 0) {
+    pool = fallbackAll;
+  } else {
+    pool = SCENARIO_POOL;
+  }
+
   const chosen = pool[Math.floor(Math.random() * pool.length)];
   usedIds.add(chosen.id);
   const fill = (txt: string) =>
