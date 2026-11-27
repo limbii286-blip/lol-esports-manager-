@@ -15,6 +15,7 @@ interface StartScreenProps {
     sigChamps: string[];
     teamId: string;
     startInAcademy: boolean;
+    customAttrs?: Record<string, number>;
   }) => void;
   onResumeAutoSave: () => void;
   onOpenSaveManager: () => void;
@@ -49,7 +50,45 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const [playerRole, setPlayerRole] = useState<string>('MID');
   const [sigChamps, setSigChamps] = useState<string[]>(['ahri']);
   const [startInAcademy, setStartInAcademy] = useState<boolean>(true);
+  const [bonusPoints, setBonusPoints] = useState<Record<string, number>>({
+    laning: 2,
+    mechanics: 2,
+    macro: 2,
+    teamfight: 2,
+    clutch: 1,
+    pool: 1,
+  });
   const [onlyUnderdogs, setOnlyUnderdogs] = useState<boolean>(true);
+
+  const baseAttrVal = startInAcademy ? 60 : 66;
+  const spentPoints = Object.values(bonusPoints).reduce((s, v) => s + v, 0);
+  const remainingPoints = Math.max(0, 10 - spentPoints);
+  const previewAttrs = {
+    laning: baseAttrVal + bonusPoints.laning,
+    mechanics: baseAttrVal + bonusPoints.mechanics,
+    macro: baseAttrVal + bonusPoints.macro,
+    teamfight: baseAttrVal + bonusPoints.teamfight,
+    clutch: baseAttrVal + bonusPoints.clutch,
+    pool: baseAttrVal + bonusPoints.pool,
+  };
+  const previewOvr = Math.round(
+    previewAttrs.mechanics * 0.22 +
+      previewAttrs.laning * 0.18 +
+      previewAttrs.macro * 0.18 +
+      previewAttrs.teamfight * 0.2 +
+      previewAttrs.clutch * 0.12 +
+      previewAttrs.pool * 0.1
+  );
+
+  const adjustBonus = (key: string, delta: number) => {
+    soundFx.click();
+    setBonusPoints((prev) => {
+      const cur = prev[key] || 0;
+      if (delta > 0 && remainingPoints <= 0) return prev;
+      if (delta < 0 && cur <= 0) return prev;
+      return { ...prev, [key]: cur + delta };
+    });
+  };
 
   const roleChampions = useMemo(
     () => CHAMPIONS.filter((c: any) => c.roles.includes(playerRole)).slice(0, 30),
@@ -123,6 +162,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         sigChamps,
         teamId: selectedTeam.id,
         startInAcademy,
+        customAttrs: previewAttrs,
       });
       return;
     }
@@ -444,8 +484,46 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     ))}
                   </div>
                 </div>
-                <div className="bg-[#0B0E14] border border-white/[0.08] rounded p-3 text-[11px] text-slate-300 leading-relaxed">
-                  <span className="text-[#E4BD67] font-semibold">Dinamik Kimlik:</span> Oyun tarzın ve kişiliğin başlangıçta kilitli değil — maç içi kararların, SoloQ disiplinin ve basın röportajlarınla zaman içinde şekillenecek.
+                <div className="bg-[#0B0E14] border border-white/[0.08] rounded p-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#E4BD67] font-semibold">Başlangıç Puanı Dağıt (OVR {previewOvr})</span>
+                    <span className="font-mono-num text-slate-300">Kalan: <strong className="text-white">{remainingPoints}</strong> / 10</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono-num">
+                    {[
+                      { key: 'laning', label: 'Koridor' },
+                      { key: 'mechanics', label: 'Mekanik' },
+                      { key: 'macro', label: 'Makro' },
+                      { key: 'teamfight', label: 'Savaş' },
+                      { key: 'clutch', label: 'Clutch' },
+                      { key: 'pool', label: 'Havuz' },
+                    ].map((at) => (
+                      <div key={at.key} className="bg-[#121722] border border-white/[0.08] rounded px-2 py-1.5 flex items-center justify-between gap-1">
+                        <div>
+                          <div className="text-[10px] text-slate-400">{at.label}</div>
+                          <div className="font-bold text-white">{previewAttrs[at.key as keyof typeof previewAttrs]}</div>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            disabled={remainingPoints <= 0}
+                            onClick={() => adjustBonus(at.key, 1)}
+                            className="w-4 h-4 rounded bg-white/[0.08] hover:bg-[#C89B3C] hover:text-[#0B0E14] text-white text-[10px] font-bold leading-none disabled:opacity-30 cursor-pointer"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            disabled={(bonusPoints[at.key] || 0) <= 0}
+                            onClick={() => adjustBonus(at.key, -1)}
+                            className="w-4 h-4 rounded bg-white/[0.08] hover:bg-rose-500 text-white text-[10px] font-bold leading-none disabled:opacity-30 cursor-pointer"
+                          >
+                            -
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[11px] text-slate-400 mb-1.5">Başlangıç Ligi</div>

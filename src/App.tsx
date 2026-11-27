@@ -146,6 +146,7 @@ export default function App() {
     sigChamps: string[];
     teamId: string;
     startInAcademy: boolean;
+    customAttrs?: Record<string, number>;
   }) => {
     const st = createPlayerCareer(opts);
     ensureCalendarState(st);

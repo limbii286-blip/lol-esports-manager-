@@ -1174,7 +1174,7 @@ export function createNewCareer(userTeamId, managerName = 'Koç') {
 }
 
 /**
- * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, startInAcademy?: boolean }} [opts]
+ * @param {{ playerName?: string, role?: string, sigChamps?: string[], teamId?: string, startInAcademy?: boolean, customAttrs?: Record<string, number> }} [opts]
  */
 export function createPlayerCareer({
   playerName = 'Rookie',
@@ -1182,6 +1182,7 @@ export function createPlayerCareer({
   sigChamps = /** @type {string[]} */ ([]),
   teamId = 'bro',
   startInAcademy = true,
+  customAttrs = null,
 } = {}) {
   const cleanPlayer = (playerName || 'Rookie').trim() || 'Rookie';
   const state = createNewCareer(teamId, 'AI Baş Koç');
@@ -1198,15 +1199,24 @@ export function createPlayerCareer({
     }
   }
 
-  const base = startInAcademy ? 69 : 75;
-  const baseAttrs = {
-    laning: base,
-    mechanics: base + 1,
-    macro: base - 1,
-    teamfight: base,
-    clutch: base,
-    pool: Math.min(80, (startInAcademy ? 67 : 72) + (sigChamps?.length ? 2 : 0)),
-  };
+  const base = startInAcademy ? 60 : 66;
+  const baseAttrs = customAttrs
+    ? {
+        laning: Math.max(50, Math.min(75, Number(customAttrs.laning) || base)),
+        mechanics: Math.max(50, Math.min(75, Number(customAttrs.mechanics) || base)),
+        macro: Math.max(50, Math.min(75, Number(customAttrs.macro) || base)),
+        teamfight: Math.max(50, Math.min(75, Number(customAttrs.teamfight) || base)),
+        clutch: Math.max(50, Math.min(75, Number(customAttrs.clutch) || base)),
+        pool: Math.max(50, Math.min(75, Number(customAttrs.pool) || base)),
+      }
+    : {
+        laning: base,
+        mechanics: base + 1,
+        macro: base,
+        teamfight: base,
+        clutch: base,
+        pool: base,
+      };
   const ovr = calcOVR(baseAttrs);
   const cleanSigs = (sigChamps || []).filter(Boolean).slice(0, 1);
   const subLeague = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
@@ -1227,11 +1237,11 @@ export function createPlayerCareer({
     teamId: team.id,
     isStarter: !startInAcademy,
     contractYears: 2,
-    salary: startInAcademy ? 1800 : 4500,
-    marketValue: startInAcademy ? 85000 : 180000,
+    salary: startInAcademy ? 1400 : 3800,
+    marketValue: startInAcademy ? 55000 : 120000,
     morale: 84,
-    form: 78,
-    fatigue: 8,
+    form: 76,
+    fatigue: 6,
     injuredWeeks: 0,
     benchWeeks: 0,
     importWeeksLeft: 0,
@@ -1245,13 +1255,13 @@ export function createPlayerCareer({
   state.players.unshift(userPlayer);
   state.userPlayerId = userPlayer.id;
   state.playerCareer = {
-    skillPoints: startInAcademy ? 3 : 2,
+    skillPoints: customAttrs ? 0 : 10,
     xp: 0,
-    xpNext: 100,
+    xpNext: 120,
     squadRole: startInAcademy ? 'Akademi Çaylağı' : 'İlk 5',
-    coachTrust: startInAcademy ? 50 : 60,
-    soloqLP: startInAcademy ? 480 : 640,
-    fame: startInAcademy ? 8 : 15,
+    coachTrust: startInAcademy ? 50 : 58,
+    soloqLP: startInAcademy ? 420 : 580,
+    fame: startInAcademy ? 6 : 12,
     personalEarnings: 0,
     pendingPlayerEvent: null,
     recentPlayerEventIds: [],
@@ -1281,7 +1291,7 @@ export function createPlayerCareer({
     category: 'BOARD',
     priority: 'HIGH',
     body: startInAcademy
-      ? `Hoş geldin ${cleanPlayer}! Kariyerine ${subLeague.name} liginde ${team.tag} Academy formasıyla başlıyorsun (OVR ${ovr}). Akademi maçlarında parlayıp OVR 73+ veya Koç Güveni %75+ seviyesine ulaştığında ana takıma terfi edeceksin!`
+      ? `Hoş geldin ${cleanPlayer}! Kariyerine ${subLeague.name} liginde ${team.tag} Academy formasıyla başlıyorsun (OVR ${ovr}). Akademi maçlarında parlayıp OVR 68+ veya Koç Güveni %75+ seviyesine ulaştığında ana takıma terfi edeceksin!`
       : `Hoş geldin ${cleanPlayer}! ${role} koridorunda ilk 5 şansını kaptın. Antrenman, SoloQ ve maç içi kritik kararlarınla OVR'ni yükselt; güvenimi kazanırsan Draft'ta istediğin şampiyonları da seçeceğim.`,
   });
 
@@ -1303,12 +1313,12 @@ export function playAcademyMatch(state) {
   const sub = SUB_LEAGUES[team.region] || SUB_LEAGUES.LEC;
   const oppClub = sub.clubs[Math.floor(Math.random() * sub.clubs.length)] || 'Rival Academy';
 
-  const winChance = Math.max(0.32, Math.min(0.82, 0.44 + (p.ovr - 68) * 0.04 + ((p.form || 75) - 75) * 0.006));
+  const winChance = Math.max(0.32, Math.min(0.82, 0.44 + (p.ovr - 62) * 0.035 + ((p.form || 75) - 75) * 0.006));
   const won = Math.random() < winChance;
   const k = Math.max(1, Math.round((won ? 5 : 2) + Math.random() * 5));
   const d = Math.max(0, Math.round((won ? 2 : 4) + Math.random() * 3));
   const a = Math.max(2, Math.round((won ? 7 : 3) + Math.random() * 6));
-  const isMvp = won && Math.random() < (0.35 + (p.ovr - 68) * 0.05);
+  const isMvp = won && Math.random() < (0.35 + (p.ovr - 62) * 0.04);
 
   pc.academyGames = (pc.academyGames || 0) + 1;
   if (won) pc.academyWins = (pc.academyWins || 0) + 1;
@@ -1319,13 +1329,12 @@ export function playAcademyMatch(state) {
   p.form = Math.min(99, Math.max(55, (p.form || 75) + (won ? 3 : -1)));
   p.morale = Math.min(100, Math.max(30, (p.morale || 80) + (won ? 3 : -2)));
 
-  let spGain = won ? 1 : (Math.random() < 0.4 ? 1 : 0);
-  if (isMvp) spGain += 1;
-  pc.skillPoints = (pc.skillPoints || 0) + spGain;
-  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 6 : 4) : -1)));
-  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 3 : 1));
+  const xpGain = (won ? 35 : 20) + (isMvp ? 20 : 0);
+  const lvlUps = awardPlayerXP(state, xpGain);
+  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 5 : 3) : -1)));
+  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 2 : 1));
 
-  const ready = p.ovr >= 73 || pc.coachTrust >= 75;
+  const ready = p.ovr >= 68 || pc.coachTrust >= 75;
   if (ready) {
     addInboxMessage(state, {
       title: `Ana Takım Kapısı Açıldı! (${p.name} · OVR ${p.ovr})`,
@@ -1340,7 +1349,7 @@ export function playAcademyMatch(state) {
     ok: true,
     won,
     isMvp,
-    msg: `${pc.academyClub} vs ${oppClub}: ${won ? 'GALİBİYET' : 'MAĞLUBİYET'} (${k}/${d}/${a}${isMvp ? ' · MAÇIN MVP\'Sİ!' : ''}) · +${spGain} Gelişim Puanı.`,
+    msg: `${pc.academyClub} vs ${oppClub}: ${won ? 'GALİBİYET' : 'MAĞLUBİYET'} (${k}/${d}/${a}${isMvp ? ' · MVP!' : ''}) · +${xpGain} XP${lvlUps > 0 ? ` (+${lvlUps} Gelişim Puanı!)` : ''}.`,
   };
 }
 
@@ -1353,8 +1362,8 @@ export function promoteFromAcademy(state) {
   const pc = state.playerCareer;
   if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
 
-  if (p.ovr < 73 && pc.coachTrust < 75) {
-    return { ok: false, msg: `Terfi için OVR 73+ (Mevcut: ${p.ovr}) veya Koç Güveni %75+ (Mevcut: %${pc.coachTrust}) gerekli.` };
+  if (p.ovr < 68 && pc.coachTrust < 75) {
+    return { ok: false, msg: `Terfi için OVR 68+ (Mevcut: ${p.ovr}) veya Koç Güveni %75+ (Mevcut: %${pc.coachTrust}) gerekli.` };
   }
 
   for (const op of state.players) {
@@ -1456,8 +1465,8 @@ export function createAcademyMatchContext(state) {
     duoSynergy: {},
   };
 
-  const blueRoster = ROLES.map(r => (r === p.role ? p : makeAcadMate(r, team.tag, 68)));
-  const redRoster = ROLES.map(r => makeAcadMate(r, oppTag, 68));
+  const blueRoster = ROLES.map(r => (r === p.role ? p : makeAcadMate(r, team.tag, 62)));
+  const redRoster = ROLES.map(r => makeAcadMate(r, oppTag, 62));
 
   return {
     match: { id: `acad_match_${Date.now()}`, blueId: blueTeam.id, redId: redTeam.id, bestOf: 1, played: false },
@@ -1485,14 +1494,11 @@ export function recordAcademySeriesResult(state, won, userLivePlayer = null) {
   if (isMvp) pc.academyMvps = (pc.academyMvps || 0) + 1;
   pc.academyPlayedThisWeek = true;
 
-  let spGain = won ? 1 : (Math.random() < 0.45 ? 1 : 0);
-  if (isMvp) spGain += 1;
-  pc.skillPoints = (pc.skillPoints || 0) + spGain;
-  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 6 : 4) : -1)));
-  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 3 : 1));
-  pc.personalEarnings = (pc.personalEarnings || 0) + (p.salary || 1800);
+  pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + (won ? (isMvp ? 4 : 2) : -1)));
+  pc.fame = Math.min(100, (pc.fame || 8) + (isMvp ? 2 : 1));
+  pc.personalEarnings = (pc.personalEarnings || 0) + (p.salary || 1400);
 
-  if (p.ovr >= 73 || pc.coachTrust >= 75) {
+  if (p.ovr >= 68 || pc.coachTrust >= 75) {
     addInboxMessage(state, {
       title: `Ana Takım Kapısı Açıldı! (${p.name} · OVR ${p.ovr})`,
       sender: `${team.tag} Baş Koçu`,
@@ -1502,7 +1508,7 @@ export function recordAcademySeriesResult(state, won, userLivePlayer = null) {
     });
   }
 
-  return `Akademi Maçı Tamamlandı (${won ? 'GALİBİYET' : 'MAĞLUBİYET'}${isMvp ? ' · MVP!' : ''}) · +${spGain} Gelişim Puanı.`;
+  return `Akademi Maçı Tamamlandı (${won ? 'GALİBİYET' : 'MAĞLUBİYET'}${isMvp ? ' · MVP!' : ''}).`;
 }
 
 export function runPlayerInterview(state, tone) {
@@ -1544,13 +1550,13 @@ export function negotiatePlayerContract(state) {
   const team = state.teams.find(t => t.id === state.userTeamId);
   if (!p || !team) return { ok: false, msg: 'Oyuncu bulunamadı.' };
   if (pc.inAcademy) return { ok: false, msg: 'Maaş zammı için önce Ana Kadroya yükselmelisin.' };
-  if (p.ovr < 74) {
-    return { ok: false, msg: `Pazarlık masasına oturmak için OVR en az 74 olmalı (Mevcut: ${p.ovr}).` };
+  if (p.ovr < 68) {
+    return { ok: false, msg: `Pazarlık masasına oturmak için OVR en az 68 olmalı (Mevcut: ${p.ovr}).` };
   }
 
   // Probability-driven negotiation based on Coach Trust, OVR, Fame, MVPs & Club Budget!
   const trustScore = ((pc.coachTrust || 50) - 50) * 0.008;
-  const ovrScore = (p.ovr - 74) * 0.032;
+  const ovrScore = (p.ovr - 68) * 0.032;
   const fameScore = (pc.fame || 10) * 0.0025;
   const mvpScore = Math.min(0.14, (p.stats?.mvps || 0) * 0.03);
   const budgetMod = team.budget >= 1200000 ? 0.08 : team.budget < 400000 ? -0.18 : 0;
@@ -1587,12 +1593,12 @@ export function awardPlayerXP(state, amount) {
   if (state.careerMode !== 'PLAYER' || !state.playerCareer) return 0;
   const pc = state.playerCareer;
   pc.xp = (pc.xp || 0) + amount;
-  if (!pc.xpNext) pc.xpNext = 100;
+  if (!pc.xpNext) pc.xpNext = 120;
   let levelUps = 0;
   while (pc.xp >= pc.xpNext) {
     pc.xp -= pc.xpNext;
     pc.skillPoints = (pc.skillPoints || 0) + 1;
-    pc.xpNext = Math.min(220, pc.xpNext + 15);
+    pc.xpNext = Math.min(320, pc.xpNext + 25);
     levelUps++;
   }
   return levelUps;
@@ -1636,7 +1642,7 @@ export function evaluatePlayerMatchReport(state, objectives, livePlayer, won) {
   });
 
   const doneCount = evaluated.filter(o => o.done).length;
-  const xpEarned = (won ? 45 : 25) + doneCount * 35 + (rating >= 8.2 ? 20 : 0);
+  const xpEarned = (won ? 35 : 20) + doneCount * 20 + (rating >= 8.2 ? 15 : 0);
   const levelUps = awardPlayerXP(state, xpEarned);
   const trustDelta = (won ? 2 : -1) + doneCount * 2;
   pc.coachTrust = Math.max(15, Math.min(100, (pc.coachTrust || 50) + trustDelta));
@@ -1839,17 +1845,16 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
   }
 
   if (activityType === 'SOLOQ') {
-    const lpGain = Math.round(25 + Math.random() * 28);
+    const lpGain = Math.round(20 + Math.random() * 24);
     pc.soloqLP += lpGain;
     p.form = Math.min(99, (p.form || 75) + 2);
     p.fatigue = Math.min(100, (p.fatigue || 0) + 6);
-    const gotPoint = Math.random() < 0.55;
-    if (gotPoint) pc.skillPoints++;
+    const lvlUps = awardPlayerXP(state, 30);
     pc.weeklyActionDone = true;
     const unlock = recordPlayerBehavior(state, 'Consistent', 'Grinder', 1);
     return {
       ok: true,
-      msg: `SoloQ seansı tamamlandı (+${lpGain} LP, +2 Form${gotPoint ? ', +1 Gelişim Puanı!' : ''}).${unlock ? ' ' + unlock : ''}`,
+      msg: `SoloQ seansı tamamlandı (+${lpGain} LP, +2 Form, +30 XP${lvlUps > 0 ? ', +1 Gelişim Puanı!' : ''}).${unlock ? ' ' + unlock : ''}`,
     };
   }
 
@@ -1883,14 +1888,14 @@ export function runPlayerWeeklyActivity(state, activityType, attrKey = null) {
   }
 
   if (activityType === 'SEEK_TRANSFER') {
-    if (p.ovr < 76) {
-      return { ok: false, msg: `Büyük kulüplerin radarına girmek için OVR en az 76 olmalı (Mevcut: ${p.ovr}).` };
+    if (p.ovr < 72) {
+      return { ok: false, msg: `Büyük kulüplerin radarına girmek için OVR en az 72 olmalı (Mevcut: ${p.ovr}).` };
     }
     const mvpCount = p.stats?.mvps || 0;
     const lpBonus = Math.max(0, ((pc.soloqLP || 500) - 500) / 1000);
     const interestChance = Math.max(
-      0.22,
-      Math.min(0.92, 0.25 + (p.ovr - 76) * 0.055 + (pc.fame || 10) * 0.004 + mvpCount * 0.04 + lpBonus)
+      0.20,
+      Math.min(0.90, 0.25 + (p.ovr - 72) * 0.05 + (pc.fame || 10) * 0.004 + mvpCount * 0.04 + lpBonus)
     );
     const candidates = state.teams
       .filter(t => t.id !== state.userTeamId && t.prestige >= 76 && t.budget >= 350000)
@@ -2024,10 +2029,9 @@ export function recordSeriesResult(state, match, blueScore, redScore) {
       if (state.records.currentStreak > state.records.bestStreak) state.records.bestStreak = state.records.currentStreak;
       bumpManagerRep(state, isHighStage ? 1.2 : 0.6, 'tacticalRep', isHighStage ? 1.5 : 0.7);
       if (state.careerMode === 'PLAYER' && state.playerCareer) {
-        state.playerCareer.skillPoints = (state.playerCareer.skillPoints || 0) + 1;
-        state.playerCareer.coachTrust = Math.min(100, (state.playerCareer.coachTrust || 55) + 3);
-        state.playerCareer.fame = Math.min(100, (state.playerCareer.fame || 15) + 2);
-        state.playerCareer.soloqLP = (state.playerCareer.soloqLP || 600) + 15;
+        state.playerCareer.coachTrust = Math.min(100, (state.playerCareer.coachTrust || 55) + 2);
+        state.playerCareer.fame = Math.min(100, (state.playerCareer.fame || 15) + 1);
+        state.playerCareer.soloqLP = (state.playerCareer.soloqLP || 500) + 10;
       }
     } else {
       state.records.careerLosses++;

@@ -373,7 +373,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   Akademi Ligi: {pc.academyClub} ({pc.academyLeague})
                 </div>
                 <div className="text-slate-400 font-mono-num">
-                  {pc.academyGames || 0} Maç · {pc.academyWins || 0} Galibiyet · {pc.academyMvps || 0} MVP · Terfi Şartı: OVR ≥ 73 ({userPlayer.ovr}/73) veya Güven ≥ %75 (%{pc.coachTrust}/75)
+                  {pc.academyGames || 0} Maç · {pc.academyWins || 0} Galibiyet · {pc.academyMvps || 0} MVP · Terfi Şartı: OVR ≥ 68 ({userPlayer.ovr}/68) veya Güven ≥ %75 (%{pc.coachTrust}/75)
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -406,7 +406,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 >
                   Hızlı Simüle Et
                 </button>
-                {(userPlayer.ovr >= 73 || pc.coachTrust >= 75) && (
+                {(userPlayer.ovr >= 68 || pc.coachTrust >= 75) && (
                   <button
                     onClick={() => {
                       soundFx.trophyFanfare();
@@ -911,7 +911,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="py-2.5 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-slate-200 font-medium">Ana Kadroya Yüksel</div>
-                    <div className="text-[11px] text-slate-500">OVR 73+ veya Koç Güveni %75+</div>
+                    <div className="text-[11px] text-slate-500">OVR 68+ veya Koç Güveni %75+</div>
                   </div>
                   <span className={`font-mono-num font-semibold ${!pc.inAcademy ? 'text-emerald-400' : 'text-amber-400'}`}>
                     {!pc.inAcademy ? 'Tamamlandı' : 'Akademide'}
@@ -929,10 +929,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="py-2.5 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-slate-200 font-medium">Büyük Kulüp Radarı</div>
-                    <div className="text-[11px] text-slate-500">OVR 76+ ile dev kulüplerden teklif al</div>
+                    <div className="text-[11px] text-slate-500">OVR 72+ ile dev kulüplerden teklif al</div>
                   </div>
-                  <span className={`font-mono-num font-semibold ${userPlayer.ovr >= 76 ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {userPlayer.ovr >= 76 ? 'Aktif' : `${userPlayer.ovr}/76`}
+                  <span className={`font-mono-num font-semibold ${userPlayer.ovr >= 72 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {userPlayer.ovr >= 72 ? 'Aktif' : `${userPlayer.ovr}/72`}
                   </span>
                 </div>
               </div>
