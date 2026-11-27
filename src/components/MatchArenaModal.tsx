@@ -454,13 +454,18 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       setPhase('SERIES_DONE');
     } else {
       // Real Pro LoL Rule: loser of the game chooses Blue or Red side for the next game!
-      if (!userWonGame) {
+      if (!userWonGame && !isPlayerMode) {
         setCanPickSide(true);
       } else {
         setCanPickSide(false);
-        // AI loser picks Blue 65% of the time (for B1 priority), Red 35% (for R5 counter)
         const aiWantsBlue = Math.random() < 0.65;
-        setActiveUserSide(aiWantsBlue ? 'red' : 'blue');
+        if (!userWonGame && isPlayerMode) {
+          // AI Coach picks side for user's team after a loss
+          setActiveUserSide(aiWantsBlue ? 'blue' : 'red');
+        } else {
+          // AI opponent loser picks side (65% Blue, 35% Red)
+          setActiveUserSide(aiWantsBlue ? 'red' : 'blue');
+        }
       }
       setPhase('POST_GAME');
     }
@@ -546,7 +551,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   };
 
   const handleFlexSwapClick = (role: string) => {
-    if (!draft) return;
+    if (!draft || isPlayerMode) return;
     if (!swapRoleA) {
       setSwapRoleA(role);
       soundFx.click();
@@ -594,7 +599,7 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
   const userRoster = userSide === 'blue' ? blueRoster : redRoster;
   const oppRoster = userSide === 'blue' ? redRoster : blueRoster;
   const currentStep = draft && !draft.finished ? DRAFT_STEPS[draft.stepIndex] : null;
-  const isUserTurn = currentStep?.side === userSide;
+  const isUserTurn = !isPlayerMode && currentStep?.side === userSide;
   const missingUserRoles = draft ? getMissingRoles(userSide === 'blue' ? draft.bluePicks : draft.redPicks) : [];
 
   // Live win probability estimate from gold diff + objectives
@@ -615,17 +620,20 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
       {/* Broadcast Top Bar */}
       <header className="h-16 px-6 border-b border-white/[0.08] bg-[#0B0E14] flex items-center justify-between gap-6 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <TeamCrest tag={blueTeam.tag} color={blueTeam.color} color2={blueTeam.color2} size="sm" />
+          <TeamCrest tag={initBlueTeam.tag} color={initBlueTeam.color} color2={initBlueTeam.color2} size="sm" />
           <div className="flex items-center gap-2 font-display text-2xl font-extrabold text-white tracking-wide">
-            <span className="text-sky-400">{blueTeam.tag}</span>
+            <span className={initBlueTeam.id === userClub.id ? 'text-[#E4BD67]' : 'text-white'}>{initBlueTeam.tag}</span>
             <span className="font-mono-num text-[#E4BD67] text-xl px-1.5">
               {blueScore} - {redScore}
             </span>
-            <span className="text-rose-400">{redTeam.tag}</span>
+            <span className={initRedTeam.id === userClub.id ? 'text-[#E4BD67]' : 'text-white'}>{initRedTeam.tag}</span>
           </div>
-          <TeamCrest tag={redTeam.tag} color={redTeam.color} color2={redTeam.color2} size="sm" />
+          <TeamCrest tag={initRedTeam.tag} color={initRedTeam.color} color2={initRedTeam.color2} size="sm" />
           <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 ml-3">
             <span>BO{bo} · Oyun {gameNum}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-sky-400">Mavi: {blueTeam.tag}</span>
+            <span className="text-rose-400">Kırmızı: {redTeam.tag}</span>
             <span aria-hidden="true">·</span>
             <span>Yama {patch.version}</span>
             {careerState.fearlessEnabled && (
@@ -670,73 +678,79 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
               <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
                 <div>
                   <div className="text-xs text-[#E4BD67] font-semibold">
-                    Sahne Öncesi Soyunma Odası · Oyun {gameNum} (BO{bo})
+                    {isPlayerMode
+                      ? `Maç Önü Hazırlık · Oyun ${gameNum} (BO${bo}) · ${userSide === 'blue' ? 'Mavi Taraf' : 'Kırmızı Taraf'}`
+                      : `Sahne Öncesi Soyunma Odası · Oyun ${gameNum} (BO${bo})`}
                   </div>
                   <h2 className="font-display text-3xl font-bold text-white mt-1">
-                    Maç Önü Takım Konuşması
+                    {isPlayerMode ? 'Koçla Draft Görüşmesi' : 'Maç Önü Takım Konuşması'}
                   </h2>
                   <p className="text-xs text-slate-400 mt-1">
-                    Seçtiğin konuşma tonu oyuncuların erken oyun agresifliğini, hata payını ve clutch performansını doğrudan etkiler.
+                    {isPlayerMode
+                      ? 'Sahneye çıkmadan önce koçundan oynamak istediğin şampiyonu talep edebilirsin.'
+                      : 'Seçtiğin konuşma tonu oyuncuların erken oyun agresifliğini, hata payını ve clutch performansını doğrudan etkiler.'}
                   </p>
                 </div>
               </div>
 
-              {/* Pro LoL Opening Plan: Jungle Pathing & Lane Swap */}
-              <div className="bg-[#0B0E14] border border-white/[0.08] rounded-md p-4 space-y-3 text-xs">
-                <div className="font-bold text-[#E4BD67]">Açılış Planı (0–12 dk Orman Rotası & Lane Swap)</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] text-slate-400">Orman Başlangıç Rotası</div>
-                    <div className="flex gap-1.5">
-                      {[
-                        { id: 'bot', label: 'Bot Temizliği' },
-                        { id: 'top', label: 'Top / Kurtçuk' },
-                        { id: 'invade', label: 'Sv.3 Invade' },
-                      ].map((jp) => (
+              {/* Pro LoL Opening Plan: Jungle Pathing & Lane Swap (Manager Mode Only) */}
+              {!isPlayerMode && (
+                <div className="bg-[#0B0E14] border border-white/[0.08] rounded-md p-4 space-y-3 text-xs">
+                  <div className="font-bold text-[#E4BD67]">Açılış Planı (0–12 dk Orman Rotası & Lane Swap)</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] text-slate-400">Orman Başlangıç Rotası</div>
+                      <div className="flex gap-1.5">
+                        {[
+                          { id: 'bot', label: 'Bot Temizliği' },
+                          { id: 'top', label: 'Top / Kurtçuk' },
+                          { id: 'invade', label: 'Sv.3 Invade' },
+                        ].map((jp) => (
+                          <button
+                            key={jp.id}
+                            type="button"
+                            onClick={() => setJunglePath(jp.id as any)}
+                            className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
+                              junglePath === jp.id
+                                ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                                : 'bg-[#121722] text-slate-300 border-white/[0.1]'
+                            }`}
+                          >
+                            {jp.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] text-slate-400">Erken Koridor Düzeni</div>
+                      <div className="flex gap-1.5">
                         <button
-                          key={jp.id}
                           type="button"
-                          onClick={() => setJunglePath(jp.id as any)}
+                          onClick={() => setLaneSwap(false)}
                           className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
-                            junglePath === jp.id
+                            !laneSwap
                               ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
                               : 'bg-[#121722] text-slate-300 border-white/[0.1]'
                           }`}
                         >
-                          {jp.label}
+                          Standart Koridor
                         </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] text-slate-400">Erken Koridor Düzeni</div>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setLaneSwap(false)}
-                        className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
-                          !laneSwap
-                            ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
-                            : 'bg-[#121722] text-slate-300 border-white/[0.1]'
-                        }`}
-                      >
-                        Standart Koridor
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLaneSwap(true)}
-                        className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
-                          laneSwap
-                            ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
-                            : 'bg-[#121722] text-slate-300 border-white/[0.1]'
-                        }`}
-                      >
-                        Lane Swap (Weakside Koru)
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setLaneSwap(true)}
+                          className={`flex-1 px-2.5 py-1.5 rounded border text-[11px] font-semibold cursor-pointer ${
+                            laneSwap
+                              ? 'bg-[#C89B3C] text-[#0B0E14] border-[#C89B3C]'
+                              : 'bg-[#121722] text-slate-300 border-white/[0.1]'
+                          }`}
+                        >
+                          Lane Swap (Weakside Koru)
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {isPlayerMode && userLegendPlayer ? (
                 <div className="space-y-4">
@@ -828,6 +842,8 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                   <div className="font-display text-2xl font-bold text-white tracking-wide">
                     {draft.finished
                       ? 'Draft Tamamlandı — Sahneye Çıkmaya Hazır'
+                      : isPlayerMode
+                      ? `${currentStep?.label} (Koçlar Draft Yapıyor...)`
                       : `${currentStep?.label} ${isUserTurn ? '(Senin Sıran)' : '(Rakip Düşünüyor...)'}`}
                   </div>
                 </div>
@@ -1587,13 +1603,13 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
                           <div className="text-xs text-[#E4BD67] font-semibold">
-                            Oyun {gameNum} Tamamlandı · Seri Durumu {blueScore} - {redScore}
+                            Oyun {gameNum} Tamamlandı · Seri Durumu: {initBlueTeam.tag} {blueScore} - {redScore} {initRedTeam.tag}
                           </div>
                           <div className="font-display text-2xl font-bold text-white mt-0.5">
-                            {(liveState.winner === 'blue' ? blueTeam.name : redTeam.name)} Galip Geldi · MVP: {liveState.mvp?.name}
+                            {(liveState.winner === 'blue' ? blueTeam.name : redTeam.name)} Bu Oyunu Kazandı · MVP: {liveState.mvp?.name}
                           </div>
                         </div>
-                        {canPickSide ? (
+                        {canPickSide && !isPlayerMode ? (
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => {
@@ -1825,13 +1841,19 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
             <div className="max-w-3xl mx-auto bg-[#121722] border border-[#C89B3C]/50 rounded-lg p-8 space-y-6 mt-4">
               <div className="text-center space-y-2 border-b border-white/[0.08] pb-6">
                 <Trophy className="w-10 h-10 text-[#E4BD67] mx-auto" />
-                <div className="text-xs text-[#E4BD67] font-semibold">Seri Sonucu</div>
+                <div className="text-xs text-[#E4BD67] font-semibold">
+                  Seri Sonucu · KAZANAN: {(blueScore > redScore ? initBlueTeam.name : initRedTeam.name)}
+                </div>
                 <h2 className="font-display text-4xl font-extrabold text-white">
-                  {blueTeam.tag} {blueScore} - {redScore} {redTeam.tag}
+                  {initBlueTeam.tag} {blueScore} - {redScore} {initRedTeam.tag}
                 </h2>
                 <p className="text-sm text-slate-300">
-                  {(blueScore > redScore ? blueTeam.id : redTeam.id) === careerState.userTeamId
-                    ? 'Tebrikler Koç! Kulübün sahneden zaferle ayrıldı.'
+                  {(blueScore > redScore ? initBlueTeam.id : initRedTeam.id) === userClub.id
+                    ? isPlayerMode
+                      ? 'Tebrikler! Takımınla birlikte sahneden zaferle ayrıldın.'
+                      : 'Tebrikler Koç! Kulübün sahneden zaferle ayrıldı.'
+                    : isPlayerMode
+                    ? 'Zorlu bir seriydi. Antrenman ve SoloQ ile bir sonraki maça daha güçlü hazırlan.'
                     : 'Zorlu bir seriydi. Analiz ekibiyle verileri inceleyip bir sonraki maça hazırlan.'}
                 </p>
                 {liveState.mvp && (
@@ -1842,8 +1864,9 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                 )}
               </div>
 
-              {/* Post-Match Locker Room Reaction */}
-              <div className="space-y-3">
+              {/* Post-Match Locker Room Reaction (Manager Mode Only) */}
+              {!isPlayerMode && (
+                <div className="space-y-3">
                 <div className="text-xs font-semibold text-slate-300">
                   Maç Sonu Soyunma Odası Konuşması (FM)
                 </div>
@@ -1877,7 +1900,8 @@ export const MatchArenaModal: React.FC<MatchArenaModalProps> = ({
                     Maç sonu konuşması soyunma odasına iletildi.
                   </div>
                 )}
-              </div>
+                </div>
+              )}
 
               {/* Post-Match Coach Analysis Summary */}
               {liveState.coachReport && (
